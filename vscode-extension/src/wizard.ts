@@ -83,6 +83,9 @@ async function buildData(proj: vscode.Uri) {
     project: {
       title: project.title || "",
       name: project.device?.name || "",
+      type: project.device?.type || "",
+      version: project.device?.version || "",
+      modelReference: project.device?.modelReference || "",
       sl: project.slTarget || "SL2",
       riskScoringMethod: project.riskScoringMethod || "cost-based",
       mode: project.scope?.mode || "graybox",
@@ -152,6 +155,9 @@ export async function openWizard(ctx: vscode.ExtensionContext) {
       const project = await rdRaw(f.proj, "01-project-description/project.json", {});
       if (typeof m.title === "string") project.title = m.title;
       project.device = project.device || {}; project.device.name = m.name; project.slTarget = m.sl;
+      for (const key of ["type", "version", "modelReference"]) {
+        if (typeof m[key] === "string") project.device[key] = m[key];
+      }
       project.scope = project.scope || {}; project.scope.mode = m.mode; project.scope.boundary = m.bnd;
       project.reportOptions = project.reportOptions || {};
       project.reportOptions.includeUseCases = !!m.includeUseCases;
@@ -394,6 +400,9 @@ export async function openWizard(ctx: vscode.ExtensionContext) {
           const proj = await rdRaw(f.proj, "01-project-description/project.json", {});
           if (typeof d.project.title === "string") proj.title = d.project.title;
           proj.device = proj.device || {}; proj.device.name = d.project.name;
+          for (const key of ["type", "version", "modelReference"]) {
+            if (typeof d.project[key] === "string") proj.device[key] = d.project[key];
+          }
           proj.slTarget = d.project.sl; proj.riskScoringMethod = d.project.riskScoringMethod || "cost-based"; proj.scope = proj.scope || {};
           proj.scope.mode = d.project.mode; proj.scope.boundary = d.project.boundary;
           proj.reportOptions = proj.reportOptions || {};
@@ -458,6 +467,11 @@ function shell(cssUri: vscode.Uri, riskUri: vscode.Uri, logoUri: vscode.Uri, csp
         <h2>01 · Project</h2>
         <div class="desc">Device, scope, and target security level.</div>
         <div class="field"><label for="p-title">Project title</label><input class="inp" id="p-title" placeholder="TRA: ..."></div>
+        <div class="row">
+          <div class="field"><label for="p-type">Device type</label><input class="inp" id="p-type" placeholder="radar level sensor"></div>
+          <div class="field"><label for="p-version">Version under assessment</label><input class="inp" id="p-version" placeholder="FW 2.4 / HW B"></div>
+          <div class="field"><label for="p-modelReference">Model reference</label><input class="inp" id="p-modelReference"></div>
+        </div>
         <div class="row">
           <div class="field" style="flex:2"><label>Device name</label><input class="inp" id="p-name"></div>
           <div class="field"><label>SL target</label>
@@ -578,7 +592,7 @@ let changeTracker={currentVersion:null,entries:[]};
 let assumptions={attacker:[],device:[],system:[],environment:[],operational:[]};
 let system={components:[],interfaces:[],trustBoundaries:[],assets:[]};
 let requirements=[];
-let project={title:'',name:'',sl:'SL2',mode:'graybox',boundary:'',includeUseCases:false,useCaseNames:[],useCaseNoticePending:false};
+let project={title:'',name:'',type:'',version:'',modelReference:'',sl:'SL2',mode:'graybox',boundary:'',includeUseCases:false,useCaseNames:[],useCaseNoticePending:false};
 let undoStack=[], redoStack=[], histKey='', histTime=0;
 let asmTab='device', sysTab='components';
 const $=function(s){return document.querySelector(s);};
@@ -656,6 +670,7 @@ function renderRail(){
 function renderProject(p){
   p=p||{};
   project={title:p.title||'',name:p.name||'',sl:p.sl||'SL2',riskScoringMethod:p.riskScoringMethod||'cost-based',mode:p.mode||'graybox',boundary:p.boundary||'',sbom:p.sbom||{},includeUseCases:!!p.includeUseCases,useCaseNames:p.useCaseNames||[],useCaseNoticePending:!!p.useCaseNoticePending};
+  ['type','version','modelReference'].forEach(function(key){project[key]=p[key]||'';$('#p-'+key).value=project[key];});
   $('#devname').textContent=project.name?('· '+project.name):'';
   $('#p-title').value=project.title;
   $('#p-name').value=project.name;$('#p-sl').value=project.sl;$('#p-risk').value=project.riskScoringMethod;$('#p-mode').value=project.mode;$('#p-bnd').value=project.boundary;
@@ -1071,6 +1086,7 @@ document.addEventListener('input',function(e){
   recordBefore(keyOf(t));
   if(t.id==='p-title'){project.title=t.value;return;}
   if(t.id==='p-name'){project.name=t.value;$('#devname').textContent=t.value?('· '+t.value):'';return;}
+  if(t.id==='p-type'||t.id==='p-version'||t.id==='p-modelReference'){project[t.id.slice(2)]=t.value;return;}
   if(t.id==='p-sl'){project.sl=t.value;return;}
   if(t.id==='p-risk'){project.riskScoringMethod=t.value;return;}
   if(t.id==='p-mode'){project.mode=t.value;return;}

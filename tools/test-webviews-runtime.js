@@ -416,7 +416,9 @@ async function wizard(h) {
   const projectPath = "01-project-description/project.json";
   const savedProject = lastWriteJson(h, projectPath);
   assert.strictEqual(savedProject.title, title, "host did not persist project.title");
-  assert.deepStrictEqual(savedProject.device, { ...rl.device, name: "RL-100 runtime test" }, "title editing changed device metadata");
+  const expectedDevice = { ...rl.device, name: "RL-100 runtime test" };
+  for (const key of ["type", "version", "modelReference"]) expectedDevice[key] = rl.device[key] || "";
+  assert.deepStrictEqual(savedProject.device, expectedDevice, "title editing changed device metadata");
   for (const key of Object.keys(rl)) {
     if (["title", "device", "scope", "slTarget", "riskScoringMethod", "reportOptions", "sbom", "acceptedNotices"].includes(key)) continue;
     assert.deepStrictEqual(savedProject[key], rl[key], "project edit lost unrelated field: " + key);
@@ -438,6 +440,29 @@ async function wizard(h) {
   h.setValue("#p-title", "");
   await h.settle(1700);
   assert.strictEqual(lastWriteJson(h, projectPath).title, "", "empty title did not clear the saved title");
+
+  const deviceEdits = { type: 'Sensor <type> & "variant"', version: "FW 2.4 / HW B", modelReference: "RL-100/B" };
+  for (const [key, value] of Object.entries(deviceEdits)) {
+    const selector = "#p-" + key;
+    assert.strictEqual(h.must(selector).value, expectedDevice[key], "device field not loaded: " + key);
+    h.setValue(selector, value);
+    h.key("z", { ctrlKey: true });
+    assert.strictEqual(h.must(selector).value, expectedDevice[key], "device field undo failed: " + key);
+    h.key("y", { ctrlKey: true });
+    assert.strictEqual(h.must(selector).value, value, "device field redo failed: " + key);
+  }
+  await h.settle(1700);
+  assert.deepStrictEqual(lastWriteJson(h, projectPath).device, { ...expectedDevice, ...deviceEdits }, "device fields were not merged into existing metadata");
+  h.close();
+  await mod.openWizard(ctx);
+  h.openDom();
+  await h.settle();
+  for (const [key, value] of Object.entries(deviceEdits)) {
+    assert.strictEqual(h.must("#p-" + key).value, value, "device field not restored on reopen: " + key);
+    h.setValue("#p-" + key, "");
+  }
+  await h.settle(1700);
+  assert.deepStrictEqual(lastWriteJson(h, projectPath).device, { ...expectedDevice, type: "", version: "", modelReference: "" }, "clearing device fields changed other metadata");
   checkLiveDomHandlers(h);
 }
 

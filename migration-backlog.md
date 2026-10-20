@@ -98,7 +98,7 @@ Verification baseline for every item:
 ## Epic 2 — Project (01) fields
 
 - [x] **EXT-PRJ1 Project `title`** (separate from `device.name`).
-- [ ] **EXT-PRJ2 Device `type`, `version`, `modelReference`.**
+- [x] **EXT-PRJ2 Device `type`, `version`, `modelReference`.**
 - [ ] **EXT-PRJ3 Project `status`** (draft / in-progress / review / released; default draft).
 - [ ] **EXT-PRJ4 `scope.inScope[]` / `scope.outOfScope[]` list editors** (empty rows dropped).
 - [ ] **EXT-PRJ5 CRA `intendedUse` + `foreseeableUse[]`** (Deps: EXT-PRJ4 list widget).
@@ -173,6 +173,7 @@ the orchestrator implements them directly (anchors: `renderProject()` and the de
 
 | Item | Impl | Review | Test | Notes |
 |---|---|---|---|---|
+| EXT-PRJ2 | ✅ | ✅ | ✅ PASS (compile, 112 model assertions, parse + runtime smoke tests) | Device type, version and model reference use the shared `device` fields; both save handlers merge into existing metadata. Runtime coverage verifies loading, editing, undo/redo, clearing and reopening all three fields. `modelReference` is defined in webapp `types.ts` but currently absent from `ProjectPanel.tsx`. |
 | EXT-PRJ1 | ✅ | ✅ | ✅ PASS (compile, 112 model assertions, parse + runtime smoke tests) | Project title is loaded, edited and saved independently of device name; runtime tests cover literal text, clearing, reopen, metadata preservation and persisted keyboard/toolbar undo/redo. Fixed undo/redo not scheduling auto-save after an earlier save completed. |
 | EXT-DFD2 | ✅ | ✅ | ✅ PASS (compile, 112 model assertions, parse + runtime smoke tests; regression failed before fix) | Cleans parent and endpoint references in all four layout maps, including nested descendants; preserves absent/empty maps and similarly named IDs. Corrected stale reference: current webapp deletion is in `Inspector.tsx`, not the store, and does not clean these maps. Extension retains its existing recursive deletion behavior. |
 | EXT-DFD1 | ✅ | ✅ | ✅ PASS (compile, 106 model assertions, parse + runtime smoke tests) | Synthetic webapp-format fixture checks all layout maps, handles, component references, dimensions and unknown nested metadata after each edit and JSON serialization; unrelated node/flow deletion restores the original document. |
