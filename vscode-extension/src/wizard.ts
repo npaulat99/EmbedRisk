@@ -144,6 +144,37 @@ function cleanProjectList(items: string[]) {
   return items.map((item) => item.trim()).filter(Boolean);
 }
 
+function countermeasureSaveFields(c: { ticketUrls?: string[]; ticketUrl?: string; responsibility?: string }) {
+  const tickets = cleanProjectList(c.ticketUrls?.length ? c.ticketUrls : c.ticketUrl ? [c.ticketUrl] : []);
+  return {
+    ...(c.ticketUrls !== undefined || c.ticketUrl !== undefined ? { ticketUrls: tickets, ticketUrl: tickets[0] || "" } : {}),
+    ...(c.responsibility !== undefined ? { responsibility: c.responsibility || undefined } : {}),
+  };
+}
+
+function countermeasureFieldError(rows: unknown): string | undefined {
+  if (!Array.isArray(rows)) return "Countermeasures must be a list.";
+  for (const c of rows) {
+    if (!c || typeof c !== "object" || Array.isArray(c)) return "Each countermeasure must be an object.";
+    for (const key of ["ticketUrl", "verificationUrl"]) {
+      if (c[key] !== undefined && typeof c[key] !== "string") return `Countermeasure ${key} must be text.`;
+    }
+    for (const key of ["ticketUrls", "negativeEffects"]) {
+      if (c[key] !== undefined && (!Array.isArray(c[key]) || !c[key].every((v: unknown) => typeof v === "string"))) return `Countermeasure ${key} must be a list of text.`;
+    }
+    if (c.responsibility !== undefined && !["", "product", "deployment", "shared"].includes(c.responsibility)) return "Invalid countermeasure responsibility.";
+    if (c.addresses !== undefined) {
+      if (!Array.isArray(c.addresses)) return "Countermeasure addresses must be a list.";
+      for (const a of c.addresses) {
+        if (!a || typeof a !== "object" || Array.isArray(a)) return "Each countermeasure address must be an object.";
+        for (const key of ["ratedBy", "ratedAt"]) {
+          if (a[key] !== undefined && typeof a[key] !== "string") return `Residual ${key} must be text.`;
+        }
+      }
+    }
+  }
+}
+
 export async function openWizard(ctx: vscode.ExtensionContext) {
   const f = await locate();
   if (!f) { vscode.window.showWarningMessage("No EmbedRisk project found. Use 'EmbedRisk: New Project' to create one."); return; }
@@ -162,6 +193,11 @@ export async function openWizard(ctx: vscode.ExtensionContext) {
   panel.webview.onDidReceiveMessage(async (m) => {
     if (m.cmd === "ready") return sendInit();
 
+    const cmInput = m.cmd === "cms" ? m.cms : m.cmd === "autoSave" ? m.data?.cms : undefined;
+    if (cmInput !== undefined || m.cmd === "cms") {
+      const error = countermeasureFieldError(cmInput);
+      if (error) return panel.webview.postMessage({ cmd: "err", text: error });
+    }
     const projectInput = m.cmd === "project" ? m : m.cmd === "autoSave" ? m.data?.project : undefined;
     const status: unknown = projectInput?.status;
     if (status !== undefined && (typeof status !== "string" || !["draft", "in-progress", "review", "released"].includes(status))) {
@@ -298,7 +334,9 @@ export async function openWizard(ctx: vscode.ExtensionContext) {
           components: c.components || base.components || [],
           ...(c.iec62443Ref ? { iec62443Ref: c.iec62443Ref } : base.iec62443Ref ? { iec62443Ref: base.iec62443Ref } : {}),
           ...(c.description ? { description: c.description } : base.description ? { description: base.description } : {}),
-          ...(c.ticketUrls?.length ? { ticketUrls: c.ticketUrls.filter(Boolean) } : {}),
+          ...(c.negativeEffects !== undefined ? { negativeEffects: c.negativeEffects } : {}),
+          ...(c.verificationUrl !== undefined ? { verificationUrl: c.verificationUrl } : {}),
+          ...countermeasureSaveFields(c),
           addresses: (c.addresses || []).map((a: any) => {
             const prevA: any = ((base.addresses || []) as any[]).find((x: any) => x.threat === a.threat) || {};
             const addr: any = {
@@ -309,7 +347,7 @@ export async function openWizard(ctx: vscode.ExtensionContext) {
             };
             const pickA = (k: string) => { if (a[k] != null) addr[k] = a[k]; else if (prevA[k] != null) addr[k] = prevA[k]; };
             ['attackerRef', 'interfaceRefs', 'interfaceLabel',
-              'likelihoodFactors', 'impactDimensions', 'cvss'].forEach(pickA);
+              'likelihoodFactors', 'impactDimensions', 'cvss', 'ratedBy', 'ratedAt'].forEach(pickA);
             return addr;
           }),
         };
@@ -471,7 +509,7 @@ export async function openWizard(ctx: vscode.ExtensionContext) {
           await write(f.proj, "06-threats/threats.json", { threats: (threatDoc.threats || []).map((threat: any) => ({ ...threat, attackerRef: attacker.id, status: typeof threat.requiredSkill === "number" && threat.requiredSkill > attacker.capability ? "unfeasible" : threat.status === "unfeasible" ? "open" : threat.status })) });
         }
         if (Array.isArray(d.threats)) await write(f.proj, "06-threats/threats.json", { threats: d.threats });
-        if (Array.isArray(d.cms)) await write(f.proj, "08-countermeasures/countermeasures.json", { countermeasures: d.cms });
+        if (Array.isArray(d.cms)) await write(f.proj, "08-countermeasures/countermeasures.json", { countermeasures: d.cms.map((c: any) => ({ ...c, ...countermeasureSaveFields(c) })) });
         if (d.assumptions) await write(f.proj, "02-assumptions/assumptions.json", d.assumptions);
         if (d.system) {
           const prev = await rdRaw(f.proj, "03-system-assets/system.json", {});
@@ -887,6 +925,9 @@ function renderThreats(){
   }).join(''):'<tr><td colspan=9 class="hint">No threats yet.</td></tr>';
 }
 function updatePills(){threats.forEach(function(t,i){var el=document.getElementById('tp-'+i);if(el)el.innerHTML=riskCell(t);});}
+function ticketRows(c){return c.ticketUrls&&c.ticketUrls.length?c.ticketUrls:c.ticketUrl?[c.ticketUrl]:[''];}
+function setTicketRows(c,rows){c.ticketUrls=rows;c.ticketUrl=rows.map(function(url){return url.trim();}).filter(Boolean)[0]||'';}
+function markResidualRated(i,j){var date=new Date().toISOString().slice(0,10);cms[i].addresses[j].ratedAt=date;$('#rated-at-'+i+'-'+j).textContent='Last rated '+date;}
 function renderCms(){
   $('#cms-list').innerHTML=cms.length?cms.map(function(c,i){
     var addressed=(c.addresses||[]).map(function(a){return a.threat;});
@@ -907,6 +948,8 @@ function renderCms(){
             '<input class="inp" type="number" min=1 max=5 data-c='+i+' data-j='+j+' data-k="residualImpact" value="'+(a.residualImpact||2)+'"></div>'+
         '</div>'+
         rBlock+
+        '<div class="row" style="margin-top:6px"><div class="field"><label for="rated-by-'+i+'-'+j+'">Rated by</label><input class="inp" id="rated-by-'+i+'-'+j+'" data-c='+i+' data-j='+j+' data-k="ratedBy" value="'+esc(a.ratedBy||'')+'" placeholder="name / initials"></div>'+
+          '<span class="hint" id="rated-at-'+i+'-'+j+'">'+(a.ratedAt?'Last rated '+esc(a.ratedAt):'')+'</span></div>'+
         '<div style="margin-top:6px;text-align:right">'+
           '<button class="btn sm danger" data-act="delAddr" data-c='+i+' data-j='+j+'>remove</button>'+
         '</div>'+
@@ -919,14 +962,17 @@ function renderCms(){
       '<div class="field"><label>Type</label><select class="inp" data-ci='+i+' data-k="type">'+['preventive','detective','corrective','organizational'].map(function(o){return '<option'+(c.type===o?' selected':'')+'>'+o+'</option>';}).join('')+'</select></div>'+
       '<div class="field"><label>Status</label><select class="inp" data-ci='+i+' data-k="status">'+['proposed','planned','implemented','verified'].map(function(o){return '<option'+(c.status===o?' selected':'')+'>'+o+'</option>';}).join('')+'</select></div>'+
       '<button class="btn sm danger" data-act="delC" data-i='+i+' style="align-self:center">&#10005;</button></div>'+
+      '<div class="field"><label for="cm-responsibility-'+i+'">Responsibility</label><select class="inp" id="cm-responsibility-'+i+'" data-ci='+i+' data-k="responsibility">'+optTags([['','-- none --'],'product','deployment','shared'],c.responsibility||'')+'</select></div>'+
+      '<div class="field"><label for="cm-negative-'+i+'">Negative effects / trade-offs (one per line)</label><textarea class="inp" id="cm-negative-'+i+'" rows="2" data-ci='+i+' data-k="negativeEffects">'+esc((c.negativeEffects||[]).join('\\n'))+'</textarea></div>'+
       (c.status==='implemented'||c.status==='verified'?
         '<div style="margin-top:6px">'+
-          '<div class="hint" style="margin-bottom:4px">Implementation ticket URLs'+(!(c.ticketUrls||[]).filter(Boolean).length?' <span style="color:var(--warn)">(at least one required)</span>':'')+'</div>'+
-          ((c.ticketUrls&&c.ticketUrls.length?c.ticketUrls:['']).map(function(url,ti){
+          '<div class="hint" style="margin-bottom:4px">Implementation ticket URLs'+(!ticketRows(c).some(function(url){return url.trim();})?' <span style="color:var(--warn)">(at least one required)</span>':'')+'</div>'+
+          (ticketRows(c).map(function(url,ti){
             return '<div class="row" style="gap:6px;margin:3px 0"><input class="inp grow" data-ci='+i+' data-ti='+ti+' data-k="ticketUrls" value="'+esc(url||'')+'" placeholder="https://dev.azure.com/…/workitems/edit/123"'+(!url?' style="border-color:var(--warn);"':'')+'>'+
               '<button class="btn sm danger" data-act="delTicket" data-ci='+i+' data-ti='+ti+'>✕</button></div>';
           }).join(''))+
           '<button class="btn sm" data-act="addTicket" data-ci='+i+' style="margin-top:4px">+ Add ticket URL</button>'+
+          '<div class="field"><label for="cm-verification-'+i+'">Verification evidence link</label><input class="inp" id="cm-verification-'+i+'" data-ci='+i+' data-k="verificationUrl" value="'+esc(c.verificationUrl||'')+'"></div>'+
         '</div>':'')+
       '<div style="margin-top:6px"><div class="hint">Addresses</div>'+(addrRows||'<span class="hint">No threats addressed yet.</span>')+'</div>'+
       (avail?'<div style="margin-top:6px"><div class="hint">Add threat</div><div class="chips">'+avail+'</div></div>':'')+
@@ -1112,9 +1158,9 @@ document.addEventListener('click',function(e){
   else if(act==='addC'){cms.push({id:uid('CM',cms.map(function(x){return x.id;})),title:'New countermeasure',type:'preventive',status:'proposed',addresses:[]});renderCms();renderRail();}
   else if(act==='delC'){cms.splice(+el.dataset.i,1);renderCms();updatePills();renderRail();}
   else if(act==='delAddr'){cms[+el.dataset.c].addresses.splice(+el.dataset.j,1);renderCms();updatePills();}
-  else if(act==='addAddr'){cms[+el.dataset.c].addresses.push({threat:el.dataset.val,residualLikelihood:2,residualImpact:2});renderCms();updatePills();}
-  else if(act==='addTicket'){var cm2=cms[+el.dataset.ci];cm2.ticketUrls=cm2.ticketUrls&&cm2.ticketUrls.length?cm2.ticketUrls:[''];cm2.ticketUrls.push('');renderCms();}
-  else if(act==='delTicket'){var cm3=cms[+el.dataset.ci],ti3=+el.dataset.ti;var urls3=cm3.ticketUrls&&cm3.ticketUrls.length?cm3.ticketUrls:[''];urls3.splice(ti3,1);cm3.ticketUrls=urls3;renderCms();}
+  else if(act==='addAddr'){var sourceThreat=threats.find(function(t){return t.id===el.dataset.val;})||{};cms[+el.dataset.c].addresses.push({threat:el.dataset.val,residualLikelihood:2,residualImpact:2,ratedBy:sourceThreat.ratedBy,ratedAt:sourceThreat.ratedAt});renderCms();updatePills();}
+  else if(act==='addTicket'){var cm2=cms[+el.dataset.ci],urls2=ticketRows(cm2).slice();urls2.push('');setTicketRows(cm2,urls2);renderCms();}
+  else if(act==='delTicket'){var cm3=cms[+el.dataset.ci],urls3=ticketRows(cm3).slice();urls3.splice(+el.dataset.ti,1);setTicketRows(cm3,urls3);renderCms();}
   else if(act==='addAsm'){var ak=el.dataset.asm;assumptions[ak]=assumptions[ak]||[];assumptions[ak].push({id:uid(ASM_PREFIX[ak],assumptions[ak].map(function(x){return x.id;})),text:''});renderAssumptions();}
   else if(act==='delAsm'){assumptions[el.dataset.asm].splice(+el.dataset.i,1);renderAssumptions();}
   else if(act==='addComp'){system.components=system.components||[];system.components.push({id:uid('C-',system.components.map(function(x){return x.id;})),name:'New component',kind:'software',layer:2,parent:(system.components[0]||{}).id||null});sysTab='components';renderSystem();renderThreats();}
@@ -1199,12 +1245,12 @@ document.addEventListener('input',function(e){
   if(t.dataset.ci!==undefined&&t.dataset.k){
     if(t.dataset.k==='ticketUrls'&&t.dataset.ti!==undefined){
       var cmi=cms[+t.dataset.ci];
-      cmi.ticketUrls=cmi.ticketUrls&&cmi.ticketUrls.length?cmi.ticketUrls:[''];
-      cmi.ticketUrls[+t.dataset.ti]=t.value;
-    } else {cms[+t.dataset.ci][t.dataset.k]=t.value; if(t.dataset.k==='status')renderCms();}
+      var urls=ticketRows(cmi).slice();urls[+t.dataset.ti]=t.value;setTicketRows(cmi,urls);
+    } else if(t.dataset.k==='negativeEffects'){cms[+t.dataset.ci].negativeEffects=t.value===''?[]:t.value.split('\\n');}
+    else {cms[+t.dataset.ci][t.dataset.k]=t.value; if(t.dataset.k==='status')renderCms();}
     return;
   }
-  if(t.dataset.c!==undefined&&t.dataset.j!==undefined&&t.dataset.k){cms[+t.dataset.c].addresses[+t.dataset.j][t.dataset.k]=Math.max(1,Math.min(5,+t.value||1));updatePills();return;}
+  if(t.dataset.c!==undefined&&t.dataset.j!==undefined&&t.dataset.k){var ci=+t.dataset.c,cj=+t.dataset.j;if(t.dataset.k==='ratedBy'){cms[ci].addresses[cj].ratedBy=t.value;markResidualRated(ci,cj);}else{cms[ci].addresses[cj][t.dataset.k]=Math.max(1,Math.min(5,+t.value||1));updatePills();}return;}
   if(t.dataset.asm!==undefined&&t.dataset.ai!==undefined&&t.dataset.k){var arr=assumptions[t.dataset.asm];if(arr&&arr[+t.dataset.ai])arr[+t.dataset.ai][t.dataset.k]=t.value;return;}
   if(t.dataset.comp!==undefined&&t.dataset.k){var c=system.components[+t.dataset.comp];if(c)c[t.dataset.k]=(t.dataset.k==='layer')?(+t.value||1):(t.dataset.k==='parent'?(t.value||null):t.value);return;}
   if(t.dataset.if!==undefined&&t.dataset.k){var f=system.interfaces[+t.dataset.if];if(f){f[t.dataset.k]=t.dataset.k==='hidden'?t.checked:t.value;if(t.dataset.k==='hidden')renderSystem();}return;}
@@ -1247,6 +1293,7 @@ document.addEventListener('input',function(e){
   if(t.dataset.rdim!==undefined&&t.dataset.ri!==undefined&&t.dataset.rj!==undefined){
     var ri=+t.dataset.ri,rj=+t.dataset.rj,rdk=t.dataset.rdim;
     if(!cms[ri]||!cms[ri].addresses[rj])return;
+    markResidualRated(ri,rj);
     cms[ri].addresses[rj].impactDimensions=cms[ri].addresses[rj].impactDimensions||{};
     if(t.value!=='')cms[ri].addresses[rj].impactDimensions[rdk]=+t.value;else delete cms[ri].addresses[rj].impactDimensions[rdk];
     var rdv=R.deriveImpact(cms[ri].addresses[rj].impactDimensions);
@@ -1257,6 +1304,7 @@ document.addEventListener('input',function(e){
   if(t.dataset.rfac!==undefined&&t.dataset.ri!==undefined&&t.dataset.rj!==undefined){
     var ri=+t.dataset.ri,rj=+t.dataset.rj,rfk=t.dataset.rfac;
     if(!cms[ri]||!cms[ri].addresses[rj])return;
+    markResidualRated(ri,rj);
     cms[ri].addresses[rj].likelihoodFactors=cms[ri].addresses[rj].likelihoodFactors||{};
     if(t.value!=='')cms[ri].addresses[rj].likelihoodFactors[rfk]=+t.value;else delete cms[ri].addresses[rj].likelihoodFactors[rfk];
     var rlv=R.deriveLikelihood(cms[ri].addresses[rj].likelihoodFactors);

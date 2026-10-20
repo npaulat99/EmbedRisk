@@ -119,7 +119,7 @@ the orchestrator implements them directly (anchors: `renderProject()` and the de
 
 ## Epic 4 — Threats, countermeasures, defects (06/08/09)
 
-- [ ] **EXT-C1 Countermeasure fields** `negativeEffects[]`, `verificationUrl`, `responsibility`,
+- [x] **EXT-C1 Countermeasure fields** `negativeEffects[]`, `verificationUrl`, `responsibility`,
   `ticketUrls[]`, per-link `ratedBy`/`ratedAt`.
 - [ ] **EXT-B1 Bug Bar impact selector** driven by bundled `bug-bar.json` (Deps: EXT-K1).
 - [ ] **EXT-A2 Attack-tree cost weights** in `evaluate()` matching `webapp/client/src/lib/attackTree.ts`.
@@ -173,6 +173,7 @@ the orchestrator implements them directly (anchors: `renderProject()` and the de
 
 | Item | Impl | Review | Test | Notes |
 |---|---|---|---|---|
+| EXT-C1 | ✅ | ✅ | ✅ PASS (compile, 112 model assertions, parse + runtime smoke tests) | Adds negative effects, product/deployment/shared responsibility, verification evidence and per-link assessor/date display. Assessor and guided residual edits stamp the date; new links inherit threat provenance. Ticket lists read legacy `ticketUrl`, trim blanks and synchronize the primary link. Tests cover both save paths, clearing/omission, undo/redo, reopen, status-dependent fields, unknown metadata and invalid-input rejection. |
 | EXT-REQ1 | ✅ | ✅ | ✅ PASS (compile, 112 model assertions, parse + runtime smoke tests) | Checkbox and badges follow webapp derivation rules: CM links force checked/disabled and set the flag on linking; removing the last link retains the flag. Tests cover absent/false/true flags, threat-only and CM-linked rows, multiple links, persisted undo/redo, reopen and unknown row fields. Uses the backlog's badge wording (webapp labels these `is CM` / `standalone`). |
 | EXT-SYS3 | ✅ | ✅ | ✅ PASS (compile, 112 model assertions, parse + runtime smoke tests) | Asset headers show type and C/I/A/S badges with webapp defaults. Summaries update immediately without replacing the active editor; tests cover zero/missing objectives, escaped custom types, every objective edit, undo/redo, save/reopen and metadata preservation. |
 | EXT-SYS2 | ✅ | ✅ | ✅ PASS (compile, 112 model assertions, parse + runtime smoke tests) | Adds interface chip tags and the webapp's hidden-only visibility reset; unhide persists a boolean and supports undo/redo. Native DFD now respects `hidden` and watches system metadata so tag/visibility changes refresh open canvases. Tests cover save/reopen, clearing, metadata preservation, literal chip text, live hide/unhide and watcher disposal. |

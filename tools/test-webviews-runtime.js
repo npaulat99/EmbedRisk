@@ -615,6 +615,176 @@ async function checkRequirementDerivation(h, mod) {
   state(6, false, false, null);
 }
 
+async function checkCountermeasureFields(h, mod) {
+  const cmPath = "08-countermeasures/countermeasures.json";
+  const threatPath = "06-threats/threats.json";
+  const threatDoc = JSON.parse(h.readText(path.join(projectDir, threatPath)));
+  const threats = threatDoc.threats.filter((t) => t.likelihood >= 2 && t.impact >= 2);
+  assert.ok(threats.length >= 2, "countermeasure parity checks need two rated threats");
+  Object.assign(threats[1], { ratedBy: "Threat assessor", ratedAt: "2021-06-07" });
+  h.overlay.set(path.join(projectDir, threatPath), JSON.stringify(threatDoc));
+  const initial = [
+    {
+      id: "CM-PARITY-1", title: "Parity control", type: "corrective", status: "implemented", components: [],
+      negativeEffects: ["Imported effect"], verificationUrl: "https://example.com/old-evidence", responsibility: "product",
+      ticketUrl: "https://example.com/one", ticketUrls: ["https://example.com/one", "https://example.com/two"],
+      futureMetadata: { tags: ["preserve"] },
+      addresses: threats.slice(0, 2).map((t, i) => ({
+        threat: t.id, residualLikelihood: 1, residualImpact: 1, ratedBy: "Imported assessor " + i,
+        ratedAt: "2020-01-02T03:04:05Z", futureMetadata: { tags: ["link " + i] },
+      })),
+    },
+    {
+      id: "CM-PARITY-2", title: "Legacy tickets", type: "corrective", status: "proposed", components: [],
+      ticketUrl: "https://example.com/legacy",
+      addresses: [{ threat: threats[0].id, residualLikelihood: 1, residualImpact: 1 }],
+    },
+  ];
+  h.overlay.set(path.join(projectDir, cmPath), JSON.stringify({ countermeasures: initial }));
+  h.close();
+  await mod.openWizard(ctx);
+  h.openDom();
+  await h.settle();
+  const field = (key, i = 0) => `[data-ci="${i}"][data-k="${key}"]`;
+  const tickets = (i = 0) => h.$$(`[data-ci="${i}"][data-k="ticketUrls"]`);
+  const saved = () => lastWriteJson(h, cmPath).countermeasures;
+  assert.deepStrictEqual(h.$$(field("responsibility") + " option").map((o) => o.value), ["", "product", "deployment", "shared"]);
+  assert.strictEqual(h.must(field("negativeEffects")).value, "Imported effect");
+  assert.strictEqual(h.must(field("negativeEffects", 1)).value, "");
+  assert.strictEqual(h.$(field("verificationUrl", 1)), null, "evidence should be hidden for proposed controls");
+  h.click(`[data-act="addAddr"][data-c="1"][data-val="${threats[1].id}"]`);
+  assert.strictEqual(h.must("#rated-by-1-1").value, "Threat assessor", "new residual link did not inherit assessor");
+  assert.strictEqual(h.must("#rated-at-1-1").textContent, "Last rated 2021-06-07", "new residual link did not inherit rating date");
+  h.key("z", { ctrlKey: true });
+  assert.strictEqual(h.$("#rated-by-1-1"), null, "new residual link undo failed");
+  h.key("y", { ctrlKey: true });
+  assert.strictEqual(h.must("#rated-by-1-1").value, "Threat assessor", "new residual link redo lost provenance");
+  h.key("z", { ctrlKey: true });
+  const effects = 'Extra <effort> & "cost"\n\nReduced throughput';
+  const evidence = "https://example.com/evidence?a=1&b=2";
+  for (const [key, value] of [["negativeEffects", effects], ["verificationUrl", evidence]]) {
+    const previous = h.must(field(key)).value;
+    h.setValue(field(key), value);
+    h.key("z", { ctrlKey: true });
+    assert.strictEqual(h.must(field(key)).value, previous, key + " undo failed");
+    h.key("y", { ctrlKey: true });
+    assert.strictEqual(h.must(field(key)).value, value, key + " redo failed");
+  }
+  for (const responsibility of ["deployment", "shared", "", "product", "shared"]) {
+    const previous = h.must(field("responsibility")).value;
+    h.setValue(field("responsibility"), responsibility);
+    h.key("z", { ctrlKey: true });
+    assert.strictEqual(h.must(field("responsibility")).value, previous, "responsibility undo failed");
+    h.key("y", { ctrlKey: true });
+    assert.strictEqual(h.must(field("responsibility")).value, responsibility, "responsibility redo failed");
+  }
+  const today = new Date().toISOString().slice(0, 10);
+  const assessor = '[data-c="0"][data-j="0"][data-k="ratedBy"]';
+  assert.strictEqual(h.must(assessor).value, initial[0].addresses[0].ratedBy);
+  assert.strictEqual(h.must("#rated-at-0-0").textContent, "Last rated " + initial[0].addresses[0].ratedAt);
+  h.setValue(assessor, 'Reviewer <&"name">');
+  assert.strictEqual(h.must("#rated-at-0-0").textContent, "Last rated " + today, "assessor edit did not stamp the date");
+  h.key("z", { ctrlKey: true });
+  assert.strictEqual(h.must("#rated-at-0-0").textContent, "Last rated " + initial[0].addresses[0].ratedAt, "date undo failed");
+  h.key("y", { ctrlKey: true });
+  assert.strictEqual(h.must(assessor).value, 'Reviewer <&"name">', "assessor redo failed");
+  for (const selector of ['[data-ri="0"][data-rj="1"][data-rdim="confidentiality"]', '[data-ri="0"][data-rj="1"][data-rfac="exposure"]']) {
+    h.setValue(selector, "1");
+    assert.strictEqual(h.must("#rated-at-0-1").textContent, "Last rated " + today, "guided rating did not stamp date");
+    h.key("z", { ctrlKey: true });
+    assert.strictEqual(h.must("#rated-at-0-1").textContent, "Last rated " + initial[0].addresses[1].ratedAt, "guided rating undo lost date");
+    h.key("y", { ctrlKey: true });
+    assert.strictEqual(h.must("#rated-at-0-1").textContent, "Last rated " + today, "guided rating redo lost date");
+    h.key("z", { ctrlKey: true });
+  }
+  h.setValue(tickets()[0], "  https://example.com/new-primary  ");
+  h.click('[data-act="addTicket"][data-ci="0"]');
+  h.setValue(tickets()[2], "https://example.com/third");
+  h.click('[data-act="delTicket"][data-ci="0"][data-ti="1"]');
+  h.key("z", { ctrlKey: true });
+  assert.strictEqual(tickets().length, 3, "ticket delete undo failed");
+  h.key("y", { ctrlKey: true });
+  assert.strictEqual(tickets().length, 2, "ticket delete redo failed");
+  h.click('[data-act="addTicket"][data-ci="0"]');
+  h.setValue(tickets()[2], "   ");
+  h.setValue(field("status", 1), "verified");
+  assert.strictEqual(tickets(1)[0].value, initial[1].ticketUrl, "legacy primary ticket was not displayed");
+  assert.strictEqual(h.must(field("verificationUrl", 1)).value, "");
+  h.click('[data-act="delTicket"][data-ci="1"][data-ti="0"]');
+  assert.strictEqual(tickets(1)[0].value, "", "deleted legacy ticket reappeared");
+  await h.settle(1700);
+  const expected = JSON.parse(JSON.stringify(initial));
+  Object.assign(expected[0], {
+    negativeEffects: effects.split("\n"), verificationUrl: evidence, responsibility: "shared",
+    ticketUrl: "https://example.com/new-primary", ticketUrls: ["https://example.com/new-primary", "https://example.com/third"],
+  });
+  Object.assign(expected[0].addresses[0], { ratedBy: 'Reviewer <&"name">', ratedAt: today });
+  Object.assign(expected[1], { status: "verified", ticketUrl: "", ticketUrls: [] });
+  assert.deepStrictEqual(saved(), expected, "countermeasure auto-save lost fields, provenance or unknown metadata");
+  h.close();
+  await mod.openWizard(ctx);
+  h.openDom();
+  await h.settle();
+  assert.strictEqual(h.must(field("negativeEffects")).value, effects);
+  assert.strictEqual(h.must(field("verificationUrl")).value, evidence);
+  assert.strictEqual(h.must(field("responsibility")).value, "shared");
+  assert.deepStrictEqual(tickets().map((input) => input.value), expected[0].ticketUrls);
+  assert.strictEqual(h.must(assessor).value, expected[0].addresses[0].ratedBy);
+  assert.strictEqual(h.must("#rated-at-0-0").textContent, "Last rated " + today);
+  h.setValue(field("status"), "planned");
+  assert.strictEqual(tickets().length, 0);
+  assert.strictEqual(h.$(field("verificationUrl")), null);
+  h.setValue(field("status"), "implemented");
+  assert.strictEqual(h.must(field("verificationUrl")).value, evidence, "status toggle lost hidden evidence");
+
+  // Explicit saves must preserve omitted extension fields, and allow intentional clearing.
+  const omitted = JSON.parse(JSON.stringify(expected));
+  for (const c of omitted) {
+    for (const key of ["negativeEffects", "verificationUrl", "responsibility", "ticketUrl", "ticketUrls"]) delete c[key];
+    for (const a of c.addresses) { delete a.ratedBy; delete a.ratedAt; }
+  }
+  await h.settle(1700);
+  h.deliverToHost({ cmd: "cms", cms: omitted });
+  await h.settle();
+  assert.deepStrictEqual(saved(), expected, "explicit save lost omitted countermeasure fields");
+  const explicit = JSON.parse(JSON.stringify(expected));
+  Object.assign(explicit[0], { negativeEffects: ["Explicit edit"], verificationUrl: "https://example.com/explicit", responsibility: "deployment", ticketUrls: ["  https://example.com/explicit-ticket  ", ""], ticketUrl: "stale" });
+  Object.assign(explicit[0].addresses[0], { ratedBy: "Explicit assessor", ratedAt: "2022-03-04" });
+  h.deliverToHost({ cmd: "cms", cms: explicit });
+  await h.settle();
+  explicit[0].ticketUrls = ["https://example.com/explicit-ticket"];
+  explicit[0].ticketUrl = explicit[0].ticketUrls[0];
+  assert.deepStrictEqual(saved(), explicit, "explicit save ignored new countermeasure edits");
+  h.setValue(field("negativeEffects"), "");
+  h.setValue(field("verificationUrl"), "");
+  h.setValue(field("responsibility"), "");
+  h.setValue(assessor, "");
+  h.click('[data-act="delTicket"][data-ci="0"][data-ti="0"]');
+  await h.settle(1700);
+  const cleared = JSON.parse(JSON.stringify(explicit));
+  Object.assign(cleared[0], { negativeEffects: [], verificationUrl: "", ticketUrls: [], ticketUrl: "" });
+  delete cleared[0].responsibility;
+  Object.assign(cleared[0].addresses[0], { ratedBy: "", ratedAt: today });
+  assert.deepStrictEqual(saved(), cleared, "auto-save did not clear optional fields");
+  const clearExplicit = JSON.parse(JSON.stringify(explicit));
+  Object.assign(clearExplicit[0], { negativeEffects: [], verificationUrl: "", responsibility: "", ticketUrls: [], ticketUrl: "" });
+  Object.assign(clearExplicit[0].addresses[0], { ratedBy: "", ratedAt: "" });
+  h.deliverToHost({ cmd: "cms", cms: clearExplicit });
+  await h.settle();
+  cleared[0].addresses[0].ratedAt = "";
+  assert.deepStrictEqual(saved(), cleared, "explicit save resurrected cleared fields");
+  for (const patch of [{ negativeEffects: ["valid", 42] }, { verificationUrl: 42 }, { responsibility: "manufacturer" }, { ticketUrls: "invalid" }, { ticketUrl: 42 }, { addresses: [{ ratedBy: 42 }] }, { addresses: [{ ratedAt: 42 }] }]) {
+    for (const cmd of ["cms", "autoSave"]) {
+      const writesBefore = h.writes.length;
+      const rows = [{ ...cleared[0], ...patch }];
+      h.deliverToHost(cmd === "cms" ? { cmd, cms: rows } : { cmd, data: { cms: rows } });
+      await h.settle();
+      assert.strictEqual(h.writes.length, writesBefore, "invalid countermeasure fields must not write artifacts");
+      assert.strictEqual(h.toWebview[h.toWebview.length - 1].cmd, "err", "invalid countermeasure fields must report an error");
+    }
+  }
+}
+
 async function wizard(h) {
   const mod = await load(h, "wizard.ts");
   await mod.openWizard(ctx);
@@ -908,6 +1078,7 @@ async function wizard(h) {
   await checkSystemFields(h, mod);
   await checkAssetSummaries(h, mod);
   await checkRequirementDerivation(h, mod);
+  await checkCountermeasureFields(h, mod);
   checkLiveDomHandlers(h);
 }
 
