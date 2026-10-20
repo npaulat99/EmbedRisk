@@ -1,0 +1,215 @@
+{
+  "trees": [
+    {
+      "id": "AT-1",
+      "title": "Compromise firmware/boot integrity or extract key material from an acquired unit",
+      "threatRefs": [
+        "T-11",
+        "T-12",
+        "T-13"
+      ],
+      "description": "Models the two realistic paths to defeating the RL-100's firmware/key-material protections once an attacker has physical possession of a unit (the selected SL-C 2 attacker profile), and the shared underlying gap (no hardware root of trust) that limits how far either path can be closed by software-only controls alone.",
+      "root": {
+        "id": "N-1",
+        "kind": "goal",
+        "label": "Compromise firmware/boot integrity or extract cryptographic key material",
+        "gate": "OR",
+        "children": [
+          {
+            "id": "N-2",
+            "kind": "step",
+            "label": "Defeat MCU readout protection (RDP) to gain low-level debug access",
+            "gate": "AND",
+            "access": 3,
+            "skill": 2,
+            "countermeasureRef": "CM-9",
+            "children": [
+              {
+                "id": "N-3",
+                "kind": "substep",
+                "label": "Acquire a physical unit (purchase, salvage, decommissioned device)",
+                "access": 2,
+                "children": [],
+                "skill": 3
+              },
+              {
+                "id": "N-4",
+                "kind": "substep",
+                "label": "Bypass RDP via decapping, side-channel analysis, or voltage/clock fault injection",
+                "skill": 4,
+                "cost": {
+                  "time": 4,
+                  "exploitability": 5,
+                  "detection": 2,
+                  "window": 4,
+                  "notoriety": 5,
+                  "prep": 5,
+                  "abort": 4
+                },
+                "countermeasureRef": "CM-9",
+                "note": "Directly targeted by CM-9 (JTAG/SWD production lockdown, REQC006). With RDP correctly enabled per AS-17, T-11's residual likelihood is rated 0; this step represents defeat of that control, not routine debug access.",
+                "children": [],
+                "access": 2
+              },
+              {
+                "id": "N-5",
+                "kind": "step",
+                "label": "Read out RAM/flash contents via the now-open debug interface",
+                "gate": "OR",
+                "children": [],
+                "access": 2,
+                "skill": 1,
+                "cost": {
+                  "time": 4,
+                  "exploitability": 2,
+                  "window": 4,
+                  "detection": 2,
+                  "abort": 1,
+                  "prep": 2
+                },
+                "costRationales": {}
+              }
+            ],
+            "cost": {
+              "window": 3
+            },
+            "costRationales": {}
+          },
+          {
+            "id": "N-8",
+            "kind": "step",
+            "label": "Bypass the firmware update-time signature/version check itself (T-13)",
+            "gate": "AND",
+            "access": "local (IF-4/IF-5, Service-level credential per AS-10)",
+            "skill": "advanced",
+            "countermeasureRef": "CM-3",
+            "children": [
+              {
+                "id": "N-9",
+                "kind": "substep",
+                "label": "Obtain/forge a signature accepted by the verifier, or find an implementation bug in the check itself",
+                "skill": "expert",
+                "note": "CM-3 (update-time signature + anti-rollback check) is already implemented per AS-3; this step represents defeat of that control, not a routine firmware update.",
+                "children": [],
+                "access": 2,
+                "cost": {
+                  "time": 4,
+                  "exploitability": 1,
+                  "detection": 2,
+                  "abort": 2,
+                  "prep": 1,
+                  "notoriety": 2
+                },
+                "costRationales": {}
+              },
+              {
+                "id": "N-10",
+                "kind": "substep",
+                "label": "Deliver the crafted image over IF-4 (Ethernet service) or IF-5 (USB-C), both already gated behind Service-level authentication",
+                "access": "local",
+                "children": [],
+                "skill": 4
+              }
+            ]
+          },
+          {
+            "id": "N-11",
+            "kind": "vulnerability",
+            "label": "No hardware root of trust / secure boot below the update-time software checks (AS-9)",
+            "note": "Without a hardware root of trust, an attacker who reaches low-level debug access (N-2) or defeats the software-only update check (N-8) is not blocked by any further layer. Accepted residual risk for T-11/T-13; no product control is currently planned to close this gap.",
+            "children": [],
+            "access": 1,
+            "skill": 3,
+            "residualCost": {
+              "exploitability": 1,
+              "time": 1,
+              "window": 2,
+              "detection": 1,
+              "abort": 1,
+              "prep": 1,
+              "notoriety": 1
+            },
+            "residualCostRationales": {}
+          }
+        ]
+      }
+    },
+    {
+      "id": "AT-2",
+      "title": "Cause a crash, hang, or undefined behavior via a protocol parser",
+      "threatRefs": [
+        "T-19"
+      ],
+      "description": "Models the three alternative protocol entry points that can reach the same underlying parser-robustness gap, and the two controls (one already implemented, one still planned) that determine the actual consequence when a parser is hit.",
+      "root": {
+        "id": "M-1",
+        "kind": "goal",
+        "label": "Crash, hang, or otherwise disrupt the firmware/RTOS via malformed protocol input",
+        "gate": "OR",
+        "children": [
+          {
+            "id": "M-2",
+            "kind": "step",
+            "label": "Send a malformed Modbus RTU frame on the shared RS-485 segment (IF-3)",
+            "access": "adjacent bus, no authentication needed (AS-6)",
+            "skill": "basic",
+            "cost": {
+              "time": 2,
+              "exploitability": 2,
+              "window": 3,
+              "detection": 2,
+              "notoriety": 2,
+              "prep": 2,
+              "abort": 2
+            },
+            "children": []
+          },
+          {
+            "id": "M-3",
+            "kind": "step",
+            "label": "Send a malformed HART frame on the 4-20 mA loop (IF-2)",
+            "access": "physical loop access",
+            "skill": "basic",
+            "children": []
+          },
+          {
+            "id": "M-4",
+            "kind": "step",
+            "label": "Send malformed/oversized data during an Ethernet service-interface session (IF-4)",
+            "access": "local",
+            "skill": "intermediate",
+            "children": []
+          },
+          {
+            "id": "M-5",
+            "kind": "vulnerability",
+            "label": "Protocol parsers do not yet have demonstrated robustness against malformed/oversized/malicious input",
+            "countermeasureRef": "CM-5",
+            "note": "All three entry points converge on this single underlying gap; closing it once (REQC005) addresses all of M-2/M-3/M-4 rather than needing a per-protocol fix.",
+            "children": [],
+            "access": 2,
+            "skill": 1
+          },
+          {
+            "id": "M-6",
+            "kind": "countermeasure",
+            "label": "Independent watchdog forces the defined fail-safe fault current during reset/restart",
+            "countermeasureRef": "CM-8",
+            "note": "Already implemented (AS-18). Caps the safety-impact dimension at 1 regardless of which entry point triggers the crash/hang; does not reduce the availability impact of the outage itself, which remains dependent on CM-5 (still planned).",
+            "residualCost": {
+              "time": 4,
+              "exploitability": 4,
+              "window": 4,
+              "detection": 4,
+              "abort": 4,
+              "prep": 4,
+              "notoriety": 4
+            },
+            "residualCostRationales": {},
+            "children": []
+          }
+        ]
+      }
+    }
+  ]
+}

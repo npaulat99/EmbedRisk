@@ -1,0 +1,60 @@
+{
+  "title": "RL-100",
+  "projectId": "RL-100",
+  "device": {
+    "name": "RL-100",
+    "type": "Radar level sensor (continuous level measurement, liquids and bulk solids)",
+    "purdueLevel": "0/1"
+  },
+  "scope": {
+    "mode": "graybox",
+    "boundary": "The RL-100 device itself (standard and ATEX Zone 2 variants). Connected external systems are out of TRA scope but appear in the DFD as external entities.",
+    "inScope": [
+      "Radar front-end and signal processing",
+      "MCU firmware and RTOS",
+      "Communication stack: 4-20 mA, HART, Modbus RTU/RS-485, Ethernet service interface, USB-C service interface",
+      "Local HMI",
+      "Power management",
+      "Firmware update mechanism",
+      "Event/diagnostic logging"
+    ],
+    "outOfScope": [
+      "Process control system / PLC",
+      "Plant / corporate network infrastructure",
+      "Engineering / configuration laptop",
+      "SCADA/DCS and other upstream systems"
+    ]
+  },
+  "slTarget": "SL-C 2",
+  "intendedUse": "Continuous level measurement of liquids and bulk solids in industrial tanks and silos for process automation (chemical, food & beverage, water/wastewater, pharmaceutical, tank farms), including a SIL-certified safety-related measurement function, and local commissioning/configuration/diagnostics/firmware updates via the Ethernet service interface, which is for local access only and is not connected to the plant network.",
+  "foreseeableUse": [
+    "The Ethernet or USB-C service interface being left connected for extended periods beyond a single maintenance session, rather than only during active commissioning/service.",
+    "Brief operation outside the specified environmental limits (e.g. beyond -40 degC to +80 degC, or splashing/immersion beyond IP67) during transport, storage, or installation."
+  ],
+  "status": "draft",
+  "traVersion": "v1.0",
+  "repo": {
+    "kbUrl": "https://github.com/npaulat99/threat-collection"
+  },
+  "acceptableRisk": 10,
+  "riskScoringMethod": "cost-based",
+  "costFactorWeights": {
+    "time": 0.25,
+    "exploitability": 0.2,
+    "window": 0.15,
+    "detection": 0.15,
+    "notoriety": 0.1,
+    "prep": 0.1,
+    "abort": 0.05
+  },
+  "likelihoodProbabilityThresholds": {
+    "2": 0.3,
+    "3": 0.5,
+    "4": 0.7,
+    "5": 0.9
+  },
+  "acceptedNotices": [
+    "req-standalone:REQC008",
+    "req-standalone:REQC009"
+  ]
+}

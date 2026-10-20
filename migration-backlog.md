@@ -5,16 +5,20 @@ on-disk TRA project format, so **round-trip compatibility comes first**, then mi
 missing features. VS Code-native equivalents (Problems panel, Source Control, settings, walkthroughs,
 tree views) are preferred over porting web-only UI.
 
-Workflow per item: **PLAN → IMPLEMENT → REVIEW → TEST → APPROVE**. An item is `done` only when
-implementation, review and testing have all passed. One backlog item is in flight at a time; the
-reviewer and tester for an item run in parallel.
+Workflow: driven by the `ext-orchestrator` agent ([.github/agents/ext-orchestrator.agent.md](.github/agents/ext-orchestrator.agent.md)).
+In short: salvage uncommitted work first; size each item S/M/L; the orchestrator does **S** items itself,
+delegates **M** items to one background `ext-implementer` plus one combined `ext-verifier` (review + test),
+and **splits L** items before starting. Briefs carry exact file line ranges. At most one fix round. Every
+finished item is committed immediately, so an interrupted session never loses verified work. An item is
+`done` only when its ACs are met and the verification baseline passes. One item is in flight at a time.
 
 Status legend: `[ ]` todo · `[~]` in progress · `[x]` done (impl + review + test passed) · `[-]` dropped
 
 Verification baseline for every item:
 
 - `cd vscode-extension && npm run compile` (type-check + bundle) passes.
-- `node tools/test-models.js` and `node tools/test-webviews.js` pass.
+- `node tools/test-models.js`, `node tools/test-webviews.js` (parse) and `node tools/test-webviews-runtime.js`
+  (jsdom runtime smoke test on the `tools/fixtures/RL-100` copy) pass.
 - Behaviour matches the webapp reference implementation named in the item.
 
 ---
@@ -30,7 +34,7 @@ Verification baseline for every item:
   - AC2: A regression test bundles every webview-producing module (`src/*.ts`), extracts every inline
     `<script>` from the generated HTML and syntax-checks it; it fails on HEAD~ and passes after the fix.
   - Deps: none.
-- [ ] **EXT-HOT2 Runtime smoke test for webviews.** Parse checks (EXT-HOT1) cannot catch runtime errors, and the
+- [x] **EXT-HOT2 Runtime smoke test for webviews.** Parse checks (EXT-HOT1) cannot catch runtime errors, and the
   wizard was completely dead at HEAD, so more runtime faults may be hiding.
   - AC1: `tools/test-webviews.js` (or a sibling) loads each webview's HTML in a DOM (jsdom as a devDependency of
     `vscode-extension`), stubs `acquireVsCodeApi`, feeds the same `load` message the extension sends
@@ -102,7 +106,9 @@ Verification baseline for every item:
 
 Common AC for PRJ items: field is shown in the wizard Project step, saved to the exact webapp field
 name (`webapp/client/src/types.ts`, `ProjectPanel.tsx`), other keys preserved, value shown again on
-reopen, undo/redo works. Items touch the same wizard code and run sequentially.
+reopen, undo/redo works. Items touch the same wizard code and run sequentially. Each is size **S**:
+the orchestrator implements them directly (anchors: `renderProject()` and the delegated `input` listener in
+`src/wizard.ts`), no subagents.
 
 ## Epic 3 — System & assets (03), requirements (05)
 
@@ -167,6 +173,7 @@ reopen, undo/redo works. Items touch the same wizard code and run sequentially.
 
 | Item | Impl | Review | Test | Notes |
 |---|---|---|---|---|
+| EXT-HOT2 | ✅ (salvaged the interrupted subagent's harness instead of redoing it) | ✅ | ✅ PASS (`tools/test-webviews-runtime.js`: 6 webviews, all wizard rail steps; failed on the old wizard, passes now) | Found + fixed: wizard SBOM source `<select>` used an inline `onchange` blocked by the nonce CSP, and `project.sbom` was never updated in memory (re-render reverted it). RL-100 fixture vendored to `tools/fixtures/RL-100` (project folders are gitignored). |
 | EXT-HOT1 | ✅ | ✅ PASS | ✅ PASS (new `tools/test-webviews.js` fails on old code, passes now; use-case delete matches webapp `Inspector.tsx`) | Runtime smoke test skipped (no jsdom) → EXT-HOT2 |
 | EXT-ID1 | ✅ | ✅ PASS | ✅ PASS (19 parity cases vs webapp `uid`, prefixes cited per entity, RL-100 DFD round trip) | Shared `nextId` in `media/dfd-model.js`; surfaced EXT-HOT1 |
 | EXT-A1 | ✅ (2 rounds: orchestrator corrected AC1 to webapp union semantics + "+ Tree" auto-link) | ✅ PASS | ✅ PASS (11 parity cases vs webapp, RL-100 round trip deep-equal, Python helper matches) | Also fixed unescaped `threatRef` in Python report heading |

@@ -1,0 +1,114 @@
+{
+  "device": [
+    {
+      "id": "AS-3",
+      "text": "The firmware update mechanism checks both the cryptographic signature and the version of an incoming firmware image before applying it. Rollback to an older (previously valid) signed firmware version is prevented.",
+      "confidence": "high"
+    },
+    {
+      "id": "AS-4",
+      "text": "On power loss, the device de-energizes and the 4-20 mA output transitions to a defined fault condition rather than holding the last measured value. On internal measurement or self-diagnostic failure, the analog output indicates a defined fault current. Loss of HART or Modbus communication alone does not affect the primary measurement output: the device continues measuring and driving the 4-20 mA output independently of communication status. Process measurement is assumed available unless a device fault is detected.",
+      "confidence": "medium"
+    },
+    {
+      "id": "AS-5",
+      "text": "The 4-20 mA loop is intended to implement NAMUR NE43-compatible fault signaling: normal operating range 4-20 mA, with a defined out-of-range fault current for diagnostic/fault conditions (upscale/downscale direction may be configurable). Exact fault-current values are not yet finalized, but the device shall not remain at an undefined or last-held value during a detected device fault.",
+      "confidence": "medium"
+    },
+    {
+      "id": "AS-9",
+      "text": "Secure key storage is assumed present via the STM32H7's built-in capability. Secure boot and hardware root of trust are NOT assumed present (worst-case), to be implemented only if the TRA determines they are needed. Firmware images are assumed to be signed (signed binaries).",
+      "confidence": "high"
+    },
+    {
+      "id": "AS-11",
+      "text": "The radar front-end/signal-processing chain (C-1) performs measurement plausibility checks: echo strength validation, cross-cycle consistency checks, signal quality assessment, and detection of invalid/saturated measurement conditions. It is not designed as a dedicated anti-spoofing detection system; a sophisticated attacker generating a plausible reflected radar signal is not specifically countered.",
+      "confidence": "high"
+    },
+    {
+      "id": "AS-13",
+      "text": "The device does not implement dedicated fault-injection/voltage-glitch resistance mechanisms (e.g. active glitch detection, voltage monitoring for security decisions, clock anomaly detection, fault-injection sensors, certified tamper-resistant hardware) beyond the standard protections of the selected MCU and PCB design. This is an acknowledged, currently out-of-scope design area for the first product version, not an oversight.",
+      "confidence": "high"
+    },
+    {
+      "id": "AS-14",
+      "text": "The firmware image stored on the external QSPI flash (C-6) is not encrypted at rest. An attacker with physical access to the QSPI flash can read the firmware image; firmware confidentiality is therefore limited to physical/procedural protections. This does not affect firmware integrity, which is protected separately by the signature and version checks enforced at update time (AS-3).",
+      "confidence": "high"
+    },
+    {
+      "id": "AS-15",
+      "text": "Calibration/configuration data (tank height, medium type, damping, output scaling) is stored in a dedicated area of internal MCU flash/NVM, with CRC integrity protection and versioning checked at startup (corrupted or incompatible data is detected before use, not silently applied).",
+      "confidence": "medium"
+    },
+    {
+      "id": "AS-16",
+      "text": "The event/diagnostic log is a local circular buffer in NVM (approx. 500-1000 recent events, oldest entries overwritten at capacity), storing timestamp/sequence, event type/severity, and device state; security-relevant events (login attempts, configuration changes, firmware updates, service-mode access) are logged where feasible. The log is CRC-protected against accidental corruption but is not a tamper-proof/audit-grade record. Clearing the log requires Maintenance/Service privilege and itself always creates a log entry (a clear action cannot itself go unrecorded). The log is exportable read-only via the Ethernet service interface and/or HART/Modbus diagnostics.",
+      "confidence": "medium"
+    },
+    {
+      "id": "AS-17",
+      "text": "The MCU's debug/programming interfaces (JTAG/SWD) are enabled during development and manufacturing but are intended to be disabled or access-protected (MCU readout protection, RDP) in production firmware before a unit ships. Recovering debug access in the field requires a controlled manufacturer service procedure (the Manufacturer-support role per AS-1), not open/unrestricted access. The exact readout protection level and the recovery/debug process itself are still open implementation decisions (see REQC006); the production device is not intended to expose unrestricted debug access.",
+      "confidence": "medium"
+    },
+    {
+      "id": "AS-18",
+      "text": "An independent hardware watchdog is assumed present. A firmware hang, crash, task deadlock, or other loss of application control is intended to be detected by the watchdog and cause a device reset; the analog output stage is intended to transition to the defined fail-safe fault current condition (per AS-4/AS-5) during the watchdog-triggered reset and restart sequence, rather than holding the last measured value indefinitely. The design objective is that a firmware failure produces a detectable device fault, not a potentially misleading stale measurement.",
+      "confidence": "medium"
+    },
+    {
+      "id": "AS-19",
+      "text": "The production bootloader is stored in a write-protected region of the MCU's internal flash; once the device leaves manufacturing/provisioning, the bootloader cannot be modified through the normal firmware-update mechanism. The bootloader verifies the authenticity and version of the application firmware before transferring execution to it; the firmware-signing verification key and the mechanisms protecting the bootloader/root of trust are provisioned during manufacturing. The bootloader is therefore part of the device's trusted computing base / root-of-trust chain, not protected merely by the application firmware's own signature check. This does not imply a full hardware secure-boot architecture: AS-9 remains valid (no hardware-enforced boot-time chain of trust is assumed). Bypass of this flash write-protection via debug access, fault injection, or a compromised manufacturing/provisioning process are separate considerations, not covered by this assumption.",
+      "confidence": "high"
+    }
+  ],
+  "system": [
+    {
+      "id": "AS-1",
+      "text": "The RL-100 implements a simple hierarchical role model (not enterprise RBAC), with no individual named user accounts: Operator (read-only access to measurements, status, basic diagnostics), Maintenance technician (parameterization, calibration, diagnostic-event acknowledgement), Service engineer (firmware updates, advanced diagnostics, communication settings, backup/restore), Manufacturer support (factory recovery, bootloader/service mode, security-related maintenance, manufacturing/RMA functions).",
+      "confidence": "high"
+    },
+    {
+      "id": "AS-2",
+      "text": "Role-specific credentials are alphanumeric codes up to 20 characters (shared per-role service codes), not certificates or per-user passwords.",
+      "confidence": "high"
+    },
+    {
+      "id": "AS-7",
+      "text": "HART (IF-2) configuration and parameterization writes require Maintenance-level authentication, consistent with the local HMI privilege model (AS-1); read access to measurement values and basic diagnostics is available without authentication. The exact authentication mechanism (password, PIN, service credential, or another method) has not yet been finalized.",
+      "confidence": "medium"
+    },
+    {
+      "id": "AS-8",
+      "text": "The Ethernet service interface (IF-4) is intended to use authenticated, encrypted sessions (TLS or an equivalent authenticated encrypted transport), protecting configuration data, credentials, diagnostics, and firmware-update traffic in transit. The specific protocol and certificate/key management architecture have not yet been defined; for the initial TRA, IF-4 is treated as an authenticated and encrypted service interface, with the cryptographic implementation as an open design item.",
+      "confidence": "medium"
+    },
+    {
+      "id": "AS-10",
+      "text": "Modbus RTU (IF-3) write access to operational configuration registers (range, damping, output behavior) is not protected by any device-level authentication mechanism. The intended protection model relies on the plant/control-system environment (physical access control, network segmentation, control-system access control) rather than the Modbus protocol itself. Calibration, firmware update, and security-critical configuration remain non-writable via Modbus.",
+      "confidence": "high"
+    },
+    {
+      "id": "AS-12",
+      "text": "The local HMI (IF-6) implements rate limiting for failed PIN attempts: a limited number of consecutive failed attempts (e.g. 5), increasing retry delay after repeated failures, and a temporary lockout after excessive failed attempts (no permanent device lock requiring factory recovery). Unlimited PIN attempts are not possible.",
+      "confidence": "high"
+    }
+  ],
+  "environment": [
+    {
+      "id": "AS-6",
+      "text": "The Modbus RTU/RS-485 interface (IF-3) is assumed to support multidrop operation: the RL-100 may share a bus segment with multiple other field devices connected to the same master. IF-3 should be modeled as a shared adjacent network segment where other devices on the bus cannot automatically be assumed to be trusted.",
+      "confidence": "medium"
+    }
+  ],
+  "operational": [],
+  "attacker": [
+    {
+      "id": "ATK-SLC-2",
+      "name": "Threat Actor 2: Simple Intentional Attacks",
+      "capability": 2,
+      "motivation": "Intentional attack using simple means",
+      "resources": "Low resources, general IT knowledge, low motivation",
+      "text": "SL-C 2 attacker profile managed by EmbedRisk."
+    }
+  ]
+}

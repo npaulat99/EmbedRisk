@@ -1,0 +1,501 @@
+{
+  "nodes": [
+    {
+      "id": "TB-1",
+      "label": "Device housing",
+      "type": "trust-boundary",
+      "layer": 1,
+      "parent": null,
+      "x": 200,
+      "y": 120,
+      "members": [
+        "N-DEV"
+      ]
+    },
+    {
+      "id": "N-DEV",
+      "label": "RL-100",
+      "type": "process",
+      "layer": 1,
+      "parent": null,
+      "componentRef": "DEV",
+      "x": 90,
+      "y": 230
+    },
+    {
+      "id": "N-EXT-CTRL",
+      "label": "Process control system (PLC/DCS)",
+      "type": "external-entity",
+      "layer": 1,
+      "parent": null,
+      "x": -459,
+      "y": -186
+    },
+    {
+      "id": "N-EXT-ENG",
+      "label": "Engineering/service laptop",
+      "type": "external-entity",
+      "layer": 1,
+      "parent": null,
+      "x": 139,
+      "y": -106
+    },
+    {
+      "id": "N-EXT-OPERATOR",
+      "label": "Local operator/technician",
+      "type": "external-entity",
+      "layer": 1,
+      "parent": null,
+      "x": 450,
+      "y": -110
+    },
+    {
+      "id": "N-EXT-MFG",
+      "label": "Manufacturer service / factory recovery",
+      "type": "external-entity",
+      "layer": 1,
+      "parent": null,
+      "x": 777,
+      "y": -125
+    },
+    {
+      "id": "N-C1",
+      "label": "Radar front-end & signal processing",
+      "type": "process",
+      "layer": 2,
+      "parent": "N-DEV",
+      "componentRef": "C-1",
+      "x": -164,
+      "y": 230
+    },
+    {
+      "id": "N-C2",
+      "label": "MCU (STM32H7)",
+      "type": "process",
+      "layer": 2,
+      "parent": "N-DEV",
+      "componentRef": "C-2",
+      "x": 148,
+      "y": 40
+    },
+    {
+      "id": "N-C4",
+      "label": "Local HMI",
+      "type": "process",
+      "layer": 2,
+      "parent": "N-DEV",
+      "componentRef": "C-4",
+      "x": 180,
+      "y": 317
+    },
+    {
+      "id": "N-C5",
+      "label": "Power management",
+      "type": "process",
+      "layer": 2,
+      "parent": "N-DEV",
+      "componentRef": "C-5",
+      "x": 454,
+      "y": 329
+    },
+    {
+      "id": "N-C6",
+      "label": "External QSPI flash",
+      "type": "store",
+      "layer": 2,
+      "parent": "N-DEV",
+      "componentRef": "C-6",
+      "x": 605,
+      "y": 253
+    },
+    {
+      "id": "N-C3",
+      "label": "Firmware / RTOS",
+      "type": "process",
+      "layer": 3,
+      "parent": "N-C2",
+      "componentRef": "C-3",
+      "x": 247,
+      "y": 59
+    },
+    {
+      "id": "TB-2",
+      "label": "MCU secure key storage",
+      "type": "trust-boundary",
+      "layer": 3,
+      "parent": "N-C2",
+      "x": 260,
+      "y": 40,
+      "members": [
+        "N-C7"
+      ]
+    },
+    {
+      "id": "N-C7",
+      "label": "Secure key storage",
+      "type": "store",
+      "layer": 3,
+      "parent": "N-C2",
+      "componentRef": "C-7",
+      "x": 286,
+      "y": 260
+    }
+  ],
+  "flows": [
+    {
+      "id": "F-1",
+      "label": "4-20 mA process value",
+      "from": "IF-1",
+      "to": "N-EXT-CTRL",
+      "crossesBoundary": "TB-1",
+      "sourceHandle": "s-l",
+      "targetHandle": "t-br"
+    },
+    {
+      "id": "F-2",
+      "label": "HART process value / diagnostics",
+      "from": "IF-2",
+      "to": "N-EXT-CTRL",
+      "crossesBoundary": "TB-1",
+      "sourceHandle": "s-l",
+      "targetHandle": "t-r"
+    },
+    {
+      "id": "F-3",
+      "label": "Modbus RTU process data / diagnostics",
+      "from": "IF-3",
+      "to": "N-EXT-CTRL",
+      "crossesBoundary": "TB-1",
+      "sourceHandle": "s-l",
+      "targetHandle": "t-tr"
+    },
+    {
+      "id": "F-4",
+      "label": "Commissioning / service access (Ethernet)",
+      "from": "N-EXT-ENG",
+      "to": "IF-4",
+      "crossesBoundary": "TB-1",
+      "sourceHandle": "s-b",
+      "targetHandle": "t-t"
+    },
+    {
+      "id": "F-5",
+      "label": "Commissioning / service access (USB-C)",
+      "from": "N-EXT-ENG",
+      "to": "IF-5",
+      "crossesBoundary": "TB-1",
+      "sourceHandle": "s-b",
+      "targetHandle": "t-t"
+    },
+    {
+      "id": "F-6",
+      "label": "Local HMI display (measurements, alarms, diagnostics)",
+      "from": "IF-6",
+      "to": "N-EXT-OPERATOR",
+      "crossesBoundary": "TB-1"
+    },
+    {
+      "id": "F-7",
+      "label": "Raw radar echo / digitized signal",
+      "from": "N-C1",
+      "to": "N-C2",
+      "crossesBoundary": null,
+      "sourceHandle": "s-r",
+      "targetHandle": "t-l"
+    },
+    {
+      "id": "F-8",
+      "label": "Firmware image / log / config storage",
+      "from": "N-C2",
+      "to": "N-C6",
+      "crossesBoundary": null,
+      "targetHandle": "t-br",
+      "sourceHandle": "s-tl"
+    },
+    {
+      "id": "F-9",
+      "label": "Measurement/status display",
+      "from": "N-C2",
+      "to": "N-C4",
+      "crossesBoundary": null
+    },
+    {
+      "id": "F-15",
+      "label": "PIN/button input relayed to firmware for authentication",
+      "from": "N-C4",
+      "to": "N-C2",
+      "crossesBoundary": null
+    },
+    {
+      "id": "F-10",
+      "label": "Power status / supply",
+      "from": "N-C5",
+      "to": "N-C2",
+      "crossesBoundary": null,
+      "sourceHandle": "s-tl",
+      "targetHandle": "t-br"
+    },
+    {
+      "id": "F-11",
+      "label": "Modbus configuration write (range, damping, output behavior)",
+      "from": "N-EXT-CTRL",
+      "to": "IF-3",
+      "crossesBoundary": "TB-1",
+      "sourceHandle": "s-tr",
+      "targetHandle": "t-l"
+    },
+    {
+      "id": "F-32",
+      "label": "HART Maintenance-level configuration write request",
+      "from": "N-EXT-CTRL",
+      "to": "IF-2",
+      "crossesBoundary": "TB-1",
+      "sourceHandle": "s-r",
+      "targetHandle": "t-l"
+    },
+    {
+      "id": "F-12",
+      "label": "PIN entry / parameter input",
+      "from": "N-EXT-OPERATOR",
+      "to": "IF-6",
+      "crossesBoundary": "TB-1"
+    },
+    {
+      "id": "F-13",
+      "label": "Key retrieval for firmware-signature verification / session authentication",
+      "from": "N-C3",
+      "to": "N-C7",
+      "crossesBoundary": "TB-2"
+    },
+    {
+      "id": "F-14",
+      "label": "Debug/recovery access (JTAG/SWD, controlled manufacturer service procedure only per AS-17)",
+      "from": "N-EXT-MFG",
+      "to": "IF-7",
+      "crossesBoundary": "TB-1",
+      "sourceHandle": "s-b",
+      "targetHandle": "t-t"
+    },
+    {
+      "id": "F-16",
+      "label": "Configuration parameters (range, damping, output scaling) applied to radar front-end",
+      "from": "N-C2",
+      "to": "N-C1",
+      "crossesBoundary": null,
+      "sourceHandle": "s-l",
+      "targetHandle": "t-r"
+    },
+    {
+      "id": "F-17",
+      "label": "Firmware image load at boot / log read for export",
+      "from": "N-C6",
+      "to": "N-C2",
+      "crossesBoundary": null,
+      "targetHandle": "t-tl",
+      "sourceHandle": "s-br"
+    },
+    {
+      "id": "F-20",
+      "label": "4-20 mA analog output driven by firmware",
+      "from": "N-C2",
+      "to": "IF-1",
+      "crossesBoundary": null,
+      "sourceHandle": "s-bl",
+      "targetHandle": "t-r"
+    },
+    {
+      "id": "F-21",
+      "label": "HART measurement and diagnostic data",
+      "from": "N-C2",
+      "to": "IF-2",
+      "crossesBoundary": null,
+      "sourceHandle": "s-bl",
+      "targetHandle": "t-r"
+    },
+    {
+      "id": "F-22",
+      "label": "HART Maintenance-level configuration write",
+      "from": "IF-2",
+      "to": "N-C2",
+      "crossesBoundary": null,
+      "sourceHandle": "s-r",
+      "targetHandle": "t-bl"
+    },
+    {
+      "id": "F-23",
+      "label": "Modbus RTU telemetry and diagnostics",
+      "from": "N-C2",
+      "to": "IF-3",
+      "crossesBoundary": null,
+      "sourceHandle": "s-bl",
+      "targetHandle": "t-r"
+    },
+    {
+      "id": "F-24",
+      "label": "Modbus RTU configuration write",
+      "from": "IF-3",
+      "to": "N-C2",
+      "crossesBoundary": null,
+      "sourceHandle": "s-r",
+      "targetHandle": "t-bl"
+    },
+    {
+      "id": "F-25",
+      "label": "Ethernet service session: commissioning, configuration, firmware update",
+      "from": "IF-4",
+      "to": "N-C2",
+      "crossesBoundary": null,
+      "sourceHandle": "s-bl"
+    },
+    {
+      "id": "F-26",
+      "label": "Ethernet service session: diagnostics and status",
+      "from": "N-C2",
+      "to": "IF-4",
+      "crossesBoundary": null,
+      "sourceHandle": "s-r",
+      "targetHandle": "t-bl"
+    },
+    {
+      "id": "F-27",
+      "label": "USB-C service session: commissioning, configuration backup/restore, firmware update",
+      "from": "IF-5",
+      "to": "N-C2",
+      "crossesBoundary": null,
+      "sourceHandle": "s-b",
+      "targetHandle": "t-tr"
+    },
+    {
+      "id": "F-28",
+      "label": "USB-C service session: diagnostics and status",
+      "from": "N-C2",
+      "to": "IF-5",
+      "crossesBoundary": null,
+      "sourceHandle": "s-tr",
+      "targetHandle": "t-b"
+    },
+    {
+      "id": "F-29",
+      "label": "Measurement and status rendered on local display",
+      "from": "N-C4",
+      "to": "IF-6",
+      "crossesBoundary": null
+    },
+    {
+      "id": "F-30",
+      "label": "Button/PIN input from local keypad",
+      "from": "IF-6",
+      "to": "N-C4",
+      "crossesBoundary": null
+    },
+    {
+      "id": "F-31",
+      "label": "JTAG/SWD debug read/write access",
+      "from": "IF-7",
+      "to": "N-C2",
+      "crossesBoundary": null,
+      "targetHandle": "t-br",
+      "sourceHandle": "s-l"
+    }
+  ],
+  "ifacePos": {
+    "N-DEV:IF-2": {
+      "x": -398,
+      "y": 43
+    },
+    "N-DEV:IF-1": {
+      "x": -324,
+      "y": -206
+    },
+    "N-DEV:IF-3": {
+      "x": -214,
+      "y": -326
+    },
+    "N-DEV:IF-4": {
+      "x": 121,
+      "y": -320
+    },
+    "N-DEV:IF-5": {
+      "x": 373,
+      "y": -215
+    },
+    "N-DEV:IF-6": {
+      "x": 162,
+      "y": 562
+    },
+    "N-DEV:IF-7": {
+      "x": 464,
+      "y": 64
+    },
+    "N-C2:IF-1": {
+      "x": -236,
+      "y": 282
+    },
+    "N-C2:IF-2": {
+      "x": -231,
+      "y": 140
+    },
+    "N-C2:IF-5": {
+      "x": 571,
+      "y": -236
+    },
+    "N-C2:IF-7": {
+      "x": 780,
+      "y": 54
+    },
+    "N-C2:IF-4": {
+      "x": 810,
+      "y": -139
+    },
+    "N-C2:IF-3": {
+      "x": -347,
+      "y": -7
+    }
+  },
+  "portPos": {
+    "N-DEV:N-EXT-CTRL": {
+      "x": -639,
+      "y": -302
+    },
+    "N-DEV:N-EXT-ENG": {
+      "x": 253,
+      "y": -462
+    },
+    "N-DEV:N-EXT-OPERATOR": {
+      "x": 182,
+      "y": 741
+    },
+    "N-DEV:N-EXT-MFG": {
+      "x": 535,
+      "y": -91
+    },
+    "N-C2:N-EXT-CTRL": {
+      "x": -756,
+      "y": 127
+    },
+    "N-C2:N-EXT-ENG": {
+      "x": 834,
+      "y": -350
+    },
+    "N-C2:N-C6": {
+      "x": -167,
+      "y": -250
+    },
+    "N-C2:N-C1": {
+      "x": -289,
+      "y": -107
+    },
+    "N-C2:N-C4": {
+      "x": 171,
+      "y": -286
+    },
+    "N-C2:N-C5": {
+      "x": 387,
+      "y": -287
+    },
+    "N-C2:N-C2": {
+      "x": 245,
+      "y": -34
+    }
+  }
+}

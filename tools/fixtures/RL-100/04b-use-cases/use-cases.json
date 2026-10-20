@@ -1,0 +1,68 @@
+{
+  "diagrams": [
+    {
+      "id": "UC1",
+      "name": "1",
+      "kind": "independent-dfd",
+      "entities": [],
+      "connections": [],
+      "groups": [],
+      "dfd": {
+        "nodes": [
+          {
+            "id": "SCN-DFD1",
+            "label": "Multi-process",
+            "type": "multiprocess",
+            "layer": 1,
+            "x": 40,
+            "y": 42
+          },
+          {
+            "id": "SCN-DFD2",
+            "label": "Store",
+            "type": "store",
+            "layer": 1,
+            "x": 503,
+            "y": 66
+          }
+        ],
+        "flows": [
+          {
+            "id": "SCN-FLOW1",
+            "from": "SCN-DFD1",
+            "to": "SCN-DFD2",
+            "label": "flow"
+          },
+          {
+            "id": "SCN-FLOW2",
+            "from": "SCN-DFD2",
+            "to": "SCN-DFD1",
+            "label": "Data"
+          }
+        ]
+      }
+    },
+    {
+      "id": "UC2",
+      "name": "Data flow 2",
+      "kind": "independent-dfd",
+      "entities": [],
+      "connections": [],
+      "groups": [],
+      "dfd": {
+        "nodes": [
+          {
+            "id": "SCN-DFD1",
+            "label": "External QSPI flash",
+            "type": "store",
+            "layer": 1,
+            "componentRef": "C-6",
+            "x": 40,
+            "y": 42
+          }
+        ],
+        "flows": []
+      }
+    }
+  ]
+}

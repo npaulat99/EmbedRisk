@@ -91,7 +91,8 @@ function createDocument(rel) {
 }
 
 /* ---------- Bundling and HTML capture ---------- */
-async function loadModule(file, captured) {
+// Bundles a src/*.ts module with esbuild and evaluates it with `vscodeStub` as its `vscode` import.
+async function bundleModule(file, vscodeStub) {
   const result = await esbuild.build({
     entryPoints: [file],
     bundle: true,
@@ -103,10 +104,13 @@ async function loadModule(file, captured) {
   });
   const code = result.outputFiles[0].text;
   const mod = { exports: {} };
-  const stub = createVscodeStub(captured);
-  const req = (id) => (id === "vscode" ? stub : require(id));
+  const req = (id) => (id === "vscode" ? vscodeStub : require(id));
   new Function("require", "module", "exports", "__filename", "__dirname", code)(req, mod, mod.exports, file, path.dirname(file));
   return mod.exports;
+}
+
+function loadModule(file, captured) {
+  return bundleModule(file, createVscodeStub(captured));
 }
 
 // Invokes every exported webview entry point and returns the captured HTML documents.
@@ -231,7 +235,11 @@ async function main() {
   console.log(`All ${scriptCount} inline webview scripts in ${files.length} modules parsed successfully.`);
 }
 
-main().catch((err) => {
-  console.error(err && err.stack ? err.stack : err);
-  process.exit(1);
-});
+module.exports = { Uri, bundleModule };
+
+if (require.main === module) {
+  main().catch((err) => {
+    console.error(err && err.stack ? err.stack : err);
+    process.exit(1);
+  });
+}

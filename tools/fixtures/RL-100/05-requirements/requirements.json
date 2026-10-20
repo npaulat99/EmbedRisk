@@ -1,0 +1,158 @@
+{
+  "requirements": [
+    {
+      "id": "REQC001",
+      "text": "The user guide must feature the plant owner's responsibility to secure the perimeter.",
+      "derivedFromThreat": [
+        "T-7",
+        "T-2",
+        "T-17",
+        "T-1"
+      ],
+      "satisfiedByCM": [
+        "CM-10"
+      ]
+    },
+    {
+      "id": "REQC002",
+      "text": "Access protection needs brute-force-protection",
+      "derivedFromThreat": [
+        "T-14"
+      ],
+      "satisfiedByCM": [
+        "CM-4"
+      ]
+    },
+    {
+      "id": "REQC003",
+      "text": "HART (IF-2) Maintenance-level write authentication shall use a credential mechanism at least as strong as the local HMI's (AS-2 role-credential model) and shall implement rate-limiting/lockout on repeated failed attempts equivalent to the local HMI's protection (AS-12), so the still-open choice of exact HART authentication mechanism cannot end up weaker than the already-decided HMI baseline.",
+      "standardRef": "IEC 62443-4-2 CR 1.1 / CR 1.11",
+      "derivedFromThreat": [
+        "T-5"
+      ],
+      "satisfiedByCM": [
+        "CM-1"
+      ]
+    },
+    {
+      "id": "REQC004",
+      "text": "The Ethernet service interface (IF-4) shall use TLS 1.2 or higher (or an equivalent authenticated, encrypted transport), with the device authenticating to the client via a device-unique certificate or key provisioned at manufacturing, validated using standard, non-deprecated cipher suites, and with certificate/hostname validation logic covered by dedicated test cases before release, closing AS-8's still-open protocol/cert-management choice to a concrete, testable minimum bar.",
+      "standardRef": "IEC 62443-4-2 CR 4.1 / CR 4.3",
+      "derivedFromThreat": [
+        "T-21"
+      ],
+      "satisfiedByCM": [
+        "CM-6"
+      ]
+    },
+    {
+      "id": "REQC005",
+      "text": "Protocol parsers for HART (IF-2), Modbus RTU (IF-3), and the Ethernet service interface (IF-4) shall be exercised with fuzz/malformed-input testing as part of the release process, with crashes, hangs, or undefined behavior on malformed input treated as release-blocking defects.",
+      "standardRef": "IEC 62443-4-1 SVV-1 / SVV-3",
+      "derivedFromThreat": [
+        "T-19"
+      ],
+      "satisfiedByCM": [
+        "CM-5",
+        "CM-8"
+      ]
+    },
+    {
+      "id": "REQC006",
+      "text": "MCU debug/programming interfaces (JTAG/SWD, IF-7) shall be disabled or locked (readout protection enabled) in production firmware before a unit ships, per AS-17; if a factory-debug/recovery state is needed, it shall require the same Manufacturer-support-level authorization as bootloader/service-mode access (AS-1) and shall be irreversibly re-locked (or re-verified locked) before the unit leaves manufacturer control. The specific readout protection level and the recovery/debug procedure itself shall be documented and tested.",
+      "standardRef": "IEC 62443-4-2 CR 3.11 / CR 7.6",
+      "derivedFromThreat": [
+        "T-11",
+        "T-12",
+        "T-13"
+      ],
+      "satisfiedByCM": [
+        "CM-9"
+      ]
+    },
+    {
+      "id": "REQC007",
+      "text": "Firmware code-signing keys shall be generated, stored, and used under a documented key-management policy (e.g. HSM-backed, access restricted to named roles, dual control for key use, logged signing events), so that AS-3's signature-check protection is not undermined by weak protection of the signing key itself.",
+      "standardRef": "IEC 62443-4-1 SM-9",
+      "derivedFromThreat": [
+        "T-22"
+      ],
+      "satisfiedByCM": [
+        "CM-14"
+      ]
+    },
+    {
+      "id": "REQC008",
+      "text": "A vulnerability handling and patch-management process shall be maintained for the RL-100 product line (intake of reports/CVEs affecting the platform or third-party components, triage, target remediation timelines by severity, and customer notification), tracked per-defect in the 09-defects register.",
+      "standardRef": "IEC 62443-4-1 DM-1 / SUM-1",
+      "derivedFromThreat": [],
+      "satisfiedByCM": []
+    },
+    {
+      "id": "REQC009",
+      "text": "A software bill of materials (SBOM) shall be maintained for third-party/OSS components used in the firmware (component, version, supplier, license, CPE/purl identifier), kept current across releases, to support the vulnerability-handling process (REQC008) with automated CVE matching.",
+      "standardRef": "IEC 62443-4-1 SM-6",
+      "derivedFromThreat": [],
+      "satisfiedByCM": []
+    },
+    {
+      "id": "REQC010",
+      "text": "Modbus RTU (IF-3) writes to operational configuration registers shall require a local confirmation step (e.g. HMI acknowledgement) or an explicit write-protect toggle before being applied, so a device sharing the RS-485 segment cannot silently change configuration without on-site interaction.",
+      "standardRef": "IEC 62443-4-2 CR 3.1 / CR 7.6",
+      "derivedFromThreat": [
+        "T-18"
+      ],
+      "satisfiedByCM": [
+        "CM-2"
+      ],
+      "fromCountermeasure": true
+    },
+    {
+      "id": "REQC011",
+      "text": "Firmware update images shall be verified via cryptographic signature and monotonic version/anti-rollback check before being applied, consistent with the already-implemented update-time verification (AS-3).",
+      "standardRef": "IEC 62443-4-2 CR 3.4",
+      "derivedFromThreat": [
+        "T-13"
+      ],
+      "satisfiedByCM": [
+        "CM-3"
+      ],
+      "fromCountermeasure": true
+    },
+    {
+      "id": "REQC012",
+      "text": "All cryptographic operations (firmware-signature verification, TLS on IF-4, key handling) shall use a validated, actively-maintained cryptographic library (e.g. mbedTLS, wolfSSL, or an equivalent vetted implementation) rather than a custom/in-house cryptographic primitive, including constant-time implementations for secret-dependent comparisons and operations, so that implementation-level weaknesses (timing side-channels, faulty signature-verification logic, weak random-number generation) are avoided by library selection and configuration rather than case-by-case detection.",
+      "standardRef": "IEC 62443-4-2 CR 4.3",
+      "derivedFromThreat": [
+        "T-13",
+        "T-21"
+      ],
+      "satisfiedByCM": [
+        "CM-11"
+      ]
+    },
+    {
+      "id": "REQC013",
+      "text": "Protocol-facing services on HART (IF-2), Modbus RTU (IF-3), and the Ethernet service interface (IF-4) shall enforce resource limits (e.g. maximum concurrent connections, request-rate limiting, bounded per-connection buffer/state allocation) so that a high volume of connection attempts or requests cannot exhaust firmware resources and deny service to legitimate use. This control shall be exercised with dedicated load/resource-exhaustion testing as part of the release process, with resource exhaustion, hangs, or crashes under sustained load treated as release-blocking defects.",
+      "standardRef": "IEC 62443-4-2 CR 7.1 / CR 7.2; IEC 62443-4-1 SVV-1",
+      "derivedFromThreat": [
+        "T-19"
+      ],
+      "satisfiedByCM": [
+        "CM-12"
+      ]
+    },
+    {
+      "id": "REQC014",
+      "text": "Authenticated write-capable protocol interfaces (HART IF-2 per REQC003, and any future networked configuration interface) shall implement replay protection (e.g. a nonce or timestamp bound to each authenticated write) so that a captured legitimate write command cannot be replayed later to reproduce its effect.",
+      "standardRef": "IEC 62443-4-2 CR 3.1 RE(1)",
+      "derivedFromThreat": [
+        "T-5",
+        "T-18"
+      ],
+      "satisfiedByCM": [
+        "CM-13"
+      ]
+    }
+  ]
+}

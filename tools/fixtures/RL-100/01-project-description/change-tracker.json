@@ -1,0 +1,40 @@
+{
+  "currentVersion": "v1.0",
+  "entries": [
+    {
+      "version": "v1.0",
+      "reason": "initial",
+      "assessedAt": "2026-08-21",
+      "assessors": [
+        "np"
+      ],
+      "summary": "Initial RL-100 TRA.",
+      "changedSteps": [
+        "project",
+        "assumptions",
+        "system",
+        "dfd",
+        "useCases",
+        "threats",
+        "requirements",
+        "countermeasures",
+        "attackTrees",
+        "defects"
+      ],
+      "changedFiles": [
+        "01-project-description/project.json",
+        "02-assumptions/assumptions.json",
+        "03-system-assets/system.json",
+        "04-dfd/dfd.json",
+        "04b-use-cases/use-cases.json",
+        "06-threats/threats.json",
+        "05-requirements/requirements.json",
+        "08-countermeasures/countermeasures.json",
+        "07-attack-trees/attack-trees.json",
+        "09-defects/defects.json"
+      ],
+      "hasChanges": true,
+      "snapshotPath": "10-tra-versions/v1.0"
+    }
+  ]
+}

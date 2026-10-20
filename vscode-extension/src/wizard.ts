@@ -478,7 +478,7 @@ function shell(cssUri: vscode.Uri, riskUri: vscode.Uri, logoUri: vscode.Uri, csp
         <details style="margin-top:8px"><summary class="hint" style="cursor:pointer;list-style:none;padding:3px 0">&#9654; Software Bill of Materials (SBOM)</summary>
           <div class="grid3" style="margin-top:6px">
             <div class="field"><label>SBOM source</label>
-              <select class="inp" id="p-sbom-mode" onchange="document.getElementById('p-sbom-fmt').style.display=this.value==='in-tool'?'':'none';document.getElementById('p-sbom-url').style.display=this.value!=='in-tool'?'':'none';">
+              <select class="inp" id="p-sbom-mode">
                 <option value="in-tool">In-tool</option>
                 <option value="external">External</option>
               </select></div>
@@ -596,11 +596,18 @@ function redo(){if(!redoStack.length)return;undoStack.push(snapshot());applyStat
 function clearHistory(){undoStack=[];redoStack=[];histKey='';histTime=0;updUndoBtns();}
 var autoSaveTimer=null;
 function scheduleAutoSave(){clearTimeout(autoSaveTimer);var st=$('#savingStatus');if(st){st.textContent='Saving…';st.style.color='var(--text-faint)';}autoSaveTimer=setTimeout(doAutoSave,1500);}
-function doAutoSave(){
+function readSbom(){
   var sbomMode=($('#p-sbom-mode')||{}).value||'in-tool';
   var sbomObj={mode:sbomMode,format:($('#p-sbom-format')||{}).value||'cyclonedx'};
   if(sbomMode!=='in-tool')sbomObj.url=($('#p-sbom-url-inp')||{}).value||'';
-  var proj=Object.assign({},project,{sbom:sbomObj});
+  return sbomObj;
+}
+function showSbomFields(sbomMode){
+  var fmtEl=$('#p-sbom-fmt');if(fmtEl)fmtEl.style.display=sbomMode==='in-tool'?'':'none';
+  var urlEl=$('#p-sbom-url');if(urlEl)urlEl.style.display=sbomMode!=='in-tool'?'':'none';
+}
+function doAutoSave(){
+  var proj=Object.assign({},project,{sbom:readSbom()});
   vs.postMessage({cmd:'autoSave',data:{project:proj,threats:threats,cms:cms,assumptions:assumptions,system:system,requirements:requirements}});
 }
 function pill(score,band){return '<span class="pill '+R.bandClass(band.name)+'">'+score+' · '+band.name+'</span>';}
@@ -652,9 +659,8 @@ function renderProject(p){
   var ucNote=$('#p-uc-note'); if(ucNote) ucNote.style.display=project.useCaseNoticePending?'block':'none';
   var sbom=project.sbom||{},sbomMode=sbom.mode||'in-tool';
   var mSel=$('#p-sbom-mode');if(mSel)mSel.value=sbomMode;
-  var fmtEl=$('#p-sbom-fmt');if(fmtEl)fmtEl.style.display=sbomMode==='in-tool'?'':'none';
   var fmtSel=$('#p-sbom-format');if(fmtSel)fmtSel.value=sbom.format||'cyclonedx';
-  var urlEl=$('#p-sbom-url');if(urlEl)urlEl.style.display=sbomMode!=='in-tool'?'':'none';
+  showSbomFields(sbomMode);
   var urlInp=$('#p-sbom-url-inp');if(urlInp)urlInp.value=sbom.url||'';
 }
 function calcBlock(dims,fac,cv,dAttr,dimAttr,facAttr,cvssAttr,seedAct){
@@ -1064,6 +1070,7 @@ document.addEventListener('input',function(e){
   if(t.id==='p-mode'){project.mode=t.value;return;}
   if(t.id==='p-bnd'){project.boundary=t.value;return;}
   if(t.id==='p-uc-inc'){project.includeUseCases=!!t.checked;return;}
+  if(t.id==='p-sbom-mode'||t.id==='p-sbom-format'||t.id==='p-sbom-url-inp'){project.sbom=readSbom();showSbomFields(project.sbom.mode);return;}
   if(t.dataset.i!==undefined&&t.dataset.k){var i=+t.dataset.i,k=t.dataset.k;
     if(k==='likelihood'||k==='impact'){threats[i][k]=Math.max(1,Math.min(5,+t.value||1));var el=document.getElementById('tp-'+i);if(el)el.innerHTML=riskCell(threats[i]);}
     else if(k==='status'){threats[i].status=t.value;var cell=t.closest('td');var bd=cell&&cell.querySelector('.badge');if(bd){bd.className='badge st-'+t.value;bd.textContent=statusLabel(t.value);}}

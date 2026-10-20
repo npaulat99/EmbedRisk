@@ -1,0 +1,636 @@
+// Runtime smoke test for every VS Code extension webview (no VS Code needed).
+// Each webview module in vscode-extension/src is bundled with esbuild (see test-webviews.js) and run against a
+// stubbed `vscode` API whose workspace file system reads the real webapp/projects/RL-100 example project (writes
+// stay in memory). The generated HTML is loaded into jsdom with scripts enabled, external media/*.js models are
+// inlined from vscode-extension/media, and acquireVsCodeApi() is wired to the real extension-host message handler,
+// so the host <-> webview round trip (ready -> load/init -> save) runs exactly as in VS Code. The UI is then
+// exercised (wizard rail, tabs and add buttons; editor node selection and documented keyboard shortcuts).
+// Any uncaught exception, unhandled rejection, console.error, host handler failure, invalid saved JSON or
+// CSP-blocked inline handler fails the run with the webview name, error and stack.
+// Run: node tools/test-webviews-runtime.js   (needs `npm install` in vscode-extension for esbuild + jsdom)
+const assert = require("node:assert");
+const fs = require("node:fs");
+const path = require("node:path");
+const util = require("node:util");
+const { Uri, bundleModule } = require("./test-webviews.js");
+
+const root = path.resolve(__dirname, "..");
+const extDir = path.join(root, "vscode-extension");
+const srcDir = path.join(extDir, "src");
+const mediaDir = path.join(extDir, "media");
+// Committed copy of webapp/projects/RL-100 (project folders are gitignored).
+const projectDir = path.join(root, "tools/fixtures/RL-100");
+const { JSDOM, VirtualConsole } = require(path.join(extDir, "node_modules/jsdom"));
+
+// Failures that are known and tracked instead of fixed. Each entry needs a TODO explaining why it is not fixed
+// yet; matching failures are reported loudly but do not fail the run. An entry that no longer matches fails the
+// run so it gets removed.
+const KNOWN_FAILURES = [
+  // { webview: "wizard", match: /some message/, todo: "TODO(EXT-xxx): why this is not fixed yet" },
+];
+
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const errText = (e) => (e && e.stack ? e.stack : typeof e === "object" ? util.inspect(e, { depth: 4 }) : String(e));
+
+let current = null; // harness of the webview under test, for process-level unhandled rejections
+process.on("unhandledRejection", (err) => {
+  if (current) current.fail("unhandled promise rejection: " + errText(err));
+  else { console.error("unhandled promise rejection outside a webview test: " + errText(err)); process.exitCode = 1; }
+});
+
+/* ---------- Harness: stubbed extension host + jsdom webview ---------- */
+class Harness {
+  constructor(name) {
+    this.name = name;
+    this.failures = [];
+    this.overlay = new Map();   // fsPath -> text written by the host (never touches disk)
+    this.writes = [];           // { path, text } for every host write / workspace edit
+    this.toWebview = [];        // messages posted by the host
+    this.toHost = [];           // messages posted by the webview
+    this.commands = [];         // vscode.commands.executeCommand ids
+    this.pending = new Set();
+    this.outbox = [];           // host messages posted before the DOM exists
+    this.html = undefined;
+    this.hostHandler = null;
+    this.dom = null;
+  }
+
+  fail(msg) { this.failures.push(msg); }
+
+  track(promise) {
+    const p = Promise.resolve(promise).finally(() => this.pending.delete(p));
+    this.pending.add(p);
+    return p;
+  }
+
+  readText(p) { return this.overlay.has(p) ? this.overlay.get(p) : fs.readFileSync(p, "utf8"); }
+
+  recordWrite(p, text) {
+    try { JSON.parse(text); } catch (err) { this.fail(`host wrote invalid JSON to ${path.relative(root, p)}: ${err.message}`); }
+    this.overlay.set(p, text);
+    this.writes.push({ path: p, text });
+  }
+
+  vscodeStub() {
+    const h = this;
+    const disposable = () => ({ dispose() { } });
+    return {
+      Uri,
+      ViewColumn: { One: 1, Two: 2, Beside: -2, Active: -1 },
+      Range: class Range { constructor(...a) { this.args = a; } },
+      WorkspaceEdit: class WorkspaceEdit {
+        constructor() { this.ops = []; }
+        replace(uri, range, text) { this.ops.push({ uri, text }); }
+      },
+      EventEmitter: class EventEmitter { constructor() { this.event = disposable; } fire() { } dispose() { } },
+      commands: {
+        executeCommand: async (id) => { h.commands.push(id); return undefined; },
+        registerCommand: disposable,
+      },
+      window: {
+        activeTextEditor: undefined,
+        createWebviewPanel: () => h.createPanel(),
+        showInformationMessage: async () => undefined,
+        showWarningMessage: async (msg) => { h.fail("host showed warning: " + msg); return undefined; },
+        showErrorMessage: async (msg) => { h.fail("host showed error: " + msg); return undefined; },
+        showTextDocument: async () => undefined,
+      },
+      workspace: {
+        findFiles: async (glob) => {
+          const g = String(glob);
+          if (g.includes("project.json")) return [Uri.file(path.join(projectDir, "01-project-description/project.json"))];
+          if (g.includes("knowledge-base")) {
+            const kbDir = path.join(root, "webapp/.assets/knowledge-base");
+            return fs.readdirSync(kbDir).filter((f) => f.endsWith(".json")).map((f) => Uri.file(path.join(kbDir, f)));
+          }
+          return [];
+        },
+        fs: {
+          readFile: async (u) => Buffer.from(h.readText(u.fsPath)),
+          stat: async () => { throw new Error("ENOENT (test stub)"); }, // forces the hosted draw.io URL (never fetched)
+          writeFile: async (u, data) => h.recordWrite(u.fsPath, Buffer.from(data).toString("utf8")),
+          createDirectory: async () => { },
+        },
+        onDidChangeTextDocument: disposable,
+        applyEdit: async (edit) => { edit.ops.forEach((op) => h.recordWrite(op.uri.fsPath, op.text)); return true; },
+        openTextDocument: async () => ({}),
+      },
+    };
+  }
+
+  createPanel() {
+    const h = this;
+    const webview = {
+      options: {},
+      cspSource: "vscode-webview://test",
+      asWebviewUri: (u) => new Uri(u.path),
+      postMessage: (msg) => h.track(h.deliverToWebview(msg)),
+      onDidReceiveMessage: (handler) => { h.hostHandler = handler; return { dispose() { } }; },
+    };
+    Object.defineProperty(webview, "html", { get: () => h.html, set: (v) => { h.html = v; } });
+    return {
+      webview,
+      visible: true,
+      active: true,
+      onDidDispose: () => ({ dispose() { } }),
+      onDidChangeViewState: () => ({ dispose() { } }),
+      reveal() { },
+      dispose() { h.disposed = true; },
+    };
+  }
+
+  createDocument(rel) {
+    const h = this;
+    const p = path.join(projectDir, rel);
+    return {
+      uri: Uri.file(p),
+      get lineCount() { return h.readText(p).split("\n").length; },
+      getText: () => h.readText(p),
+      save: async () => true,
+    };
+  }
+
+  async deliverToWebview(msg) {
+    this.toWebview.push(msg);
+    if (!this.dom) { this.outbox.push(msg); return true; }
+    await new Promise((r) => setImmediate(r));
+    const win = this.dom.window;
+    // Structured-clone into the webview realm, like VS Code does.
+    win.dispatchEvent(new win.MessageEvent("message", { data: win.JSON.parse(JSON.stringify(msg)) }));
+    return true;
+  }
+
+  deliverToHost(msg) {
+    const clone = JSON.parse(JSON.stringify(msg));
+    this.toHost.push(clone);
+    this.track((async () => {
+      await new Promise((r) => setImmediate(r));
+      if (!this.hostHandler) { this.fail("webview posted a message but no host handler is registered: " + JSON.stringify(clone)); return; }
+      try { await this.hostHandler(clone); } catch (err) { this.fail(`host handler threw for ${JSON.stringify(clone).slice(0, 80)}: ${errText(err)}`); }
+    })());
+  }
+
+  /** Loads the captured webview HTML into jsdom and runs its scripts. */
+  openDom() {
+    assert.ok(typeof this.html === "string", `${this.name}: no webview HTML was generated`);
+    const html = inlineMediaScripts(this.html, (msg) => this.fail(msg));
+    checkCsp(html, (msg) => this.fail(msg));
+    const h = this;
+    const virtualConsole = new VirtualConsole();
+    virtualConsole.on("error", (...args) => h.fail("console.error: " + args.map(errText).join(" ")));
+    virtualConsole.on("jsdomError", (err) => {
+      if (err && err.type === "css-parsing") return; // jsdom's CSS parser lags browsers; not a webview fault
+      h.fail("jsdom error: " + errText(err && err.cause ? err.cause : err));
+    });
+    this.dom = new JSDOM(html, {
+      runScripts: "dangerously",
+      pretendToBeVisual: true,
+      url: "https://webview.test/index.html",
+      virtualConsole,
+      beforeParse(window) {
+        let acquired = false, state;
+        window.acquireVsCodeApi = () => {
+          if (acquired) throw new Error("acquireVsCodeApi() may only be called once per webview");
+          acquired = true;
+          return { postMessage: (m) => h.deliverToHost(m), getState: () => state, setState: (s) => { state = s; } };
+        };
+        // Present in VS Code's Chromium webviews but not implemented by jsdom.
+        window.Element.prototype.scrollIntoView = function () { };
+        window.addEventListener("error", (e) => {
+          h.fail("uncaught exception: " + errText(e.error || e.message));
+          e.preventDefault(); // already reported; keep jsdom from reporting it a second time
+        });
+      },
+    });
+    const queued = this.outbox.splice(0);
+    queued.forEach((m) => { this.toWebview.pop(); this.track(this.deliverToWebview(m)); });
+    return this.dom;
+  }
+
+  /** Waits until all host <-> webview message traffic and host handlers have finished. */
+  async settle(extraMs = 0) {
+    if (extraMs) await sleep(extraMs);
+    for (let idle = 0; idle < 3;) {
+      await sleep(5);
+      if (this.pending.size) { idle = 0; await Promise.allSettled([...this.pending]); } else idle++;
+    }
+  }
+
+  get document() { return this.dom.window.document; }
+  $(sel) { return this.document.querySelector(sel); }
+  $$(sel) { return [...this.document.querySelectorAll(sel)]; }
+
+  must(sel) {
+    const el = this.$(sel);
+    assert.ok(el, `${this.name}: element not found: ${sel}`);
+    return el;
+  }
+
+  click(elOrSel) {
+    const el = typeof elOrSel === "string" ? this.must(elOrSel) : elOrSel;
+    const win = this.dom.window;
+    el.dispatchEvent(new win.MouseEvent("click", { bubbles: true, cancelable: true }));
+  }
+
+  mouse(type, el) {
+    const win = this.dom.window;
+    el.dispatchEvent(new win.MouseEvent(type, { bubbles: true, cancelable: true, clientX: 10, clientY: 10 }));
+  }
+
+  key(key, opts = {}) {
+    const win = this.dom.window;
+    const target = opts.target || this.document.body;
+    target.dispatchEvent(new win.KeyboardEvent("keydown", { key, bubbles: true, cancelable: true, ...opts }));
+  }
+
+  setValue(elOrSel, value) {
+    const el = typeof elOrSel === "string" ? this.must(elOrSel) : elOrSel;
+    const win = this.dom.window;
+    el.value = value;
+    el.dispatchEvent(new win.Event("input", { bubbles: true }));
+    el.dispatchEvent(new win.Event("change", { bubbles: true }));
+  }
+
+  lastToHost(pred) { return [...this.toHost].reverse().find(pred); }
+
+  close() {
+    if (this.dom) this.dom.window.close();
+  }
+}
+
+/* ---------- HTML preparation ---------- */
+// Replaces <script src=".../media/<file>.js"> by the real file from vscode-extension/media (jsdom loads no resources).
+function inlineMediaScripts(html, fail) {
+  return html.replace(/<script\b([^>]*?)\bsrc\s*=\s*"([^"]*)"([^>]*)>\s*<\/script>/gi, (whole, pre, src, post) => {
+    const m = /\/media\/([A-Za-z0-9_.-]+\.js)$/.exec(src);
+    const file = m && path.join(mediaDir, m[1]);
+    if (!file || !fs.existsSync(file)) { fail(`external script not found in vscode-extension/media: ${src}`); return whole; }
+    const code = fs.readFileSync(file, "utf8");
+    if (/<\/script/i.test(code)) { fail(`${m[1]} contains "</script" and cannot be inlined`); return whole; }
+    return `<script${pre}${post}>${code}</script>`;
+  });
+}
+
+// VS Code enforces the webview CSP; jsdom does not. With a nonce-only script-src, inline event handler attributes
+// (onclick=...) and scripts without the nonce are blocked, so a feature can work here but be dead in VS Code.
+function checkCsp(html, fail) {
+  const meta = /<meta[^>]+http-equiv="Content-Security-Policy"[^>]+content="([^"]*)"/i.exec(html);
+  if (!meta) return;
+  const scriptSrc = (/(?:^|;)\s*script-src\s+([^;]*)/.exec(meta[1]) || [])[1] || "";
+  if (/'unsafe-inline'/.test(scriptSrc)) return;
+  const nonce = (/'nonce-([^']+)'/.exec(scriptSrc) || [])[1];
+  const re = /<script\b([^>]*)>/gi;
+  let m;
+  while ((m = re.exec(html))) {
+    const tagNonce = (/\bnonce\s*=\s*"([^"]*)"/.exec(m[1]) || [])[1];
+    if (!nonce || tagNonce !== nonce) fail(`<script${m[1]}> is blocked by the CSP (missing/mismatched nonce)`);
+  }
+  const handler = /<[a-z][^>]*\s(on[a-z]+)\s*=/i.exec(html.replace(/<script\b[\s\S]*?<\/script>/gi, ""));
+  if (handler) fail(`inline event handler attribute "${handler[1]}" is blocked by the CSP (script-src without 'unsafe-inline')`);
+}
+
+// Inline handlers can also be created later via innerHTML; scan the live DOM.
+function checkLiveDomHandlers(h) {
+  const meta = h.$('meta[http-equiv="Content-Security-Policy"]');
+  if (!meta || /script-src[^;]*'unsafe-inline'/.test(meta.getAttribute("content"))) return;
+  for (const el of h.$$("*")) {
+    for (const attr of el.attributes) {
+      if (/^on/i.test(attr.name)) h.fail(`<${el.tagName.toLowerCase()} ${attr.name}=...> rendered at runtime is blocked by the CSP`);
+    }
+  }
+}
+
+/* ---------- Shared helpers ---------- */
+const ctx = {
+  extensionUri: Uri.file(extDir),
+  globalStorageUri: Uri.file(path.join(extDir, ".nonexistent-global-storage")),
+  subscriptions: [],
+};
+
+async function load(h, file) {
+  return bundleModule(path.join(srcDir, file), h.vscodeStub());
+}
+
+function readProjectJson(rel) {
+  return JSON.parse(fs.readFileSync(path.join(projectDir, rel), "utf8"));
+}
+
+function lastWriteJson(h, rel) {
+  const p = path.join(projectDir, rel);
+  const w = [...h.writes].reverse().find((x) => x.path === p);
+  return w ? JSON.parse(w.text) : undefined;
+}
+
+/* ---------- Scenarios ---------- */
+async function wizard(h) {
+  const mod = await load(h, "wizard.ts");
+  await mod.openWizard(ctx);
+  h.openDom();
+  await h.settle();
+
+  const init = h.toWebview.find((m) => m.cmd === "init");
+  assert.ok(init, "host did not answer 'ready' with 'init'");
+  const rl = readProjectJson("01-project-description/project.json");
+  assert.strictEqual(h.must("#p-name").value, rl.device.name, "project name not rendered from init payload");
+
+  // Every step in the rail (scroll targets and host commands).
+  const steps = h.$$("#rail .stepitem").length;
+  assert.ok(steps >= 10, `expected at least 10 rail steps, found ${steps}`);
+  for (let i = 0; i < steps; i++) { h.click(h.$$("#rail .stepitem")[i]); await h.settle(); }
+  for (const id of ["vscode.openWith", "embedrisk.newAttackTree", "embedrisk.report", "embedrisk.kbBrowse"]) {
+    assert.ok(h.commands.includes(id), `rail click did not reach host command ${id} (got ${h.commands.join(", ")})`);
+  }
+
+  // Assumption tabs: open each and add one assumption per category.
+  const prefixes = { device: "AD-", system: "SYSA-", environment: "AE-", operational: "AO-" };
+  const asmTabs = h.$$("[data-asmtab]").map((b) => b.dataset.asmtab);
+  assert.deepStrictEqual([...asmTabs].sort(), Object.keys(prefixes).sort(), "unexpected assumption tabs");
+  for (const tab of asmTabs) {
+    h.click(`[data-asmtab="${tab}"]`);
+    assert.ok(h.must(`[data-asmtab="${tab}"]`).classList.contains("active"), `assumption tab ${tab} not activated`);
+    h.click(`[data-act="addAsm"][data-asm="${tab}"]`);
+  }
+
+  // System tabs: open each and click its add button.
+  const sysAdd = { components: "addComp", interfaces: "addIf", boundaries: "addTb", assets: "addAs" };
+  const sysTabs = h.$$("[data-systab]").map((b) => b.dataset.systab);
+  assert.deepStrictEqual([...sysTabs].sort(), Object.keys(sysAdd).sort(), "unexpected system tabs");
+  for (const tab of sysTabs) {
+    h.click(`[data-systab="${tab}"]`);
+    assert.ok(h.must(`[data-systab="${tab}"]`).classList.contains("active"), `system tab ${tab} not activated`);
+    h.click(`[data-act="${sysAdd[tab]}"]`);
+  }
+
+  h.click('[data-act="addReq"]');
+  h.click('[data-act="addT"]');
+  h.click('[data-act="addC"]');
+
+  // Edit a field, toggle a STRIDE chip, switch the SBOM source, then undo/redo via the documented shortcuts.
+  h.setValue("#p-name", "RL-100 runtime test");
+  h.click(h.must('#threats-body [data-role="stride"]'));
+  h.setValue("#p-sbom-mode", "external");
+  assert.notStrictEqual(h.must("#p-sbom-url").style.display, "none", "SBOM URL field not shown for external SBOM source");
+  assert.strictEqual(h.must("#p-sbom-fmt").style.display, "none", "SBOM format field not hidden for external SBOM source");
+  assert.ok(!h.must("#undoBtn").disabled, "undo not enabled after edits");
+  h.key("z", { ctrlKey: true });
+  h.key("y", { ctrlKey: true });
+  h.key("z", { ctrlKey: true, shiftKey: true });
+
+  // Debounced auto-save (1.5 s) round trip through the real host handler.
+  await h.settle(1700);
+  const save = h.lastToHost((m) => m.cmd === "autoSave");
+  assert.ok(save, "wizard never posted autoSave");
+  assert.ok(h.toWebview.some((m) => m.cmd === "saved"), "host did not confirm the auto-save");
+  const errs = h.toWebview.filter((m) => m.cmd === "err");
+  assert.deepStrictEqual(errs, [], "host reported errors: " + JSON.stringify(errs));
+
+  const rlAsm = readProjectJson("02-assumptions/assumptions.json");
+  const d = save.data;
+  for (const [cat, prefix] of Object.entries(prefixes)) {
+    const before = new Set((rlAsm[cat] || []).map((a) => a.id));
+    const added = (d.assumptions[cat] || []).filter((a) => !before.has(a.id));
+    assert.strictEqual(added.length, 1, `expected one new ${cat} assumption, got ${JSON.stringify(added)}`);
+    assert.match(added[0].id, new RegExp("^" + prefix + "[0-9]+$"), `new ${cat} assumption id has no webapp prefix`);
+    assert.ok(h.document.body.innerHTML.includes(added[0].id) || cat !== "operational", `new ${cat} assumption ${added[0].id} not rendered`);
+  }
+  const newest = (list) => list[list.length - 1].id;
+  assert.match(newest(d.system.components), /^C-[0-9]+$/, "new component id");
+  assert.match(newest(d.system.interfaces), /^I-[0-9]+$/, "new interface id");
+  assert.match(newest(d.system.trustBoundaries), /^TB-[0-9]+$/, "new trust boundary id");
+  assert.match(newest(d.system.assets), /^AST-[0-9]+$/, "new asset id");
+  assert.match(newest(d.requirements), /^R[0-9]+$/, "new requirement id");
+  assert.match(newest(d.threats), /^T[0-9]+$/, "new threat id");
+  assert.match(newest(d.cms), /^CM[0-9]+$/, "new countermeasure id");
+  assert.strictEqual(d.project.name, "RL-100 runtime test", "edited project name not auto-saved");
+  assert.strictEqual(d.project.sbom.mode, "external", "SBOM source not auto-saved");
+  assert.ok(lastWriteJson(h, "02-assumptions/assumptions.json"), "host did not write assumptions.json");
+  checkLiveDomHandlers(h);
+}
+
+async function attackTreeEditor(h) {
+  const mod = await load(h, "attackTreeEditor.ts");
+  const provider = new mod.AttackTreeEditor(ctx.extensionUri);
+  await provider.resolveCustomTextEditor(h.createDocument("07-attack-trees/attack-trees.json"), h.createPanel(), {});
+  h.openDom();
+  await h.settle();
+  assert.ok(h.toWebview.some((m) => m.type === "load"), "host did not answer 'ready' with 'load'");
+  assert.ok(h.$$("#treesel option").length >= 1 && h.$$("#cv [data-id]").length > 1, "attack tree not rendered");
+
+  // Select a non-root node by clicking it on the canvas.
+  const target = h.$$("#cv [data-id]")[1];
+  const id = target.getAttribute("data-id");
+  h.click(target);
+  assert.strictEqual(h.must("#in-label").value.length > 0, true, "inspector not shown for selected node");
+  assert.ok(h.$(`#cv [data-id="${id}"]`), "selected node vanished");
+
+  // Documented shortcuts: navigation, gate cycle, add child (+ prompt Enter), rename (+ Escape), delete, undo/redo.
+  for (const k of ["ArrowUp", "ArrowDown", "ArrowRight", "ArrowLeft"]) h.key(k);
+  const savesBefore = h.toHost.filter((m) => m.type === "save").length;
+  h.key("t");
+  h.key("Enter");
+  assert.strictEqual(h.must("#ov").style.display, "flex", "Enter did not open the label prompt");
+  h.key("Enter", { target: h.must("#ovinput") });
+  assert.strictEqual(h.must("#ov").style.display, "none", "Enter did not confirm the prompt");
+  h.key("e");
+  h.key("Escape", { target: h.must("#ovinput") });
+  h.key("d");
+  h.key("z", { ctrlKey: true });
+  h.key("z", { ctrlKey: true, shiftKey: true });
+  h.key("y", { ctrlKey: true });
+
+  // Toolbar: add a tree, link a threat, switch trees.
+  h.click('#bar [data-act="addtree"]');
+  const linkOpt = h.$$("#threatsel option").find((o) => o.value);
+  if (linkOpt) h.setValue("#threatsel", linkOpt.value);
+  h.setValue("#treesel", "0");
+  await h.settle();
+
+  const saves = h.toHost.filter((m) => m.type === "save");
+  assert.ok(saves.length > savesBefore + 3, `expected several saves, got ${saves.length - savesBefore}`);
+  const saved = lastWriteJson(h, "07-attack-trees/attack-trees.json");
+  assert.ok(saved && Array.isArray(saved.trees), "attack-trees.json not written by host");
+  const added = saved.trees[saved.trees.length - 1];
+  assert.match(added.id, /^AT[0-9]+$/, "new attack tree id has no webapp prefix");
+  checkLiveDomHandlers(h);
+}
+
+async function nativeDfdEditor(h) {
+  const mod = await load(h, "nativeDfdEditor.ts");
+  const provider = new mod.NativeDfdEditor(ctx.extensionUri);
+  await provider.resolveCustomTextEditor(h.createDocument("04-dfd/dfd.json"), h.createPanel(), {});
+  h.openDom();
+  await h.settle();
+  assert.ok(h.toWebview.some((m) => m.type === "load"), "host did not answer 'ready' with 'load'");
+  const nodes = h.$$("#cv [data-id]");
+  assert.ok(nodes.length > 1, "DFD nodes not rendered");
+
+  // Select a node with a click (mousedown + mouseup without movement).
+  const target = nodes.find((n) => h.$("#sel option[value='" + n.getAttribute("data-id") + "']")) || nodes[0];
+  h.mouse("mousedown", target);
+  h.mouse("mouseup", target);
+  assert.strictEqual(h.must("#sel").value, target.getAttribute("data-id"), "click did not select the node");
+  assert.ok(h.$("#ins-label"), "inspector not shown for selected node");
+
+  // Documented shortcuts.
+  h.key("ArrowRight");
+  h.key("ArrowLeft");
+  h.key("t");
+  assert.ok(h.must("#status").textContent.includes("Connect"), "t did not enter connect mode");
+  h.key("t");
+  h.key("p");
+  assert.strictEqual(h.must("#ov").style.display, "flex", "p did not open the name prompt");
+  h.key("Enter", { target: h.must("#ovinput") });
+  const added = h.must("#sel").value;
+  h.key("d");
+  h.key("Enter", { target: h.must("#ovinput") });
+  assert.ok(!h.$(`#cv [data-id="${added}"]`), "d + Enter did not delete the new node");
+  h.key("z", { ctrlKey: true });
+  h.key("z", { ctrlKey: true, shiftKey: true });
+  h.key("y", { ctrlKey: true });
+
+  // Drill into a component with children, then back up.
+  const dfd = readProjectJson("04-dfd/dfd.json");
+  const parent = dfd.nodes.find((n) => n.parent == null && dfd.nodes.some((c) => c.parent === n.id));
+  if (parent) {
+    h.setValue("#sel", parent.id);
+    h.key("Enter");
+    assert.ok(h.must("#crumb").textContent.includes(parent.label), "Enter did not drill into the component");
+    h.key("Backspace");
+    assert.strictEqual(h.must("#crumb").textContent, "root", "Backspace did not go up");
+  }
+
+  // Select a trust boundary from the dropdown and toggle a member.
+  const tb = h.$$("#sel option").find((o) => /\(boundary\)$/.test(o.textContent));
+  if (tb) {
+    h.setValue("#sel", tb.value);
+    const mem = h.$("#insp [data-mem]");
+    if (mem) { h.click(mem); h.click(h.must("#insp [data-mem]")); }
+  }
+  await h.settle();
+
+  const saved = lastWriteJson(h, "04-dfd/dfd.json");
+  assert.ok(saved && Array.isArray(saved.nodes) && Array.isArray(saved.flows), "dfd.json not written by host");
+  checkLiveDomHandlers(h);
+}
+
+async function useCaseEditor(h) {
+  const mod = await load(h, "useCaseEditor.ts");
+  const provider = new mod.UseCaseEditor(ctx.extensionUri);
+  await provider.resolveCustomTextEditor(h.createDocument("04b-use-cases/use-cases.json"), h.createPanel(), {});
+  h.openDom();
+  await h.settle();
+  assert.ok(h.toWebview.some((m) => m.type === "load"), "host did not answer 'ready' with 'load'");
+  const diagrams = readProjectJson("04b-use-cases/use-cases.json").diagrams || [];
+  assert.strictEqual(h.$$("#diagSel option").length, Math.max(1, diagrams.length), "diagrams not listed");
+
+  // draw.io iframe handshake (the frame itself is not loaded in jsdom).
+  const win = h.dom.window;
+  win.dispatchEvent(new win.MessageEvent("message", { data: JSON.stringify({ event: "init" }) }));
+
+  for (const kind of ["actor", "misuse-actor", "action", "misuse-action"]) h.click(`[data-add-kind="${kind}"]`);
+  h.click("#addConn");
+  h.click("#addGroup");
+  const member = h.$$("[data-group-member]").pop();
+  if (member) h.click(member);
+  h.setValue("#diagName", "Runtime test diagram");
+  h.click("#addDiag");
+  h.setValue("#diagSel", "0");
+  h.click("#exitBtn");
+  await h.settle();
+
+  const saved = lastWriteJson(h, "04b-use-cases/use-cases.json");
+  assert.ok(saved && Array.isArray(saved.diagrams), "use-cases.json not written by host");
+  assert.match(saved.diagrams[saved.diagrams.length - 1].id, /^UC[0-9]+$/, "new diagram id has no webapp prefix");
+  assert.ok(h.commands.includes("embedrisk.wizard") && h.disposed, "Exit did not return to the wizard");
+  checkLiveDomHandlers(h);
+}
+
+async function kbBrowser(h) {
+  const mod = await load(h, "kbBrowser.ts");
+  await mod.openKbBrowser(ctx);
+  h.openDom();
+  await h.settle();
+  const threatBtn = h.$('button[data-act="threat"]');
+  const cmBtn = h.$('button[data-act="cm"]');
+  assert.ok(threatBtn && cmBtn, "knowledge-base catalogue rows not rendered");
+  h.click(threatBtn);
+  h.click(cmBtn);
+  await h.settle();
+  const threats = lastWriteJson(h, "06-threats/threats.json");
+  const cms = lastWriteJson(h, "08-countermeasures/countermeasures.json");
+  assert.ok(threats && cms, "import did not write threats.json / countermeasures.json");
+  assert.match(threats.threats[threats.threats.length - 1].id, /^T[0-9]+$/, "imported threat id");
+  assert.match(cms.countermeasures[cms.countermeasures.length - 1].id, /^CM[0-9]+$/, "imported countermeasure id");
+  checkLiveDomHandlers(h);
+}
+
+// The draw.io DFD editor only wraps an iframe: its own toolbar script is tested, the draw.io app is not loaded.
+async function drawioDfdEditor(h) {
+  const mod = await load(h, "dfdEditor.ts");
+  const provider = new mod.DfdEditor(ctx.extensionUri);
+  await provider.resolveCustomTextEditor(h.createDocument("04-dfd/dfd.json"), h.createPanel(), {});
+  h.openDom();
+  await h.settle(1300); // host pushes the first diagram after 1.2 s
+  const loadMsg = h.toWebview.find((m) => m.type === "load");
+  assert.ok(loadMsg && loadMsg.xml.includes("<mxGraphModel"), "host did not push the draw.io diagram");
+  assert.ok(h.toWebview.some((m) => m.type === "status"), "host did not push the status line");
+
+  const win = h.dom.window;
+  win.dispatchEvent(new win.MessageEvent("message", { data: JSON.stringify({ event: "init" }) }));
+  h.key("ArrowRight", { ctrlKey: true, altKey: true });
+  h.key("ArrowLeft", { ctrlKey: true, altKey: true });
+  await h.settle();
+  win.dispatchEvent(new win.MessageEvent("message", { data: JSON.stringify({ event: "autosave", xml: loadMsg.xml }) }));
+  await h.settle();
+  assert.ok(h.toHost.some((m) => m.type === "sib") && h.toHost.some((m) => m.type === "save"), "toolbar/draw.io messages not forwarded");
+  const saved = lastWriteJson(h, "04-dfd/dfd.json");
+  assert.ok(saved && Array.isArray(saved.nodes), "dfd.json not written from the draw.io autosave");
+}
+
+const SCENARIOS = [
+  ["wizard", wizard],
+  ["attack-tree editor", attackTreeEditor],
+  ["native DFD editor", nativeDfdEditor],
+  ["use-case editor", useCaseEditor],
+  ["KB browser", kbBrowser],
+  ["draw.io DFD editor", drawioDfdEditor],
+];
+
+/* ---------- Run ---------- */
+async function main() {
+  const failures = [];
+  const known = [];
+  const knownHit = new Set();
+  for (const [name, run] of SCENARIOS) {
+    const h = new Harness(name);
+    current = h;
+    try {
+      await run(h);
+      await h.settle();
+    } catch (err) {
+      h.fail("scenario failed: " + errText(err));
+    } finally {
+      h.close();
+    }
+    for (const msg of h.failures) {
+      const k = KNOWN_FAILURES.find((kf) => kf.webview === name && kf.match.test(msg));
+      if (k) { known.push(`[${name}] ${msg}\n      ${k.todo}`); knownHit.add(k); } else failures.push(`[${name}] ${msg}`);
+    }
+    console.log(`${h.failures.length ? "FAIL" : "ok  "} ${name} (${h.toHost.length} webview->host, ${h.toWebview.length} host->webview messages)`);
+  }
+  current = null;
+  for (const k of KNOWN_FAILURES) {
+    if (!knownHit.has(k)) failures.push(`[${k.webview}] known failure no longer occurs, remove it from KNOWN_FAILURES: ${k.match}`);
+  }
+  if (known.length) console.warn("\nKNOWN FAILING (tracked, not fixed):\n  " + known.join("\n  "));
+  if (failures.length) {
+    console.error("\nWebview runtime check FAILED:\n  " + failures.join("\n  "));
+    process.exit(1);
+  }
+  console.log(`\nAll ${SCENARIOS.length} webviews ran without runtime errors.`);
+}
+
+main().catch((err) => {
+  console.error(errText(err));
+  process.exit(1);
+});

@@ -1,0 +1,1373 @@
+{
+  "threats": [
+    {
+      "id": "T-2",
+      "title": "Physical open/short of the 4-20 mA loop forces a fail-safe trip",
+      "requiredSkill": 2,
+      "requiredAccess": 3,
+      "costFactors": {
+        "time": 5,
+        "exploitability": 5,
+        "window": 3,
+        "detection": 3,
+        "notoriety": 3,
+        "prep": 3,
+        "abort": 3
+      },
+      "costRationales": {
+        "time": "Effort required for this attack path.",
+        "exploitability": "Technical difficulty once the attack surface is reached.",
+        "window": "How often a practical opportunity is available.",
+        "detection": "Likelihood that the attempt is detected or interrupted.",
+        "notoriety": "Prior product- or process-specific knowledge required.",
+        "prep": "Equipment, access, or environment preparation required.",
+        "abort": "Likelihood that the attempt fails before achieving its objective."
+      },
+      "description": "Cutting or shorting the loop wiring at an accessible junction disrupts the primary measurement output.",
+      "stride": [
+        "T",
+        "D"
+      ],
+      "components": [
+        "C-3"
+      ],
+      "assets": [
+        "AS-A3",
+        "AS-A1"
+      ],
+      "attackerRef": "ATK-SLC-2",
+      "interfaceRef": "IF-1",
+      "assumptionRefs": [
+        "AS-4",
+        "AS-5"
+      ],
+      "likelihood": 1,
+      "impact": 3,
+      "likelihoodRationale": "IF-1's exposure is physical, matching ATK-2's access exactly; loop wiring is typically more physically accessible than the sensing head itself.",
+      "impactRationale": "Safety impact is tempered to 1 by AS-4/AS-5 (a defined fault current is driven, not an undefined/held value). Availability impact is 3 (capped at AS-A3's availability objective) for the loss of the process signal / possible spurious trip. Integrity 2.",
+      "impactDimensions": {
+        "confidentiality": 0,
+        "integrity": 2,
+        "availability": 3,
+        "safety": 1
+      },
+      "classification": "deployment-risk",
+      "classificationRationale": "The 4-20 mA loop wiring's physical accessibility depends entirely on plant cabling/conduit/cabinet practice, not on anything the RL-100 itself controls; the device's own contribution (a defined fail-safe fault current per AS-4/AS-5) already caps the safety impact. Consistent with the existing 'transferred' status.",
+      "responsibility": "integrator-operator",
+      "deploymentConstraints": "Requires the plant to physically protect the loop wiring (conduit, locked junction boxes/cabinets, tamper-evident routing) between the RL-100 and the control system.",
+      "likelihoodFactors": {
+        "exposure": 3,
+        "exploitability": 1
+      },
+      "ratedAt": "2026-08-20",
+      "status": "transferred",
+      "ratedBy": "np",
+      "costLikelihood": 0.21000000000000002,
+      "costRisk": 0.18000000000000002,
+      "costLikelihoodProposal": 1
+    },
+    {
+      "id": "T-3",
+      "title": "In-band current injection on the 4-20 mA loop spoofs a valid-looking value",
+      "requiredSkill": 2,
+      "requiredAccess": 4,
+      "costFactors": {
+        "time": 3,
+        "exploitability": 3,
+        "window": 4,
+        "detection": 3,
+        "notoriety": 3,
+        "prep": 3,
+        "abort": 3
+      },
+      "costRationales": {
+        "time": "Effort required for this attack path.",
+        "exploitability": "Technical difficulty once the attack surface is reached.",
+        "window": "How often a practical opportunity is available.",
+        "detection": "Likelihood that the attempt is detected or interrupted.",
+        "notoriety": "Prior product- or process-specific knowledge required.",
+        "prep": "Equipment, access, or environment preparation required.",
+        "abort": "Likelihood that the attempt fails before achieving its objective."
+      },
+      "description": "An attacker injects a specific in-range current directly onto the loop wiring, producing a believable-but-false reading that the device's own NE43 fault logic cannot distinguish from a real measurement.",
+      "stride": [
+        "S"
+      ],
+      "components": [
+        "C-3"
+      ],
+      "assets": [
+        "AS-A3"
+      ],
+      "attackerRef": "ATK-SLC-2",
+      "interfaceRef": "IF-1",
+      "assumptionRefs": [
+        "AS-4",
+        "AS-5"
+      ],
+      "likelihood": 1,
+      "impact": 3,
+      "likelihoodRationale": "Requires loop access plus knowledge to inject a plausible in-range current alongside the device's own drive; no loop-tamper-detection mechanism is documented.",
+      "impactRationale": "AS-4/AS-5's fail-safe behavior only reacts to a detected device fault; an externally injected in-range value is not such a fault, so the full AS-A3 safety/integrity objective applies.",
+      "impactDimensions": {
+        "confidentiality": 0,
+        "integrity": 2,
+        "availability": 1,
+        "safety": 3
+      },
+      "classification": "deployment-risk",
+      "classificationRationale": "An in-range current injected directly onto the loop is indistinguishable from a real measurement using the device's own NE43 fault logic; the only effective control is physically securing the wiring against injection, which is a plant/installation matter, not an RL-100 capability. Matches the existing acceptanceRationale ('owner needs to secure plant').",
+      "responsibility": "integrator-operator",
+      "deploymentConstraints": "Requires the plant to physically secure the loop wiring and junction points against injection (locked cabinets, tamper-evident conduit, restricted access), consistent with the already-recorded acceptance rationale.",
+      "likelihoodFactors": {
+        "exploitability": 3,
+        "exposure": 2
+      },
+      "ratedAt": "2026-08-12",
+      "status": "open",
+      "acceptedBy": "np",
+      "reviewDate": "2027-08-12",
+      "ratedBy": "np",
+      "acceptanceRationale": "owner needs to secure plant",
+      "costLikelihood": 0.171,
+      "costRisk": 0,
+      "costLikelihoodProposal": 1
+    },
+    {
+      "id": "T-4",
+      "title": "Unauthenticated HART read discloses measurement/diagnostic data",
+      "requiredSkill": 2,
+      "requiredAccess": 3,
+      "costFactors": {
+        "time": 1,
+        "exploitability": 1,
+        "window": 3,
+        "detection": 3,
+        "notoriety": 3,
+        "prep": 3,
+        "abort": 3
+      },
+      "costRationales": {
+        "time": "Effort required for this attack path.",
+        "exploitability": "Technical difficulty once the attack surface is reached.",
+        "window": "How often a practical opportunity is available.",
+        "detection": "Likelihood that the attempt is detected or interrupted.",
+        "notoriety": "Prior product- or process-specific knowledge required.",
+        "prep": "Equipment, access, or environment preparation required.",
+        "abort": "Likelihood that the attempt fails before achieving its objective."
+      },
+      "stride": [
+        "I"
+      ],
+      "components": [
+        "C-3"
+      ],
+      "assets": [
+        "AS-A4"
+      ],
+      "attackerRef": "ATK-SLC-2",
+      "interfaceRef": "IF-2",
+      "assumptionRefs": [
+        "AS-7"
+      ],
+      "likelihood": 2,
+      "impact": 1,
+      "likelihoodRationale": "AS-7 explicitly states HART read access requires no authentication.",
+      "impactRationale": "Impact limited to AS-A4's confidentiality objective; no integrity/availability/safety exposure from a read-only path.",
+      "impactDimensions": {
+        "confidentiality": 1,
+        "integrity": 0,
+        "availability": 0,
+        "safety": 0
+      },
+      "classification": "protocol-limitation",
+      "classificationRationale": "HART provides no lightweight authentication primitive compatible with basic master read access, and gating reads would break compatibility with standard HART masters; the RL-100 follows conventional HART instrumentation practice of leaving read-only telemetry unauthenticated. This is an industry-convention judgment call rather than a hard protocol constraint, and impact is already low (confidentiality only).",
+      "responsibility": "integrator-operator",
+      "deploymentConstraints": "Requires the plant to restrict physical/electrical access to the HART loop (IF-2) if the disclosed measurement/diagnostic data is considered sensitive.",
+      "likelihoodFactors": {
+        "exposure": 3,
+        "exploitability": 5
+      },
+      "ratedAt": "2026-08-12",
+      "status": "accepted",
+      "acceptedBy": "np",
+      "acceptanceRationale": "risk low enough",
+      "reviewDate": "2027-08-14",
+      "costLikelihood": 0.39,
+      "costRisk": 0.06000000000000001,
+      "costLikelihoodProposal": 2
+    },
+    {
+      "id": "T-5",
+      "title": "Unauthorized HART parameter modification through authentication weakness",
+      "requiredSkill": 2,
+      "requiredAccess": 3,
+      "costFactors": {
+        "time": 4,
+        "exploitability": 4,
+        "window": 3,
+        "detection": 3,
+        "notoriety": 3,
+        "prep": 3,
+        "abort": 3
+      },
+      "costRationales": {
+        "time": "Effort required for this attack path.",
+        "exploitability": "Technical difficulty once the attack surface is reached.",
+        "window": "How often a practical opportunity is available.",
+        "detection": "Likelihood that the attempt is detected or interrupted.",
+        "notoriety": "Prior product- or process-specific knowledge required.",
+        "prep": "Equipment, access, or environment preparation required.",
+        "abort": "Likelihood that the attempt fails before achieving its objective."
+      },
+      "description": "AS-7 confirms HART writes are gated by Maintenance-level authentication, but the exact mechanism is not yet finalized, which raises implementation-weakness risk.",
+      "stride": [
+        "T",
+        "E"
+      ],
+      "components": [
+        "C-3"
+      ],
+      "assets": [
+        "AS-A12",
+        "AS-A4"
+      ],
+      "attackerRef": "ATK-SLC-2",
+      "interfaceRef": "IF-2",
+      "assumptionRefs": [
+        "AS-7"
+      ],
+      "likelihood": 1,
+      "impact": 3,
+      "likelihoodRationale": "A write gate exists per AS-7. Likelihood is conservatively rated pending finalization of the exact mechanism; REQC003 mandates it be no weaker than the already-decided local HMI baseline (AS-2 credential model, AS-12 lockout), so this is tracked as a requirement to close, not assumed broken. An on-site attacker (ATK-2) or a maintenance-credential-holding insider (ATK-5) are both plausible regardless of which specific mechanism is ultimately chosen.",
+      "impactRationale": "Integrity impact capped at AS-A12's objective (config changes can alter measurement/output behavior). Safety and availability reflect AS-A4's objectives.",
+      "impactDimensions": {
+        "confidentiality": 0,
+        "integrity": 3,
+        "availability": 1,
+        "safety": 3
+      },
+      "classification": "product-vulnerability",
+      "classificationRationale": "The write gate itself exists (AS-7); the exact authentication mechanism is a still-open RL-100 design decision, now bounded by REQC003's minimum security bar rather than left undefined.",
+      "responsibility": "manufacturer",
+      "likelihoodFactors": {
+        "exposure": 3,
+        "exploitability": 2
+      },
+      "ratedAt": "2026-08-12",
+      "ratedBy": "np",
+      "status": "accepted",
+      "acceptedBy": "np",
+      "acceptanceRationale": "plant owner has to secure the plant",
+      "reviewDate": "2027-08-13",
+      "countermeasures": [
+        "CM-1"
+      ],
+      "residualLikelihood": 1,
+      "residualImpact": 3,
+      "costLikelihood": 0.255,
+      "costRisk": 0.18000000000000002,
+      "costLikelihoodProposal": 1
+    },
+    {
+      "id": "T-7",
+      "title": "Unauthorized device passively monitors Modbus RTU traffic",
+      "requiredSkill": 2,
+      "requiredAccess": 3,
+      "costFactors": {
+        "time": 1,
+        "exploitability": 1,
+        "window": 3,
+        "detection": 3,
+        "notoriety": 3,
+        "prep": 3,
+        "abort": 3
+      },
+      "costRationales": {
+        "time": "Effort required for this attack path.",
+        "exploitability": "Technical difficulty once the attack surface is reached.",
+        "window": "How often a practical opportunity is available.",
+        "detection": "Likelihood that the attempt is detected or interrupted.",
+        "notoriety": "Prior product- or process-specific knowledge required.",
+        "prep": "Equipment, access, or environment preparation required.",
+        "abort": "Likelihood that the attempt fails before achieving its objective."
+      },
+      "description": "A device sharing the same RS-485 multidrop segment passively eavesdrops on Modbus RTU traffic; Modbus RTU has no source authentication or encryption.",
+      "stride": [
+        "I"
+      ],
+      "components": [
+        "C-3"
+      ],
+      "assets": [
+        "AS-A5"
+      ],
+      "attackerRef": "ATK-SLC-2",
+      "interfaceRef": "IF-3",
+      "assumptionRefs": [
+        "AS-6"
+      ],
+      "likelihood": 2,
+      "impact": 1,
+      "likelihoodRationale": "AS-6 models IF-3 as a shared multidrop segment where other devices cannot automatically be assumed trusted; passive monitoring requires only bus access, no active technique.",
+      "impactRationale": "Purely passive monitoring only exposes confidentiality, bounded by AS-A5's confidentiality objective.",
+      "impactDimensions": {
+        "confidentiality": 1,
+        "integrity": 0,
+        "availability": 0,
+        "safety": 0
+      },
+      "classification": "protocol-limitation",
+      "classificationRationale": "Modbus RTU provides no cryptographic source authentication or encryption at the protocol level; any device with physical access to the shared bus can passively read traffic regardless of how the RL-100 itself is implemented.",
+      "responsibility": "integrator-operator",
+      "deploymentConstraints": "Requires the plant to restrict which devices are physically wired onto the shared RS-485 segment (trusted-devices-only bus membership, physical access control to the wiring) since the RL-100 cannot enforce this over Modbus RTU itself.",
+      "likelihoodFactors": {
+        "exposure": 3,
+        "exploitability": 5
+      },
+      "ratedAt": "2026-08-12",
+      "ratedBy": "np",
+      "status": "transferred",
+      "costLikelihood": 0.39,
+      "costRisk": 0.06000000000000001,
+      "costLikelihoodProposal": 2
+    },
+    {
+      "id": "T-17",
+      "title": "Unauthorized device impersonates the RL-100 on the Modbus RTU bus",
+      "requiredSkill": 2,
+      "requiredAccess": 4,
+      "costFactors": {
+        "time": 3,
+        "exploitability": 3,
+        "window": 3,
+        "detection": 3,
+        "notoriety": 3,
+        "prep": 3,
+        "abort": 3
+      },
+      "costRationales": {
+        "time": "Effort required for this attack path.",
+        "exploitability": "Technical difficulty once the attack surface is reached.",
+        "window": "How often a practical opportunity is available.",
+        "detection": "Likelihood that the attempt is detected or interrupted.",
+        "notoriety": "Prior product- or process-specific knowledge required.",
+        "prep": "Equipment, access, or environment preparation required.",
+        "abort": "Likelihood that the attempt fails before achieving its objective."
+      },
+      "description": "A device on the same RS-485 segment responds to master requests in place of, or claiming to be, the RL-100, causing the master to trust falsified data as if it came from the real device.",
+      "stride": [
+        "S"
+      ],
+      "components": [
+        "C-3"
+      ],
+      "assets": [
+        "AS-A5"
+      ],
+      "attackerRef": "ATK-SLC-2",
+      "interfaceRef": "IF-3",
+      "assumptionRefs": [
+        "AS-6"
+      ],
+      "likelihood": 1,
+      "impact": 2,
+      "likelihoodRationale": "Requires the co-located device to actively race or substitute for the real device's slave response, a more involved technique than passive monitoring, but Modbus RTU has no source authentication to prevent it.",
+      "impactRationale": "A trusted-looking but falsified response primarily undermines integrity of the data the master acts on; some availability impact from response conflicts. Bounded by AS-A5's objectives.",
+      "impactDimensions": {
+        "confidentiality": 0,
+        "integrity": 2,
+        "availability": 1,
+        "safety": 0
+      },
+      "classification": "protocol-limitation",
+      "classificationRationale": "Modbus RTU has no mechanism for a slave to prove its identity or for a master to detect a substituted/impersonating responder; this is a protocol-level gap, not an RL-100 implementation flaw.",
+      "responsibility": "integrator-operator",
+      "deploymentConstraints": "Requires the same bus-membership/physical-access restriction as T-7, plus any master-side response-plausibility checks (timing, sequence, redundant cross-checks) being the responsibility of the control system, not the RL-100.",
+      "status": "transferred",
+      "costLikelihood": 0.18000000000000002,
+      "costRisk": 0.12000000000000002,
+      "costLikelihoodProposal": 1
+    },
+    {
+      "id": "T-18",
+      "title": "Unauthorized device injects or alters Modbus RTU traffic, including configuration writes",
+      "requiredSkill": 2,
+      "requiredAccess": 3,
+      "costFactors": {
+        "time": 1,
+        "exploitability": 1,
+        "window": 3,
+        "detection": 4,
+        "notoriety": 3,
+        "prep": 3,
+        "abort": 3
+      },
+      "costRationales": {
+        "time": "Effort required for this attack path.",
+        "exploitability": "Technical difficulty once the attack surface is reached.",
+        "window": "How often a practical opportunity is available.",
+        "detection": "Likelihood that the attempt is detected or interrupted.",
+        "notoriety": "Prior product- or process-specific knowledge required.",
+        "prep": "Equipment, access, or environment preparation required.",
+        "abort": "Likelihood that the attempt fails before achieving its objective."
+      },
+      "description": "A device on the shared RS-485 segment injects or modifies Modbus RTU frames, including writes to the write-capable operational configuration registers (range, damping, output behavior), which AS-10 confirms are not gated by any device-level authentication.",
+      "stride": [
+        "T"
+      ],
+      "components": [
+        "C-3"
+      ],
+      "assets": [
+        "AS-A5",
+        "AS-A12"
+      ],
+      "attackerRef": "ATK-SLC-2",
+      "interfaceRef": "IF-3",
+      "assumptionRefs": [
+        "AS-6",
+        "AS-10"
+      ],
+      "likelihood": 2,
+      "impact": 3,
+      "likelihoodRationale": "AS-10 confirms Modbus write access to operational configuration registers has no device-level authentication gate (protection is expected from the plant/control-system environment, not the protocol); combined with AS-6's shared multidrop topology, any device on the bus can attempt this.",
+      "impactRationale": "Integrity impact reflects AS-A12 (config changes can alter measurement/output behavior per the configuration-storage assumption). Availability impact of 2 reflects that a rogue device injecting/altering traffic on a shared RS-485 segment can cause communication failures, collisions, invalid responses, or master timeouts, not just a single write. Safety bounded by AS-A5's objective.",
+      "impactDimensions": {
+        "confidentiality": 0,
+        "integrity": 3,
+        "availability": 2,
+        "safety": 2
+      },
+      "classification": "shared-responsibility",
+      "classificationRationale": "The root cause is the protocol-limitation shared with T-7/T-17 (no source authentication on Modbus RTU), but AS-10 also confirms the RL-100 currently offers no product-level gate on Modbus writes at all (e.g. a local write-protect switch or requiring local HMI confirmation before applying a remote write) -- a capability the manufacturer could reasonably add. Until such a capability exists, meaningful risk reduction depends on both a possible future product mitigation and deployment-level bus protection, so responsibility is shared rather than purely protocol-limitation.",
+      "responsibility": "shared",
+      "deploymentConstraints": "Requires the same bus-membership/physical-access restriction as T-7/T-17 (network segmentation, trusted-devices-only bus membership) until/unless a product-level write-protect or local-confirmation mechanism is added; this threat should be reassessed if such a product capability is implemented.",
+      "likelihoodFactors": {
+        "exposure": 3,
+        "exploitability": 5
+      },
+      "ratedAt": "2026-08-13",
+      "status": "open",
+      "countermeasures": [
+        "CM-2"
+      ],
+      "residualLikelihood": 1,
+      "residualImpact": 3,
+      "costLikelihood": 0.375,
+      "costRisk": 0.18000000000000002,
+      "costLikelihoodProposal": 2
+    },
+    {
+      "id": "T-8",
+      "title": "Unchanged default credentials used to access the Ethernet service interface",
+      "requiredSkill": 2,
+      "requiredAccess": 4,
+      "costFactors": {
+        "time": 2,
+        "exploitability": 2,
+        "window": 4,
+        "detection": 3,
+        "notoriety": 3,
+        "prep": 3,
+        "abort": 3
+      },
+      "costRationales": {
+        "time": "Effort required for this attack path.",
+        "exploitability": "Technical difficulty once the attack surface is reached.",
+        "window": "How often a practical opportunity is available.",
+        "detection": "Likelihood that the attempt is detected or interrupted.",
+        "notoriety": "Prior product- or process-specific knowledge required.",
+        "prep": "Equipment, access, or environment preparation required.",
+        "abort": "Likelihood that the attempt fails before achieving its objective."
+      },
+      "stride": [
+        "S",
+        "E"
+      ],
+      "components": [
+        "C-3"
+      ],
+      "assets": [
+        "AS-A6",
+        "AS-A14"
+      ],
+      "attackerRef": "ATK-SLC-2",
+      "interfaceRef": "IF-4",
+      "likelihood": 1,
+      "impact": 2,
+      "likelihoodRationale": "A unit can remain on default credentials in the field (credential-change guidance is procedural, not enforced), and physical/service-port access restriction is likewise only procedural, not technically enforced. ATK-1's profile explicitly includes knowledge of default configuration.",
+      "impactRationale": "Impact bounded by AS-A6/AS-A14's objectives.",
+      "impactDimensions": {
+        "confidentiality": 2,
+        "integrity": 2,
+        "availability": 1,
+        "safety": 1
+      },
+      "classification": "deployment-risk",
+      "classificationRationale": "The RL-100 ships with default credentials and does not force a change on first use (a product gap the manufacturer could close), while the field guidance to change them is only procedural and depends on the operator actually following it.",
+      "responsibility": "shared",
+      "deploymentConstraints": "Requires the operator to actually change default credentials at commissioning and restrict physical/network access to IF-4 until a product-level forced-change mechanism exists.",
+      "status": "accepted",
+      "acceptedBy": "np",
+      "acceptanceRationale": "Owner must secure their passcodes",
+      "reviewDate": "2027-08-14",
+      "countermeasures": [
+        "CM-7"
+      ],
+      "residualLikelihood": 4,
+      "residualImpact": 2,
+      "likelihoodFactors": {
+        "exposure": 2,
+        "exploitability": 4
+      },
+      "ratedAt": "2026-08-17",
+      "ratedBy": "np",
+      "costLikelihood": 0.198,
+      "costRisk": 0.12000000000000002,
+      "costLikelihoodProposal": 1
+    },
+    {
+      "id": "T-10",
+      "title": "Physical abuse of the USB-C service port",
+      "requiredSkill": 2,
+      "requiredAccess": 4,
+      "costFactors": {
+        "time": 3,
+        "exploitability": 3,
+        "window": 4,
+        "detection": 3,
+        "notoriety": 3,
+        "prep": 3,
+        "abort": 3
+      },
+      "costRationales": {
+        "time": "Effort required for this attack path.",
+        "exploitability": "Technical difficulty once the attack surface is reached.",
+        "window": "How often a practical opportunity is available.",
+        "detection": "Likelihood that the attempt is detected or interrupted.",
+        "notoriety": "Prior product- or process-specific knowledge required.",
+        "prep": "Equipment, access, or environment preparation required.",
+        "abort": "Likelihood that the attempt fails before achieving its objective."
+      },
+      "stride": [
+        "T",
+        "I",
+        "E"
+      ],
+      "components": [
+        "C-3"
+      ],
+      "assets": [
+        "AS-A7",
+        "AS-A10",
+        "AS-A12"
+      ],
+      "attackerRef": "ATK-SLC-2",
+      "interfaceRef": "IF-5",
+      "likelihood": 1,
+      "impact": 3,
+      "likelihoodRationale": "Physical/service-port access restriction is procedural only, tempered by firmware update over USB-C requiring Service-level authentication.",
+      "impactRationale": "Impact bounded by AS-A7's objectives (conservative choice; AS-A10/AS-A12 permit higher integrity/safety but the USB-C interface's own reduced scope limits what is directly reachable here).",
+      "impactDimensions": {
+        "confidentiality": 2,
+        "integrity": 3,
+        "availability": 3,
+        "safety": 3
+      },
+      "classification": "shared-responsibility",
+      "classificationRationale": "Physical/service-port access restriction is only procedural (a deployment factor), but the RL-100 already gates firmware update over USB-C behind Service-level authentication (an existing product mitigation), so residual risk depends on both.",
+      "responsibility": "shared",
+      "deploymentConstraints": "Requires the plant/site to physically restrict access to the USB-C port to authorized service personnel.",
+      "likelihoodFactors": {
+        "exposure": 2,
+        "exploitability": 3
+      },
+      "ratedAt": "2026-08-13",
+      "ratedBy": "np",
+      "status": "accepted",
+      "acceptanceRationale": "service authentication is already a requirement",
+      "acceptedBy": "np",
+      "reviewDate": "2027-08-13",
+      "costLikelihood": 0.171,
+      "costRisk": 0.18000000000000002,
+      "costLikelihoodProposal": 1
+    },
+    {
+      "id": "T-11",
+      "title": "Off-site reverse engineering of an acquired unit extracts cryptographic key material",
+      "requiredSkill": 2,
+      "requiredAccess": 1,
+      "costFactors": {
+        "time": 5,
+        "exploitability": 5,
+        "window": 1,
+        "detection": 3,
+        "notoriety": 3,
+        "prep": 3,
+        "abort": 3
+      },
+      "costRationales": {
+        "time": "Effort required for this attack path.",
+        "exploitability": "Technical difficulty once the attack surface is reached.",
+        "window": "How often a practical opportunity is available.",
+        "detection": "Likelihood that the attempt is detected or interrupted.",
+        "notoriety": "Prior product- or process-specific knowledge required.",
+        "prep": "Equipment, access, or environment preparation required.",
+        "abort": "Likelihood that the attempt fails before achieving its objective."
+      },
+      "stride": [
+        "I"
+      ],
+      "components": [
+        "C-2",
+        "C-6",
+        "C-7"
+      ],
+      "assets": [
+        "AS-A13",
+        "AS-A10"
+      ],
+      "attackerRef": "ATK-SLC-2",
+      "assumptionRefs": [
+        "AS-9",
+        "AS-17"
+      ],
+      "interfaceRefs": [
+        "IF-7"
+      ],
+      "likelihood": 2,
+      "impact": 3,
+      "likelihoodRationale": "AS-9 confirms secure key storage is assumed present (STM32H7 built-in), which narrows but does not eliminate this risk per ATK-4's profile; secure boot/hardware root of trust are explicitly not assumed present. AS-17 now confirms the obvious extraction path (an open, unrestricted production debug port) is not intended to exist -- a lab attacker would instead need to defeat MCU readout protection itself (decapping, side-channel, glitch), which is the higher-skill scenario already reflected in the existing acceptance rationale.",
+      "impactRationale": "Impact bounded by AS-A13's confidentiality/integrity/availability objectives.",
+      "impactDimensions": {
+        "confidentiality": 3,
+        "integrity": 3,
+        "availability": 1,
+        "safety": 0
+      },
+      "classification": "product-vulnerability",
+      "classificationRationale": "AS-9 confirms secure boot/hardware root of trust are not assumed present; that hardware-security posture is entirely within the manufacturer's control.",
+      "responsibility": "manufacturer",
+      "likelihoodFactors": {
+        "exposure": 5,
+        "exploitability": 1
+      },
+      "ratedAt": "2026-08-13",
+      "status": "accepted",
+      "acceptanceRationale": "no symmetric secrets on devices",
+      "acceptedBy": "np",
+      "reviewDate": "2027-08-13",
+      "countermeasures": [
+        "CM-9"
+      ],
+      "residualLikelihood": 0,
+      "residualImpact": 3,
+      "costLikelihood": 0.43200000000000016,
+      "costRisk": 0.18000000000000002,
+      "costLikelihoodProposal": 2
+    },
+    {
+      "id": "T-13",
+      "title": "Firmware update bypass or rollback",
+      "requiredSkill": 2,
+      "requiredAccess": 4,
+      "costFactors": {
+        "time": 3,
+        "exploitability": 3,
+        "window": 4,
+        "detection": 4,
+        "notoriety": 3,
+        "prep": 3,
+        "abort": 3
+      },
+      "costRationales": {
+        "time": "Effort required for this attack path.",
+        "exploitability": "Technical difficulty once the attack surface is reached.",
+        "window": "How often a practical opportunity is available.",
+        "detection": "Likelihood that the attempt is detected or interrupted.",
+        "notoriety": "Prior product- or process-specific knowledge required.",
+        "prep": "Equipment, access, or environment preparation required.",
+        "abort": "Likelihood that the attempt fails before achieving its objective."
+      },
+      "description": "Residual risk given the confirmed update-time mitigations.",
+      "stride": [
+        "T",
+        "E"
+      ],
+      "components": [
+        "C-3",
+        "C-2",
+        "C-6"
+      ],
+      "assets": [
+        "AS-A10",
+        "AS-A2"
+      ],
+      "attackerRef": "ATK-SLC-2",
+      "interfaceRef": "IF-4",
+      "interfaceRefs": [
+        "IF-5",
+        "IF-7"
+      ],
+      "assumptionRefs": [
+        "AS-3",
+        "AS-9",
+        "AS-17",
+        "AS-19"
+      ],
+      "likelihood": 1,
+      "impact": 3,
+      "likelihoodRationale": "AS-3 confirms both signature and version are checked and rollback is prevented, substantially lowering likelihood. AS-9 confirms secure boot/hardware root of trust are not assumed present, so bypassing the update-time checker via a lower-level path is still conceivable in principle; however AS-17 now confirms that path is not an open production debug port -- it would require defeating MCU readout protection (RDP) itself, an the selected SL-C 2 attacker profile-level hardware attack rather than routine debug access. AS-19 further confirms the bootloader performing the update-time checks is itself stored in a write-protected flash region and is not modifiable through the normal update path, closing the lowest-effort variant of this threat (silently overwriting the bootloader/checker itself). Likelihood lowered from 3 to 2 and exposure factor reduced accordingly to reflect that the previously assumed-open low-effort avenue is now a design objective to be closed; the remaining, harder bypass-of-protection scenarios (debug access, fault injection, compromised manufacturing/provisioning) are tracked separately as T-22.",
+      "impactRationale": "Impact bounded by AS-A10's objectives.",
+      "impactDimensions": {
+        "confidentiality": 1,
+        "integrity": 3,
+        "availability": 1,
+        "safety": 3
+      },
+      "classification": "product-vulnerability",
+      "classificationRationale": "Same driver as T-11 (AS-9's absence of secure boot/hardware root of trust); the update-time signature/version checks are already an RL-100 capability, and AS-17/AS-19 further confirm both the debug port and the bootloader's own storage are not intended to be left modifiable in production. The residual gap is the missing boot-time trust anchor, whatever residual strength REQC006's readout-protection implementation ultimately provides, and correct implementation of the signature-verification logic itself (REQC012).",
+      "responsibility": "manufacturer",
+      "status": "open",
+      "likelihoodFactors": {
+        "exposure": 2,
+        "exploitability": 3
+      },
+      "ratedAt": "2026-08-14",
+      "countermeasures": [
+        "CM-3",
+        "CM-9",
+        "CM-11"
+      ],
+      "residualLikelihood": 2,
+      "residualImpact": 3,
+      "costLikelihood": 0.16199999999999998,
+      "costRisk": 0.18000000000000002,
+      "costLikelihoodProposal": 1
+    },
+    {
+      "id": "T-15",
+      "title": "Shared per-role service codes prevent individual accountability for security-relevant actions",
+      "requiredSkill": 2,
+      "requiredAccess": 4,
+      "costFactors": {
+        "time": 3,
+        "exploitability": 3,
+        "window": 3,
+        "detection": 3,
+        "notoriety": 3,
+        "prep": 3,
+        "abort": 3
+      },
+      "costRationales": {
+        "time": "Effort required for this attack path.",
+        "exploitability": "Technical difficulty once the attack surface is reached.",
+        "window": "How often a practical opportunity is available.",
+        "detection": "Likelihood that the attempt is detected or interrupted.",
+        "notoriety": "Prior product- or process-specific knowledge required.",
+        "prep": "Equipment, access, or environment preparation required.",
+        "abort": "Likelihood that the attempt fails before achieving its objective."
+      },
+      "stride": [
+        "R"
+      ],
+      "components": [
+        "C-3"
+      ],
+      "assets": [
+        "AS-A14",
+        "AS-A11"
+      ],
+      "attackerRef": "ATK-SLC-2",
+      "interfaceRefs": [
+        "IF-2",
+        "IF-3",
+        "IF-4",
+        "IF-5",
+        "IF-6"
+      ],
+      "assumptionRefs": [
+        "AS-1",
+        "AS-2"
+      ],
+      "likelihood": 1,
+      "impact": 1,
+      "likelihoodRationale": "AS-1/AS-2 confirm shared per-role codes with no individual accounts; the event/diagnostic log records event type/severity, not per-individual identity.",
+      "impactRationale": "Impact here is on accountability/forensics rather than direct process control, bounded by AS-A14's objectives.",
+      "impactDimensions": {
+        "confidentiality": 0,
+        "integrity": 1,
+        "availability": 0,
+        "safety": 1
+      },
+      "classification": "product-vulnerability",
+      "classificationRationale": "The shared per-role credential model and event-log granularity (AS-1/AS-2) are RL-100 design choices; individual accountability could only be added by the manufacturer.",
+      "responsibility": "manufacturer",
+      "status": "accepted",
+      "acceptedBy": "np",
+      "reviewDate": "2027-08-13",
+      "acceptanceRationale": "design choice",
+      "costLikelihood": 0.18000000000000002,
+      "costRisk": 0.06000000000000001,
+      "costLikelihoodProposal": 1
+    },
+    {
+      "id": "T-1",
+      "title": "Physical spoofing of the radar echo falsifies the level measurement",
+      "requiredSkill": 2,
+      "requiredAccess": 4,
+      "costFactors": {
+        "time": 2,
+        "exploitability": 2,
+        "window": 4,
+        "detection": 3,
+        "notoriety": 3,
+        "prep": 3,
+        "abort": 3
+      },
+      "costRationales": {
+        "time": "Effort required for this attack path.",
+        "exploitability": "Technical difficulty once the attack surface is reached.",
+        "window": "How often a practical opportunity is available.",
+        "detection": "Likelihood that the attempt is detected or interrupted.",
+        "notoriety": "Prior product- or process-specific knowledge required.",
+        "prep": "Equipment, access, or environment preparation required.",
+        "abort": "Likelihood that the attempt fails before achieving its objective."
+      },
+      "description": "An attacker with physical proximity to the tank/process introduces a false radar reflection (e.g. foil, decoy target, signal reflector) so C-1 reports a plausible-but-wrong level.",
+      "stride": [
+        "S"
+      ],
+      "components": [
+        "C-1"
+      ],
+      "assets": [
+        "AS-A1"
+      ],
+      "attackerRef": "ATK-SLC-2",
+      "assumptionRefs": [
+        "AS-11"
+      ],
+      "likelihood": 1,
+      "impact": 3,
+      "likelihoodRationale": "Requires sustained physical proximity to the process without detection. AS-11 confirms the radar front-end performs basic plausibility/consistency checks, which raise the bar somewhat, but is not a dedicated anti-spoofing system, so a sophisticated attacker crafting a plausible reflection is not specifically countered.",
+      "impactRationale": "The value stays in-range, so AS-4/AS-5's fail-safe logic never triggers (no detected device fault); the full AS-A1 safety/integrity objective applies.",
+      "impactDimensions": {
+        "integrity": 1,
+        "availability": 1,
+        "safety": 3,
+        "confidentiality": 1
+      },
+      "classification": "deployment-risk",
+      "classificationRationale": "AS-11 confirms the radar front-end has no dedicated anti-spoofing capability (a product gap the manufacturer could improve), but the attack also requires sustained physical proximity to the tank/process, which is a plant access-control matter.",
+      "responsibility": "integrator-operator",
+      "deploymentConstraints": "Requires the plant to restrict physical access to the tank/process area near the radar sensing path.",
+      "status": "transferred",
+      "likelihoodFactors": {
+        "exposure": 2,
+        "exploitability": 4
+      },
+      "ratedAt": "2026-08-21",
+      "costLikelihood": 0.198,
+      "costRisk": 0.18000000000000002,
+      "costLikelihoodProposal": 1
+    },
+    {
+      "id": "T-12",
+      "title": "Physical extraction of the firmware image from external QSPI flash",
+      "requiredSkill": 2,
+      "requiredAccess": 5,
+      "costFactors": {
+        "time": 3,
+        "exploitability": 3,
+        "window": 5,
+        "detection": 3,
+        "notoriety": 3,
+        "prep": 3,
+        "abort": 3
+      },
+      "costRationales": {
+        "time": "Effort required for this attack path.",
+        "exploitability": "Technical difficulty once the attack surface is reached.",
+        "window": "How often a practical opportunity is available.",
+        "detection": "Likelihood that the attempt is detected or interrupted.",
+        "notoriety": "Prior product- or process-specific knowledge required.",
+        "prep": "Equipment, access, or environment preparation required.",
+        "abort": "Likelihood that the attempt fails before achieving its objective."
+      },
+      "description": "An attacker with physical access to the external QSPI flash (C-6) reads out the firmware image.",
+      "stride": [
+        "I"
+      ],
+      "components": [
+        "C-6",
+        "C-3"
+      ],
+      "assets": [
+        "AS-A10"
+      ],
+      "attackerRef": "ATK-SLC-2",
+      "assumptionRefs": [
+        "AS-14",
+        "AS-17"
+      ],
+      "likelihood": 1,
+      "impact": 1,
+      "likelihoodRationale": "AS-14 confirms the firmware image is not encrypted at rest on the external QSPI flash, so any attacker capable of reading the chip (a lower bar than full reverse-engineering) can extract it. AS-17's debug-port lockdown does not mitigate this vector: reading an external SPI flash chip directly (in-circuit or desoldered) does not require MCU debug access.",
+      "impactRationale": "A read-only extraction only exposes confidentiality, bounded by AS-A10's confidentiality objective; firmware integrity is unaffected since the update-time signature/version checks (AS-3) apply regardless of whether the image was read.",
+      "impactDimensions": {
+        "confidentiality": 1,
+        "integrity": 0,
+        "availability": 0,
+        "safety": 0
+      },
+      "classification": "product-vulnerability",
+      "classificationRationale": "AS-14 confirms the firmware image is not encrypted at rest on the external QSPI flash; adding at-rest encryption is entirely within the manufacturer's control.",
+      "responsibility": "manufacturer",
+      "likelihoodFactors": {
+        "exposure": 1,
+        "exploitability": 3
+      },
+      "ratedAt": "2026-08-13",
+      "status": "accepted",
+      "acceptedBy": "np",
+      "acceptanceRationale": "firmware itself does not hold much confidentiality; attack only possible in lab",
+      "reviewDate": "2027-08-14",
+      "costLikelihood": 0.05400000000000002,
+      "costRisk": 0.06000000000000001,
+      "costLikelihoodProposal": 1
+    },
+    {
+      "id": "T-14",
+      "title": "Local HMI PIN brute-force bypasses Maintenance/Service authentication",
+      "requiredSkill": 2,
+      "requiredAccess": 4,
+      "costFactors": {
+        "time": 4,
+        "exploitability": 4,
+        "window": 4,
+        "detection": 4,
+        "notoriety": 3,
+        "prep": 3,
+        "abort": 3
+      },
+      "costRationales": {
+        "time": "Effort required for this attack path.",
+        "exploitability": "Technical difficulty once the attack surface is reached.",
+        "window": "How often a practical opportunity is available.",
+        "detection": "Likelihood that the attempt is detected or interrupted.",
+        "notoriety": "Prior product- or process-specific knowledge required.",
+        "prep": "Equipment, access, or environment preparation required.",
+        "abort": "Likelihood that the attempt fails before achieving its objective."
+      },
+      "description": "An attacker repeatedly guesses the local HMI PIN to reach Maintenance or Service privileges.",
+      "stride": [
+        "S",
+        "E"
+      ],
+      "components": [
+        "C-4",
+        "C-3"
+      ],
+      "assets": [
+        "AS-A8",
+        "AS-A12"
+      ],
+      "attackerRef": "ATK-SLC-2",
+      "interfaceRef": "IF-6",
+      "assumptionRefs": [
+        "AS-12"
+      ],
+      "likelihood": 1,
+      "impact": 3,
+      "likelihoodRationale": "AS-12 confirms a limited-attempt lockout with increasing retry delay, which substantially reduces practical brute-force likelihood versus an unlimited-attempt scenario; residual likelihood remains from shoulder-surfing or a low volume of guesses within the allowed attempts.",
+      "impactRationale": "Impact bounded by AS-A8's objectives (config/calibration change via Maintenance privilege).",
+      "impactDimensions": {
+        "confidentiality": 3,
+        "integrity": 3,
+        "availability": 2,
+        "safety": 2
+      },
+      "classification": "product-vulnerability",
+      "classificationRationale": "The PIN space/lockout mechanism strength (AS-12) is an RL-100 design item; shoulder-surfing residual risk is a minor factor but the primary driver is the product's own authentication mechanism.",
+      "responsibility": "manufacturer",
+      "ratedAt": "2026-08-13",
+      "likelihoodFactors": {
+        "exposure": 2,
+        "exploitability": 2
+      },
+      "ratedBy": "np",
+      "status": "open",
+      "countermeasures": [
+        "CM-4"
+      ],
+      "residualLikelihood": 1,
+      "residualImpact": 3,
+      "costLikelihood": 0.135,
+      "costRisk": 0.18000000000000002,
+      "costLikelihoodProposal": 1
+    },
+    {
+      "id": "T-16",
+      "title": "Power-supply manipulation as a fault-injection vector against MCU security functions",
+      "requiredSkill": 2,
+      "requiredAccess": 5,
+      "costFactors": {
+        "time": 4,
+        "exploitability": 4,
+        "window": 5,
+        "detection": 3,
+        "notoriety": 3,
+        "prep": 3,
+        "abort": 3
+      },
+      "costRationales": {
+        "time": "Effort required for this attack path.",
+        "exploitability": "Technical difficulty once the attack surface is reached.",
+        "window": "How often a practical opportunity is available.",
+        "detection": "Likelihood that the attempt is detected or interrupted.",
+        "notoriety": "Prior product- or process-specific knowledge required.",
+        "prep": "Equipment, access, or environment preparation required.",
+        "abort": "Likelihood that the attempt fails before achieving its objective."
+      },
+      "description": "An attacker uses voltage glitching or fault injection via the power input to bypass MCU security logic (e.g. authentication checks, key-storage protections) rather than to cause a simple power-loss outage.",
+      "stride": [
+        "T",
+        "D"
+      ],
+      "components": [
+        "C-5",
+        "C-2",
+        "C-7"
+      ],
+      "assets": [
+        "AS-A9",
+        "AS-A2",
+        "AS-A13"
+      ],
+      "attackerRef": "ATK-SLC-2",
+      "assumptionRefs": [
+        "AS-13"
+      ],
+      "likelihood": 1,
+      "impact": 3,
+      "likelihoodRationale": "AS-13 confirms no dedicated fault-injection/voltage-glitch resistance is implemented beyond standard MCU/PCB protections; likelihood is nonetheless kept low because the attack requires significant physical access, specialized equipment, and device-specific expertise (the selected SL-C 2 capability).",
+      "impactRationale": "Glitching targets security logic rather than causing sustained supply loss, so impact is lower than AS-A9's raw safety objective; bounded by the lowest of the referenced assets' relevant objectives for this specific attack path.",
+      "impactDimensions": {
+        "confidentiality": 3,
+        "integrity": 3,
+        "availability": 3,
+        "safety": 1
+      },
+      "classification": "shared-responsibility",
+      "classificationRationale": "AS-13 confirms the RL-100 has no dedicated fault-injection/glitch resistance (a product gap the manufacturer could close), but exploiting it also requires physical access to the power input, which is a plant installation/enclosure matter.",
+      "responsibility": "shared",
+      "deploymentConstraints": "Requires the plant to physically protect the power input (locked enclosure/cabinet) against direct probing/manipulation.",
+      "likelihoodFactors": {
+        "exposure": 1,
+        "exploitability": 2
+      },
+      "ratedAt": "2026-08-13",
+      "ratedBy": "np",
+      "status": "accepted",
+      "acceptedBy": "np",
+      "acceptanceRationale": "attacker assumptions outside of scope",
+      "reviewDate": "2027-08-14",
+      "costLikelihood": 0.04500000000000001,
+      "costRisk": 0.18000000000000002,
+      "costLikelihoodProposal": 1
+    },
+    {
+      "id": "T-19",
+      "title": "Malformed protocol input causes firmware crash, hang, or undefined behavior",
+      "requiredSkill": 2,
+      "requiredAccess": 3,
+      "costFactors": {
+        "time": 3,
+        "exploitability": 3,
+        "window": 3,
+        "detection": 4,
+        "notoriety": 3,
+        "prep": 3,
+        "abort": 3
+      },
+      "costRationales": {
+        "time": "Effort required for this attack path.",
+        "exploitability": "Technical difficulty once the attack surface is reached.",
+        "window": "How often a practical opportunity is available.",
+        "detection": "Likelihood that the attempt is detected or interrupted.",
+        "notoriety": "Prior product- or process-specific knowledge required.",
+        "prep": "Equipment, access, or environment preparation required.",
+        "abort": "Likelihood that the attempt fails before achieving its objective."
+      },
+      "description": "An attacker (or a malfunctioning peer) sends malformed/malicious frames to a protocol parser (HART, Modbus RTU, or the Ethernet service interface) that the firmware does not handle robustly, causing a crash, hang, or undefined behavior rather than a clean rejection of the frame.",
+      "stride": [
+        "D"
+      ],
+      "components": [
+        "C-3"
+      ],
+      "assets": [
+        "AS-A2",
+        "AS-A5"
+      ],
+      "attackerRef": "ATK-SLC-2",
+      "interfaceRef": "IF-3",
+      "interfaceRefs": [
+        "IF-2",
+        "IF-4"
+      ],
+      "assumptionRefs": [
+        "AS-18"
+      ],
+      "likelihood": 1,
+      "impact": 3,
+      "likelihoodRationale": "Modbus RTU's shared multidrop exposure (AS-6) gives the lowest-bar attacker (the selected SL-C 2 attacker) a channel to send arbitrary malformed frames with no authentication needed; HART (the selected SL-C 2 attacker with physical access) and the Ethernet service interface (the selected SL-C 2 attacker with local access) face the same parser-robustness question over a smaller attack surface. Rated as a generic embedded-parser-robustness risk pending the dedicated fuzz/malformed-input test coverage required by REQC005, not as an assumption that the current parsers are known-broken.",
+      "impactRationale": "A crash/hang of the firmware/RTOS affects AS-A2's availability objective directly and, transitively, AS-A5's Modbus function -- a watchdog-triggered reset and restart still costs measurement/communication availability for the duration of the recovery, so availability impact stays at the ceiling (3). Safety impact is lowered from the initial conservative rating of 2 to 1: AS-18 now confirms an independent watchdog is assumed present and is intended to force the analog output to AS-4/AS-5's defined fail-safe fault current during the reset/restart sequence, rather than holding a stale value, so a firmware hang/crash/deadlock is designed to surface as a detectable device fault rather than a misleading measurement.",
+      "impactDimensions": {
+        "confidentiality": 0,
+        "integrity": 1,
+        "availability": 3,
+        "safety": 1
+      },
+      "classification": "product-vulnerability",
+      "classificationRationale": "Protocol parser robustness against malformed/malicious input is entirely within the firmware implementation, addressed going forward by REQC005's mandatory fuzz-testing gate.",
+      "responsibility": "manufacturer",
+      "likelihoodFactors": {
+        "exposure": 3,
+        "exploitability": 3
+      },
+      "status": "open",
+      "acceptedBy": "np",
+      "countermeasures": [
+        "CM-5",
+        "CM-8"
+      ],
+      "residualLikelihood": 1,
+      "residualImpact": 3,
+      "costLikelihood": 0.28500000000000003,
+      "costRisk": 0.18000000000000002,
+      "costLikelihoodProposal": 1
+    },
+    {
+      "id": "T-20",
+      "title": "Malicious clearing of the event/diagnostic log undermines forensic reconstruction",
+      "requiredSkill": 2,
+      "requiredAccess": 4,
+      "costFactors": {
+        "time": 4,
+        "exploitability": 4,
+        "window": 4,
+        "detection": 3,
+        "notoriety": 3,
+        "prep": 3,
+        "abort": 3
+      },
+      "costRationales": {
+        "time": "Effort required for this attack path.",
+        "exploitability": "Technical difficulty once the attack surface is reached.",
+        "window": "How often a practical opportunity is available.",
+        "detection": "Likelihood that the attempt is detected or interrupted.",
+        "notoriety": "Prior product- or process-specific knowledge required.",
+        "prep": "Equipment, access, or environment preparation required.",
+        "abort": "Likelihood that the attempt fails before achieving its objective."
+      },
+      "description": "A Maintenance/Service-credential holder deliberately clears the event/diagnostic log to conceal prior security-relevant actions (e.g. an earlier unauthorized configuration change or firmware update).",
+      "stride": [
+        "R",
+        "T"
+      ],
+      "components": [
+        "C-3",
+        "C-6"
+      ],
+      "assets": [
+        "AS-A11"
+      ],
+      "attackerRef": "ATK-SLC-2",
+      "interfaceRefs": [
+        "IF-2",
+        "IF-3",
+        "IF-4",
+        "IF-5",
+        "IF-6"
+      ],
+      "assumptionRefs": [
+        "AS-16"
+      ],
+      "likelihood": 1,
+      "impact": 2,
+      "likelihoodRationale": "Clearing the log requires an existing Maintenance/Service credential (AS-1/AS-2), narrowing this to the same insider-type actor as T-15/T-18 rather than an arbitrary attacker; AS-16's design already ensures the clear action itself always creates a log entry, so full, undetectable evidence erasure is not possible with a single action.",
+      "impactRationale": "Impact is on forensic/accountability value rather than direct process control, bounded by AS-A11's objectives (confidentiality 1, integrity 2, availability 1, safety 0); AS-16's self-logging of the clear action is a built-in partial mitigation already reflected in this rating.",
+      "impactDimensions": {
+        "confidentiality": 0,
+        "integrity": 2,
+        "availability": 1,
+        "safety": 0
+      },
+      "classification": "shared-responsibility",
+      "classificationRationale": "The log's self-logging-of-clear-events design (AS-16) is a product capability, but how tightly the plant restricts and vets who holds Maintenance/Service credentials is a deployment/governance factor that determines how likely a malicious-insider scenario actually is.",
+      "responsibility": "shared",
+      "deploymentConstraints": "Requires the plant to restrict Maintenance/Service credential issuance to vetted personnel and, since the local circular log is not an audit-grade record (AS-16), to periodically export/archive the log off-device if long-term forensic retention is required.",
+      "likelihoodFactors": {
+        "exposure": 2,
+        "exploitability": 2
+      },
+      "status": "accepted",
+      "acceptedBy": "np",
+      "acceptanceRationale": "risk is low enough",
+      "reviewDate": "2027-08-14",
+      "costLikelihood": 0.14400000000000004,
+      "costRisk": 0.12000000000000002,
+      "costLikelihoodProposal": 1
+    },
+    {
+      "id": "T-21",
+      "title": "Improper TLS certificate/hostname validation or weak cipher negotiation on the Ethernet service interface enables session compromise",
+      "requiredSkill": 2,
+      "requiredAccess": 4,
+      "costFactors": {
+        "time": 4,
+        "exploitability": 4,
+        "window": 4,
+        "detection": 4,
+        "notoriety": 3,
+        "prep": 3,
+        "abort": 3
+      },
+      "costRationales": {
+        "time": "Effort required for this attack path.",
+        "exploitability": "Technical difficulty once the attack surface is reached.",
+        "window": "How often a practical opportunity is available.",
+        "detection": "Likelihood that the attempt is detected or interrupted.",
+        "notoriety": "Prior product- or process-specific knowledge required.",
+        "prep": "Equipment, access, or environment preparation required.",
+        "abort": "Likelihood that the attempt fails before achieving its objective."
+      },
+      "description": "A compromised or malicious commissioning/engineering laptop (or an on-path adjacent attacker) exploits an implementation weakness in the TLS session setup for IF-4 -- e.g. incomplete certificate/hostname validation, acceptance of deprecated cipher suites, or a downgrade attack -- to intercept or tamper with an otherwise-intended-to-be-authenticated, encrypted session.",
+      "stride": [
+        "T",
+        "I",
+        "S"
+      ],
+      "components": [
+        "C-3",
+        "C-2"
+      ],
+      "assets": [
+        "AS-A6",
+        "AS-A13",
+        "AS-A14"
+      ],
+      "attackerRef": "ATK-SLC-2",
+      "interfaceRef": "IF-4",
+      "assumptionRefs": [
+        "AS-8"
+      ],
+      "likelihood": 1,
+      "impact": 3,
+      "likelihoodRationale": "AS-8 commits IF-4 to an authenticated, encrypted transport, and REQC004 sets a concrete minimum bar (TLS 1.2+, device-unique certificate, tested cert/hostname validation, non-deprecated cipher suites). Residual likelihood reflects the generic implementation-risk class present in any TLS deployment (validation logic bugs, cipher downgrade) that REQC004's dedicated test coverage is intended to catch before release.",
+      "impactRationale": "Impact reflects AS-A13 (key material) since the session could expose key-management traffic, capped at AS-A13's confidentiality/integrity/safety objectives; AS-A6/AS-A14 are also exposed via the same session.",
+      "impactDimensions": {
+        "confidentiality": 3,
+        "integrity": 3,
+        "availability": 1,
+        "safety": 2
+      },
+      "classification": "product-vulnerability",
+      "classificationRationale": "TLS implementation correctness (certificate/hostname validation, cipher suite negotiation) is entirely within the firmware's TLS stack integration, verified going forward via REQC004's test coverage requirement and REQC012's requirement to use a validated cryptographic library rather than a custom implementation.",
+      "responsibility": "manufacturer",
+      "likelihoodFactors": {
+        "exposure": 2,
+        "exploitability": 2
+      },
+      "status": "open",
+      "countermeasures": [
+        "CM-6",
+        "CM-11"
+      ],
+      "residualLikelihood": 1,
+      "residualImpact": 3,
+      "costLikelihood": 0.135,
+      "costRisk": 0.18000000000000002,
+      "costLikelihoodProposal": 1
+    },
+    {
+      "id": "T-22",
+      "title": "Bypass of bootloader write-protection via debug access, fault injection, or compromised manufacturing/provisioning",
+      "requiredSkill": 2,
+      "requiredAccess": 5,
+      "costFactors": {
+        "time": 5,
+        "exploitability": 5,
+        "window": 5,
+        "detection": 4,
+        "notoriety": 3,
+        "prep": 3,
+        "abort": 3
+      },
+      "costRationales": {
+        "time": "Effort required for this attack path.",
+        "exploitability": "Technical difficulty once the attack surface is reached.",
+        "window": "How often a practical opportunity is available.",
+        "detection": "Likelihood that the attempt is detected or interrupted.",
+        "notoriety": "Prior product- or process-specific knowledge required.",
+        "prep": "Equipment, access, or environment preparation required.",
+        "abort": "Likelihood that the attempt fails before achieving its objective."
+      },
+      "description": "AS-19 confirms the production bootloader is stored in a write-protected region of MCU internal flash and cannot be modified through the normal firmware-update path. This threat covers bypass of that protection itself: via debug/JTAG access (IF-7) if MCU readout protection is defeated, via hardware fault injection against the flash-protection logic, or via compromise of the manufacturing/provisioning process where the bootloader and its root-of-trust material (firmware-signing key) are originally installed.",
+      "stride": [
+        "T",
+        "E"
+      ],
+      "components": [
+        "C-2",
+        "C-3"
+      ],
+      "assets": [
+        "AS-A2",
+        "AS-A10"
+      ],
+      "attackerRef": "ATK-SLC-2",
+      "interfaceRefs": [
+        "IF-7"
+      ],
+      "assumptionRefs": [
+        "AS-19",
+        "AS-9",
+        "AS-17",
+        "AS-13"
+      ],
+      "likelihood": 1,
+      "impact": 3,
+      "likelihoodRationale": "AS-19 confirms the bootloader itself is write-protected under the normal update path, closing the straightforward bootloader-overwrite scenario. Residual likelihood reflects only the harder bypass routes: defeating MCU readout/flash protection via debug access (the same the selected SL-C 2 capability effort as T-11/T-13's RDP-defeat scenario), fault injection against the protection mechanism (AS-13 confirms no dedicated fault-injection resistance, mirroring T-16's reasoning), or compromise of the manufacturing/provisioning process itself (bounded by REQC007's key-management policy).",
+      "impactRationale": "Bounded by AS-A2/AS-A10's integrity/safety objectives; a compromised bootloader can install and trust arbitrary application firmware, the most severe outcome in the update/boot trust chain.",
+      "impactDimensions": {
+        "confidentiality": 1,
+        "integrity": 3,
+        "availability": 1,
+        "safety": 3
+      },
+      "classification": "product-vulnerability",
+      "classificationRationale": "The bootloader's write-protection (AS-19) and the manufacturing key-management policy (REQC007) are both entirely within the manufacturer's control; the debug-access and fault-injection bypass routes mirror T-11/T-13/T-16's existing reasoning about defeating hardware protections rather than being a new class of exposure.",
+      "responsibility": "manufacturer",
+      "likelihoodFactors": {
+        "exposure": 1,
+        "exploitability": 1
+      },
+      "status": "open",
+      "ratedAt": "2026-08-17",
+      "ratedBy": "np",
+      "countermeasures": [
+        "CM-9",
+        "CM-14"
+      ],
+      "residualLikelihood": 0,
+      "residualImpact": 3,
+      "costLikelihood": 0.032999999999999995,
+      "costRisk": 0.18000000000000002,
+      "costLikelihoodProposal": 1
+    }
+  ]
+}
