@@ -43,7 +43,7 @@ Verification baseline for every item:
     test compares results with the webapp's `computeRisk` on shared fixtures.
   - AC5: The wizard's inline fallback `R` (used only if `risk-model.js` fails to load) follows the same rules.
   - Deps: EXT-00.
-- [ ] **EXT-R1b Report generator + DFD heat overlay honour `selected:false` and `unfeasible`.**
+- [x] **EXT-R1b Report generator + DFD heat overlay honour `selected:false` and `unfeasible`.**
   `runtime/tools/generate-report.mjs` and `src/nativeDfdEditor.ts` duplicate residual logic without these rules.
   - AC1: Both skip `selected === false` controls and treat unfeasible threats as 0/0, like `media/risk-model.js`.
   - AC2: Report numbers for `webapp/projects/RL-100` match the webapp report / `computeRisk`.
@@ -119,6 +119,13 @@ reopen, undo/redo works. Items touch the same wizard code and run sequentially.
 
 ## Epic 6 — Platform (VS Code-native equivalents)
 
+- [ ] **EXT-RPT1 Report generator tolerates projects without a `steps` map.** Webapp-created projects (e.g.
+  `webapp/projects/RL-100`) have no `project.steps`; `runtime/tools/generate-report.mjs` crashes
+  (`reading '02-assumptions'`). AC: falls back to default step paths (as `webapp/server/src/artifacts.js`
+  does) and generates RL-100 unmodified; same fix in `tools/generate-report.mjs`.
+- [ ] **EXT-RPT2 Python report generators follow webapp residual rules** (`generate_report.py` copies still use
+  single-best-control, ignore `selected`/`unfeasible`). AC: same numbers as the `.mjs` generator on RL-100.
+
 - [ ] **EXT-V1 Validation diagnostics** in the Problems panel (port of `webapp/server/src/validate.js`).
 - [ ] **EXT-E1 Traceability CSV/JSON + SBOM export commands** (parity with server endpoints).
 - [ ] **EXT-KB1 Remove imported KB catalogue command.**
@@ -141,6 +148,7 @@ reopen, undo/redo works. Items touch the same wizard code and run sequentially.
 
 | Item | Impl | Review | Test | Notes |
 |---|---|---|---|---|
+| EXT-R1b | ✅ | ❌→✅ PASS (2nd round: unfeasible rows printed false "4×5=0" arithmetic) | ✅ PASS (RL-100 20/20 threats match client `riskOf`; DFD heat matches DfdView; re-verified marker rendering) | Found pre-existing report crash on missing `steps` (EXT-RPT1) and Python drift (EXT-RPT2); `tools/generate-report.mjs` looks for `.assets/` at repo root (pre-existing, not extension) |
 | EXT-R1 | ✅ | ❌→✅ PASS (2nd round: `None` pill had no CSS background) | ✅ PASS (0 mismatches vs webapp `riskOf`, RL-100 + 16 edge cases) | Webapp server `computeRisk` gives L×I initial for unfeasible threats while client gives 0 — webapp-internal inconsistency, reported |
 | EXT-00 | ✅ | ✅ PASS | ✅ PASS | Fixture moved to `tools/fixtures/`; webapp evaluator gives identical metrics for all 4 trees |
 

@@ -37,14 +37,22 @@ export class NativeDfdEditor implements vscode.CustomTextEditorProvider {
         const threats = (JSON.parse(Buffer.from(await vscode.workspace.fs.readFile(vscode.Uri.joinPath(projRoot, "06-threats/threats.json"))).toString())).threats || [];
         const cms = (JSON.parse(Buffer.from(await vscode.workspace.fs.readFile(vscode.Uri.joinPath(projRoot, "08-countermeasures/countermeasures.json"))).toString())).countermeasures || [];
         const BANDS = [{ min: 1, max: 5, color: '#2e7d32' }, { min: 6, max: 11, color: '#f9a825' }, { min: 12, max: 19, color: '#ef6c00' }, { min: 20, max: 25, color: '#c62828' }];
-        const getBandColor = (score: number) => (BANDS.find(b => score >= b.min && score <= b.max) || BANDS[0]).color;
+        // Same rules as riskOf in webapp/client/src/lib/risk.ts: score <= 0 is the grey "None" band, unfeasible threats
+        // have no residual risk, and deselected countermeasures (selected === false) are ignored.
+        const NONE_COLOR = '#6b7280';
+        const getBandColor = (score: number) => score <= 0 ? NONE_COLOR : (BANDS.find(b => score >= b.min && score <= b.max) || BANDS[0]).color;
+        const selectedCms = cms.filter((c: any) => c.selected !== false);
         const compWorst: Record<string, { score: number; color: string }> = {};
         threats.forEach((t: any) => {
-          const links = cms.flatMap((c: any) => (c.addresses || []).filter((a: any) => a.threat === t.id));
           let rl = t.likelihood, ri = t.impact;
-          if (links.length) {
-            rl = Math.min(...links.map((a: any) => a.residualLikelihood ?? t.likelihood));
-            ri = Math.min(...links.map((a: any) => a.residualImpact ?? t.impact));
+          if (t.status === 'unfeasible') {
+            rl = 0; ri = 0;
+          } else {
+            const links = selectedCms.flatMap((c: any) => (c.addresses || []).filter((a: any) => a.threat === t.id));
+            for (const a of links) {
+              rl = Math.min(rl, a.residualLikelihood ?? t.likelihood);
+              ri = Math.min(ri, a.residualImpact ?? t.impact);
+            }
           }
           const score = (rl || 0) * (ri || 0);
           const color = getBandColor(score);

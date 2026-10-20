@@ -46,11 +46,22 @@ try { useCases = read(project.steps["04b-use-cases"] || "04b-use-cases/use-cases
 let reqs = [];
 try { reqs = read(project.steps["05-requirements"]).requirements || []; } catch { }
 
-const band = (r) => scheme.matrix.bands.find((b) => r >= b.min && r <= b.max) || scheme.matrix.bands[0];
+// Mirrors webapp/client/src/lib/risk.ts: score <= 0 is its own "None" band, unfeasible threats carry
+// no initial or residual risk, and deselected countermeasures (selected === false) do not reduce
+// residual risk. (webapp/server/src/risk.js computeRisk only zeroes residual risk for unfeasible threats.)
+const NONE_BAND = { name: 'None', min: 0, max: 0, color: '#6b7280' };
+const UNFEASIBLE_CELL = `<b style="color:${NONE_BAND.color}">n/a (unfeasible)</b>`;
+const band = (r) => (r <= 0 ? NONE_BAND : scheme.matrix.bands.find((b) => r >= b.min && r <= b.max) || scheme.matrix.bands[0]);
+const initialRisk = (t) => (t.status === 'unfeasible' ? 0 : (t.likelihood || 0) * (t.impact || 0));
 const residual = (t) => {
-  const links = cms.flatMap((c) => c.addresses.filter((a) => a.threat === t.id));
-  if (!links.length) return { l: t.likelihood, i: t.impact };
-  return { l: Math.min(...links.map((a) => a.residualLikelihood ?? t.likelihood)), i: Math.min(...links.map((a) => a.residualImpact ?? t.impact)) };
+  if (t.status === 'unfeasible') return { l: 0, i: 0 };
+  const links = cms.filter((c) => c.selected !== false).flatMap((c) => (c.addresses || []).filter((a) => a.threat === t.id));
+  let l = t.likelihood, i = t.impact;
+  for (const a of links) {
+    l = Math.min(l, a.residualLikelihood ?? t.likelihood);
+    i = Math.min(i, a.residualImpact ?? t.impact);
+  }
+  return { l, i };
 };
 
 // Plausibility checker
@@ -80,10 +91,11 @@ threats.forEach((t) => {
     assumptionCitedBy.set(aid, refs);
   });
 });
-cms.forEach((c) => c.addresses.forEach((a) => { if (!tids.has(a.threat)) issues.push(`${c.id}: addresses unknown threat ${a.threat}.`); }));
+cms.forEach((c) => (c.addresses || []).forEach((a) => { if (!tids.has(a.threat)) issues.push(`${c.id}: addresses unknown threat ${a.threat}.`); }));
 
 const rows = threats.map((t) => {
-  const r = t.likelihood * t.impact, rr = residual(t), rrv = rr.l * rr.i;
+  const r = initialRisk(t), rr = residual(t), rrv = (rr.l || 0) * (rr.i || 0);
+  const unfeasible = t.status === 'unfeasible';
   const refs = (t.assumptionRefs || []).map((aid) => {
     if (!ID_PATTERN.test(aid)) return `<span>${esc(aid)}</span> (invalid ID)`;
     const a = assumptionById.get(aid);
@@ -98,8 +110,8 @@ const rows = threats.map((t) => {
   ].filter(Boolean).join('<br>');
   return `<tr id="threat-${esc(t.id)}"><td>${esc(t.id)}</td><td>${esc(t.title)}</td><td>${esc((t.stride || []).join(''))}</td>` +
     `<td>${refs || '—'}</td><td>${rationale || '—'}</td><td>${classification}</td>` +
-    `<td>${t.likelihood}×${t.impact}=<b style="color:${band(r).color}">${r} ${esc(band(r).name)}</b></td>` +
-    `<td>${rr.l}×${rr.i}=<b style="color:${band(rrv).color}">${rrv} ${esc(band(rrv).name)}</b></td>` +
+    `<td>${unfeasible ? UNFEASIBLE_CELL : `${t.likelihood}×${t.impact}=<b style="color:${band(r).color}">${r} ${esc(band(r).name)}</b>`}</td>` +
+    `<td>${unfeasible ? UNFEASIBLE_CELL : `${rr.l}×${rr.i}=<b style="color:${band(rrv).color}">${rrv} ${esc(band(rrv).name)}</b>`}</td>` +
     `<td>${esc(t.status || 'open')}${t.status === 'accepted' && t.acceptedBy ? ` · <i>${esc(t.acceptedBy)}</i>` : ''}</td></tr>`;
 }).join('');
 
