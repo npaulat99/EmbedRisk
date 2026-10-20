@@ -181,7 +181,7 @@ export async function openWizard(ctx: vscode.ExtensionContext) {
         ...((assumptionsDoc.operational || []).map((x: any) => x.id)),
         ...((assumptionsDoc.attacker || []).map((x: any) => x.id)),
       ].filter(Boolean));
-      const idPattern = /^[A-Za-z0-9 _\-:.]+$/;
+      const idPattern = /^[A-Za-z0-9 _:.-]+$/;
       const problems: string[] = []; const seen = new Set<string>();
       rows.forEach((t, i) => {
         const id = (t.id || "").trim();
@@ -725,7 +725,7 @@ function renderThreats(){
     var asmById={}; asmOpts.forEach(function(a){asmById[a.id]=a;});
     var asms=asmOpts.length?asmOpts.map(function(a){return chip(a.id,(t.assumptionRefs||[]).indexOf(a.id)>=0,'data-i='+i+' data-role="asm" data-val="'+esc(a.id)+'"',a.src+(a.text?': '+a.text.slice(0,60):''));}).join(''):'<span class="hint">Define assumptions in step 02 first.</span>';
     var asmNote=(t.assumptionRefs||[]).length?'<ul style="margin:6px 0 0 18px">'+(t.assumptionRefs||[]).map(function(aid){
-      var valid=/^[A-Za-z0-9 _\-:.]+$/.test(String(aid));
+      var valid=/^[A-Za-z0-9 _:.-]+$/.test(String(aid));
       if(!valid)return '<li><b>'+esc(aid)+'</b> · invalid ID format</li>';
       var row=asmById[aid];
       if(!row)return '<li><b>'+esc(aid)+'</b> · assumption not found</li>';
@@ -880,6 +880,7 @@ function renderAssumptions(){
         '<button class="btn sm danger" data-act="delAsm" data-asm="'+key+'" data-i='+i+'>&#10005;</button></div></div>';
     }).join(''):'<p class="hint">No assumptions yet.</p>';
     html+='<button class="btn sm" data-act="addAsm" data-asm="'+key+'">+ Add</button>';
+  }
   $('#asm-body').innerHTML=html;
 }
 function renderSystem(){

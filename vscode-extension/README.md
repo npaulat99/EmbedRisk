@@ -119,6 +119,16 @@ Press F5 to launch the Extension Development Host. The DFD and attack-tree model
 `media/dfd-model.js` and `media/attacktree-model.js` (shared by the webviews and by the repository test
 script in `tools/test-models.js`).
 
+Webview HTML is built from TypeScript template literals, where backslash escapes are processed (`\-`, `\d`, `\.`
+lose their backslash). After changing any webview markup or inline script, run from the repository root:
+
+```bash
+node tools/test-models.js     # isomorphic webview models
+node tools/test-webviews.js   # bundles each src/*.ts webview with a stubbed vscode module and syntax-checks every inline <script>
+```
+
+`tools/test-webviews.js` needs `npm install` in this folder first (it uses the local `esbuild` and `typescript`).
+
 ## License
 
 The EmbedRisk extension code is GPLv3-licensed. See [`LICENSE`](LICENSE) and [`../LICENSE`](../LICENSE).

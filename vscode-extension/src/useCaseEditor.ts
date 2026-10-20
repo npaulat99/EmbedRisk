@@ -239,7 +239,7 @@ document.addEventListener('click',(e)=>{
 	const addKind=t.getAttribute&&t.getAttribute('data-add-kind');
 	if(addKind&&d){d.entities=d.entities||[];d.entities.push({id:uid(ENTITY_PREFIX[addKind],d.entities),kind:addKind,name:addKind.replace('-',' '),x:80+(d.entities.length%4)*220,y:90+Math.floor(d.entities.length/4)*170});save();return;}
 
-	if(t.hasAttribute&&t.hasAttribute('data-del-entity')&&d){d.entities.splice(+t.getAttribute('data-del-entity'),1);(d.groups||[]).forEach((g)=>g.members=(g.members||[]).filter((m)=>d.entities.some((x)=>x.id===m)));(d.connections||[])= (d.connections||[]).filter((c)=>d.entities.some((x)=>x.id===c.from)&&d.entities.some((x)=>x.id===c.to));save();return;}
+	if(t.hasAttribute&&t.hasAttribute('data-del-entity')&&d){const removed=d.entities.splice(+t.getAttribute('data-del-entity'),1)[0];const gone=removed&&removed.id;d.connections=(d.connections||[]).filter((c)=>c.from!==gone&&c.to!==gone);(d.groups||[]).forEach((g)=>{g.members=(g.members||[]).filter((m)=>m!==gone);});save();return;}
 	if(t.hasAttribute&&t.hasAttribute('data-del-conn')&&d){d.connections.splice(+t.getAttribute('data-del-conn'),1);save();return;}
 	if(t.hasAttribute&&t.hasAttribute('data-del-group')&&d){d.groups.splice(+t.getAttribute('data-del-group'),1);save();return;}
 	if(t.hasAttribute&&t.hasAttribute('data-group-member')&&d){

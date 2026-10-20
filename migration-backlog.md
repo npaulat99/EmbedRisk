@@ -14,14 +14,14 @@ Status legend: `[ ]` todo · `[~]` in progress · `[x]` done (impl + review + te
 Verification baseline for every item:
 
 - `cd vscode-extension && npm run compile` (type-check + bundle) passes.
-- `node tools/test-models.js` passes.
+- `node tools/test-models.js` and `node tools/test-webviews.js` pass.
 - Behaviour matches the webapp reference implementation named in the item.
 
 ---
 
 ## Epic 0 — Test baseline
 
-- [ ] **EXT-HOT1 Webview inline scripts fail to parse (critical, pre-existing).** Found while testing EXT-ID1:
+- [x] **EXT-HOT1 Webview inline scripts fail to parse (critical, pre-existing).** Found while testing EXT-ID1:
   the wizard script has a template-literal regex `[ _\-:.]` → `[ _-:.]` ("Range out of order") and an
   unclosed `{` in `renderAssumptions()`; the use-case editor has `(d.connections||[])=` (invalid
   assignment). Each error stops the whole webview script from running.
@@ -30,6 +30,13 @@ Verification baseline for every item:
   - AC2: A regression test bundles every webview-producing module (`src/*.ts`), extracts every inline
     `<script>` from the generated HTML and syntax-checks it; it fails on HEAD~ and passes after the fix.
   - Deps: none.
+- [ ] **EXT-HOT2 Runtime smoke test for webviews.** Parse checks (EXT-HOT1) cannot catch runtime errors, and the
+  wizard was completely dead at HEAD, so more runtime faults may be hiding.
+  - AC1: `tools/test-webviews.js` (or a sibling) loads each webview's HTML in a DOM (jsdom as a devDependency of
+    `vscode-extension`), stubs `acquireVsCodeApi`, feeds the same `load` message the extension sends
+    (RL-100 data) and navigates every wizard step / editor view without uncaught exceptions.
+  - AC2: Any runtime errors found are fixed (or split into new items if large).
+  - Deps: EXT-HOT1.
 
 - [x] **EXT-00 Restore the attack-tree aggregation fixture.**
   `tools/test-models.js` reads `webapp/projects/test/07-attack-trees/attack-trees.json`, which was never
@@ -160,6 +167,7 @@ reopen, undo/redo works. Items touch the same wizard code and run sequentially.
 
 | Item | Impl | Review | Test | Notes |
 |---|---|---|---|---|
+| EXT-HOT1 | ✅ | ✅ PASS | ✅ PASS (new `tools/test-webviews.js` fails on old code, passes now; use-case delete matches webapp `Inspector.tsx`) | Runtime smoke test skipped (no jsdom) → EXT-HOT2 |
 | EXT-ID1 | ✅ | ✅ PASS | ✅ PASS (19 parity cases vs webapp `uid`, prefixes cited per entity, RL-100 DFD round trip) | Shared `nextId` in `media/dfd-model.js`; surfaced EXT-HOT1 |
 | EXT-A1 | ✅ (2 rounds: orchestrator corrected AC1 to webapp union semantics + "+ Tree" auto-link) | ✅ PASS | ✅ PASS (11 parity cases vs webapp, RL-100 round trip deep-equal, Python helper matches) | Also fixed unescaped `threatRef` in Python report heading |
 | EXT-K1 | ✅ | ✅ PASS | ✅ PASS (cmp identical, drift test fails helpfully, `vsce ls` includes bug-bar.json) | `bug-bar.json` bundled but unused until EXT-B1 |
