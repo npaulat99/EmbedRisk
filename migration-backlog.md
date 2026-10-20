@@ -101,7 +101,7 @@ Verification baseline for every item:
 - [x] **EXT-PRJ2 Device `type`, `version`, `modelReference`.**
 - [x] **EXT-PRJ3 Project `status`** (draft / in-progress / review / released; default draft).
 - [x] **EXT-PRJ4 `scope.inScope[]` / `scope.outOfScope[]` list editors** (empty rows dropped).
-- [ ] **EXT-PRJ5 CRA `intendedUse` + `foreseeableUse[]`** (Deps: EXT-PRJ4 list widget).
+- [x] **EXT-PRJ5 CRA `intendedUse` + `foreseeableUse[]`** (Deps: EXT-PRJ4 list widget).
 - [ ] **EXT-PRJ6 `repo.projectBranchUrl` / `repo.kbUrl`** (merged into existing `repo`).
 
 Common AC for PRJ items: field is shown in the wizard Project step, saved to the exact webapp field
@@ -173,6 +173,7 @@ the orchestrator implements them directly (anchors: `renderProject()` and the de
 
 | Item | Impl | Review | Test | Notes |
 |---|---|---|---|---|
+| EXT-PRJ5 | ✅ | ✅ | ✅ PASS (compile, 112 model assertions, parse + runtime smoke tests) | Intended purpose and foreseeable-use scenarios use the webapp's top-level fields. Reuses the list editor with multiline scenario rows; tests cover literal markup/newlines, editing, add/remove, undo/redo, save/reopen, clearing and preservation of unrelated project metadata. |
 | EXT-PRJ4 | ✅ | ✅ | ✅ PASS (compile, 112 model assertions, parse + runtime smoke tests) | Reusable add/edit/remove row editor follows the wizard's existing list UI; both save handlers trim text and drop blank rows while preserving other scope keys. Runtime tests cover list loading, add/edit/remove undo/redo, save/reopen, literal markup, whitespace-only rows, clearing and invalid-list rejection. |
 | EXT-PRJ3 | ✅ | ✅ | ✅ PASS (compile, 112 model assertions, parse + runtime smoke tests) | Status selector matches all four webapp values and defaults legacy projects to draft. Runtime tests cover each value, undo/redo, save/reopen and whole-project metadata preservation; both save handlers reject invalid statuses with an explicit error before writing. |
 | EXT-PRJ2 | ✅ | ✅ | ✅ PASS (compile, 112 model assertions, parse + runtime smoke tests) | Device type, version and model reference use the shared `device` fields; both save handlers merge into existing metadata. Runtime coverage verifies loading, editing, undo/redo, clearing and reopening all three fields. `modelReference` is defined in webapp `types.ts` but currently absent from `ProjectPanel.tsx`. |

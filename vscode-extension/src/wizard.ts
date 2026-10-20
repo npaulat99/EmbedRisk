@@ -93,6 +93,8 @@ async function buildData(proj: vscode.Uri) {
       boundary: project.scope?.boundary || "",
       inScope: project.scope?.inScope || [],
       outOfScope: project.scope?.outOfScope || [],
+      intendedUse: project.intendedUse || "",
+      foreseeableUse: project.foreseeableUse || [],
       sbom: project.sbom || {},
       includeUseCases: !!project.reportOptions?.includeUseCases,
       useCaseNames: (useCases.diagrams || []).map((d: any) => d.name || d.id),
@@ -163,7 +165,10 @@ export async function openWizard(ctx: vscode.ExtensionContext) {
     if (status !== undefined && (typeof status !== "string" || !["draft", "in-progress", "review", "released"].includes(status))) {
       return panel.webview.postMessage({ cmd: "err", text: "Invalid project status. Choose draft, in-progress, review or released." });
     }
-    for (const key of ["inScope", "outOfScope"]) {
+    if (projectInput?.intendedUse !== undefined && typeof projectInput.intendedUse !== "string") {
+      return panel.webview.postMessage({ cmd: "err", text: "Invalid intended use. Enter text." });
+    }
+    for (const key of ["inScope", "outOfScope", "foreseeableUse"]) {
       const items: unknown = projectInput?.[key];
       if (items !== undefined && (!Array.isArray(items) || !items.every((item) => typeof item === "string"))) {
         return panel.webview.postMessage({ cmd: "err", text: `Invalid ${key} list. Each item must be text.` });
@@ -173,6 +178,8 @@ export async function openWizard(ctx: vscode.ExtensionContext) {
     if (m.cmd === "project") {
       const project = await rdRaw(f.proj, "01-project-description/project.json", {});
       if (typeof m.title === "string") project.title = m.title;
+      if (typeof m.intendedUse === "string") project.intendedUse = m.intendedUse;
+      if (Array.isArray(m.foreseeableUse)) project.foreseeableUse = cleanProjectList(m.foreseeableUse);
       if (status !== undefined) project.status = status;
       project.device = project.device || {}; project.device.name = m.name; project.slTarget = m.sl;
       for (const key of ["type", "version", "modelReference"]) {
@@ -422,6 +429,8 @@ export async function openWizard(ctx: vscode.ExtensionContext) {
         if (d.project) {
           const proj = await rdRaw(f.proj, "01-project-description/project.json", {});
           if (typeof d.project.title === "string") proj.title = d.project.title;
+          if (typeof d.project.intendedUse === "string") proj.intendedUse = d.project.intendedUse;
+          if (Array.isArray(d.project.foreseeableUse)) proj.foreseeableUse = cleanProjectList(d.project.foreseeableUse);
           if (status !== undefined) proj.status = status;
           proj.device = proj.device || {}; proj.device.name = d.project.name;
           for (const key of ["type", "version", "modelReference"]) {
@@ -514,6 +523,9 @@ function shell(cssUri: vscode.Uri, riskUri: vscode.Uri, logoUri: vscode.Uri, csp
           <div class="field"><label>In scope</label><div id="p-inScope"></div></div>
           <div class="field"><label>Out of scope</label><div id="p-outOfScope"></div></div>
         </div>
+        <h3>Intended purpose and reasonably foreseeable use (CRA)</h3>
+        <div class="field"><label for="p-intendedUse">Intended purpose</label><textarea class="inp" id="p-intendedUse" rows="3" placeholder="The manufacturer's intended purpose and operating conditions."></textarea></div>
+        <div class="field"><label>Reasonably foreseeable use</label><div id="p-foreseeableUse"></div></div>
         <div class="field" style="margin-top:8px">
           <label class="hint" style="display:flex;gap:8px;align-items:center"><input type="checkbox" id="p-uc-inc"> Include use-case diagrams in report</label>
         </div>
@@ -626,7 +638,7 @@ let assumptions={attacker:[],device:[],system:[],environment:[],operational:[]};
 let system={components:[],interfaces:[],trustBoundaries:[],assets:[]};
 let requirements=[];
 let project={title:'',status:'draft',name:'',type:'',version:'',modelReference:'',sl:'SL2',mode:'graybox',boundary:'',includeUseCases:false,useCaseNames:[],useCaseNoticePending:false};
-const PROJECT_LIST_LABELS={inScope:'In scope',outOfScope:'Out of scope'};
+const PROJECT_LIST_LABELS={inScope:'In scope',outOfScope:'Out of scope',foreseeableUse:'Reasonably foreseeable use'};
 let undoStack=[], redoStack=[], histKey='', histTime=0;
 let asmTab='device', sysTab='components';
 const $=function(s){return document.querySelector(s);};
@@ -703,7 +715,9 @@ function renderRail(){
 }
 function renderProjectList(key){
   $('#p-'+key).innerHTML=project[key].map(function(item,i){
-    return '<div class="row" style="gap:6px;margin:3px 0"><input class="inp grow" data-project-list="'+key+'" data-list-index="'+i+'" aria-label="'+esc(PROJECT_LIST_LABELS[key])+' item '+(i+1)+'" value="'+esc(item)+'">'+
+    var attrs=' class="inp grow" data-project-list="'+key+'" data-list-index="'+i+'" aria-label="'+esc(PROJECT_LIST_LABELS[key])+' item '+(i+1)+'"';
+    var input=key==='foreseeableUse'?'<textarea'+attrs+' rows="2">'+esc(item)+'</textarea>':'<input'+attrs+' value="'+esc(item)+'">';
+    return '<div class="row" style="gap:6px;margin:3px 0">'+input+
       '<button class="btn sm danger" data-act="delProjectList" data-list="'+key+'" data-list-index="'+i+'" aria-label="Remove '+esc(PROJECT_LIST_LABELS[key])+' item '+(i+1)+'">Remove</button></div>';
   }).join('')+'<button class="btn sm" data-act="addProjectList" data-list="'+key+'">+ Add item</button>';
 }
@@ -711,6 +725,7 @@ function renderProject(p){
   p=p||{};
   project={title:p.title||'',name:p.name||'',sl:p.sl||'SL2',riskScoringMethod:p.riskScoringMethod||'cost-based',mode:p.mode||'graybox',boundary:p.boundary||'',sbom:p.sbom||{},includeUseCases:!!p.includeUseCases,useCaseNames:p.useCaseNames||[],useCaseNoticePending:!!p.useCaseNoticePending};
   project.status=p.status||'draft';$('#p-status').value=project.status;
+  project.intendedUse=p.intendedUse||'';$('#p-intendedUse').value=project.intendedUse;
   Object.keys(PROJECT_LIST_LABELS).forEach(function(key){project[key]=p[key]||[];renderProjectList(key);});
   ['type','version','modelReference'].forEach(function(key){project[key]=p[key]||'';$('#p-'+key).value=project[key];});
   $('#devname').textContent=project.name?('· '+project.name):'';
@@ -1130,6 +1145,7 @@ document.addEventListener('input',function(e){
   recordBefore(keyOf(t));
   if(t.dataset.projectList){project[t.dataset.projectList][+t.dataset.listIndex]=t.value;return;}
   if(t.id==='p-title'){project.title=t.value;return;}
+  if(t.id==='p-intendedUse'){project.intendedUse=t.value;return;}
   if(t.id==='p-status'){project.status=t.value;return;}
   if(t.id==='p-name'){project.name=t.value;$('#devname').textContent=t.value?('· '+t.value):'';return;}
   if(t.id==='p-type'||t.id==='p-version'||t.id==='p-modelReference'){project[t.id.slice(2)]=t.value;return;}

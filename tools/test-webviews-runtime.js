@@ -334,7 +334,7 @@ async function checkProjectList(h, mod, key, readList) {
   assert.deepStrictEqual(values(), original, key + " add undo failed");
   h.key("y", { ctrlKey: true });
   assert.deepStrictEqual(values(), [...original, ""], key + " add redo failed");
-  const text = '<scope> & "scenario"';
+  const text = key === "foreseeableUse" ? '<scenario> & "use"\nSecond line' : '<scope> & "scenario"';
   h.setValue(inputs()[original.length], "  " + text + "  ");
   h.key("z", { ctrlKey: true });
   assert.strictEqual(inputs()[original.length].value, "", key + " edit undo failed");
@@ -373,6 +373,7 @@ async function wizard(h) {
   assert.strictEqual(h.must("#p-name").value, rl.device.name, "project name not rendered from init payload");
   assert.strictEqual(h.must("#p-title").value, rl.title || "", "project title not rendered independently from device name");
   assert.strictEqual(h.must("#p-status").value, rl.status || "draft", "project status not rendered from init payload");
+  assert.strictEqual(h.must("#p-intendedUse").value, rl.intendedUse || "", "intended use not rendered from init payload");
 
   // Every step in the rail (scroll targets and host commands).
   const steps = h.$$("#rail .stepitem").length;
@@ -460,7 +461,7 @@ async function wizard(h) {
   for (const key of ["type", "version", "modelReference"]) expectedDevice[key] = rl.device[key] || "";
   assert.deepStrictEqual(savedProject.device, expectedDevice, "title editing changed device metadata");
   for (const key of Object.keys(rl)) {
-    if (["title", "device", "scope", "slTarget", "riskScoringMethod", "reportOptions", "sbom", "acceptedNotices"].includes(key)) continue;
+    if (["title", "device", "scope", "slTarget", "riskScoringMethod", "reportOptions", "sbom", "acceptedNotices", "foreseeableUse"].includes(key)) continue;
     assert.deepStrictEqual(savedProject[key], rl[key], "project edit lost unrelated field: " + key);
   }
 
@@ -549,13 +550,33 @@ async function wizard(h) {
     ...beforeLists, scope: { ...beforeLists.scope, inScope: [], outOfScope: [] },
   }, "scope list editing lost other project or scope metadata");
   for (const cmd of ["project", "autoSave"]) {
-    const writesBefore = h.writes.length;
-    const invalid = { inScope: ["valid", 42] };
-    h.deliverToHost(cmd === "project" ? { cmd, ...invalid } : { cmd, data: { project: invalid } });
-    await h.settle();
-    assert.strictEqual(h.writes.length, writesBefore, "invalid list must not write artifacts");
-    assert.match(h.toWebview[h.toWebview.length - 1].text, /Invalid inScope list/);
+    for (const key of ["inScope", "outOfScope", "foreseeableUse"]) {
+      const writesBefore = h.writes.length;
+      const invalid = { [key]: ["valid", 42] };
+      h.deliverToHost(cmd === "project" ? { cmd, ...invalid } : { cmd, data: { project: invalid } });
+      await h.settle();
+      assert.strictEqual(h.writes.length, writesBefore, "invalid list must not write artifacts");
+      assert.ok(h.toWebview[h.toWebview.length - 1].text.includes("Invalid " + key + " list"));
+    }
   }
+  const beforeCra = lastWriteJson(h, projectPath);
+  const intendedUse = 'Level measurement <purpose> & "conditions"\nSecond line';
+  h.setValue("#p-intendedUse", intendedUse);
+  h.key("z", { ctrlKey: true });
+  assert.strictEqual(h.must("#p-intendedUse").value, beforeCra.intendedUse, "intended use undo failed");
+  h.key("y", { ctrlKey: true });
+  assert.strictEqual(h.must("#p-intendedUse").value, intendedUse, "intended use redo failed");
+  await h.settle(1700);
+  assert.deepStrictEqual(lastWriteJson(h, projectPath), { ...beforeCra, intendedUse }, "intended use save changed other metadata");
+  h.close();
+  await mod.openWizard(ctx);
+  h.openDom();
+  await h.settle();
+  assert.strictEqual(h.must("#p-intendedUse").value, intendedUse, "intended use not restored on reopen");
+  await checkProjectList(h, mod, "foreseeableUse", (doc) => doc.foreseeableUse);
+  h.setValue("#p-intendedUse", "");
+  await h.settle(1700);
+  assert.deepStrictEqual(lastWriteJson(h, projectPath), { ...beforeCra, intendedUse: "", foreseeableUse: [] }, "clearing CRA fields changed other metadata");
   checkLiveDomHandlers(h);
 }
 
