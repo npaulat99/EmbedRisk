@@ -95,6 +95,8 @@ async function buildData(proj: vscode.Uri) {
       outOfScope: project.scope?.outOfScope || [],
       intendedUse: project.intendedUse || "",
       foreseeableUse: project.foreseeableUse || [],
+      projectBranchUrl: project.repo?.projectBranchUrl || "",
+      kbUrl: project.repo?.kbUrl || "",
       sbom: project.sbom || {},
       includeUseCases: !!project.reportOptions?.includeUseCases,
       useCaseNames: (useCases.diagrams || []).map((d: any) => d.name || d.id),
@@ -165,8 +167,10 @@ export async function openWizard(ctx: vscode.ExtensionContext) {
     if (status !== undefined && (typeof status !== "string" || !["draft", "in-progress", "review", "released"].includes(status))) {
       return panel.webview.postMessage({ cmd: "err", text: "Invalid project status. Choose draft, in-progress, review or released." });
     }
-    if (projectInput?.intendedUse !== undefined && typeof projectInput.intendedUse !== "string") {
-      return panel.webview.postMessage({ cmd: "err", text: "Invalid intended use. Enter text." });
+    for (const key of ["intendedUse", "projectBranchUrl", "kbUrl"]) {
+      if (projectInput?.[key] !== undefined && typeof projectInput[key] !== "string") {
+        return panel.webview.postMessage({ cmd: "err", text: `Invalid ${key}. Enter text.` });
+      }
     }
     for (const key of ["inScope", "outOfScope", "foreseeableUse"]) {
       const items: unknown = projectInput?.[key];
@@ -180,6 +184,12 @@ export async function openWizard(ctx: vscode.ExtensionContext) {
       if (typeof m.title === "string") project.title = m.title;
       if (typeof m.intendedUse === "string") project.intendedUse = m.intendedUse;
       if (Array.isArray(m.foreseeableUse)) project.foreseeableUse = cleanProjectList(m.foreseeableUse);
+      for (const key of ["projectBranchUrl", "kbUrl"]) {
+        if (typeof m[key] === "string") {
+          project.repo = project.repo || {};
+          project.repo[key] = m[key];
+        }
+      }
       if (status !== undefined) project.status = status;
       project.device = project.device || {}; project.device.name = m.name; project.slTarget = m.sl;
       for (const key of ["type", "version", "modelReference"]) {
@@ -431,6 +441,12 @@ export async function openWizard(ctx: vscode.ExtensionContext) {
           if (typeof d.project.title === "string") proj.title = d.project.title;
           if (typeof d.project.intendedUse === "string") proj.intendedUse = d.project.intendedUse;
           if (Array.isArray(d.project.foreseeableUse)) proj.foreseeableUse = cleanProjectList(d.project.foreseeableUse);
+          for (const key of ["projectBranchUrl", "kbUrl"]) {
+            if (typeof d.project[key] === "string") {
+              proj.repo = proj.repo || {};
+              proj.repo[key] = d.project[key];
+            }
+          }
           if (status !== undefined) proj.status = status;
           proj.device = proj.device || {}; proj.device.name = d.project.name;
           for (const key of ["type", "version", "modelReference"]) {
@@ -526,6 +542,9 @@ function shell(cssUri: vscode.Uri, riskUri: vscode.Uri, logoUri: vscode.Uri, csp
         <h3>Intended purpose and reasonably foreseeable use (CRA)</h3>
         <div class="field"><label for="p-intendedUse">Intended purpose</label><textarea class="inp" id="p-intendedUse" rows="3" placeholder="The manufacturer's intended purpose and operating conditions."></textarea></div>
         <div class="field"><label>Reasonably foreseeable use</label><div id="p-foreseeableUse"></div></div>
+        <h3>Repositories</h3>
+        <div class="field"><label for="p-projectBranchUrl">Project branch / PR URL</label><input class="inp" id="p-projectBranchUrl" placeholder="https://github.com/owner/project/tree/branch"></div>
+        <div class="field"><label for="p-kbUrl">Knowledge-base Git URL</label><input class="inp" id="p-kbUrl" placeholder="https://github.com/owner/knowledge-base.git"></div>
         <div class="field" style="margin-top:8px">
           <label class="hint" style="display:flex;gap:8px;align-items:center"><input type="checkbox" id="p-uc-inc"> Include use-case diagrams in report</label>
         </div>
@@ -727,7 +746,7 @@ function renderProject(p){
   project.status=p.status||'draft';$('#p-status').value=project.status;
   project.intendedUse=p.intendedUse||'';$('#p-intendedUse').value=project.intendedUse;
   Object.keys(PROJECT_LIST_LABELS).forEach(function(key){project[key]=p[key]||[];renderProjectList(key);});
-  ['type','version','modelReference'].forEach(function(key){project[key]=p[key]||'';$('#p-'+key).value=project[key];});
+  ['type','version','modelReference','projectBranchUrl','kbUrl'].forEach(function(key){project[key]=p[key]||'';$('#p-'+key).value=project[key];});
   $('#devname').textContent=project.name?('· '+project.name):'';
   $('#p-title').value=project.title;
   $('#p-name').value=project.name;$('#p-sl').value=project.sl;$('#p-risk').value=project.riskScoringMethod;$('#p-mode').value=project.mode;$('#p-bnd').value=project.boundary;
@@ -1149,6 +1168,7 @@ document.addEventListener('input',function(e){
   if(t.id==='p-status'){project.status=t.value;return;}
   if(t.id==='p-name'){project.name=t.value;$('#devname').textContent=t.value?('· '+t.value):'';return;}
   if(t.id==='p-type'||t.id==='p-version'||t.id==='p-modelReference'){project[t.id.slice(2)]=t.value;return;}
+  if(t.id==='p-projectBranchUrl'||t.id==='p-kbUrl'){project[t.id.slice(2)]=t.value;return;}
   if(t.id==='p-sl'){project.sl=t.value;return;}
   if(t.id==='p-risk'){project.riskScoringMethod=t.value;return;}
   if(t.id==='p-mode'){project.mode=t.value;return;}

@@ -461,7 +461,7 @@ async function wizard(h) {
   for (const key of ["type", "version", "modelReference"]) expectedDevice[key] = rl.device[key] || "";
   assert.deepStrictEqual(savedProject.device, expectedDevice, "title editing changed device metadata");
   for (const key of Object.keys(rl)) {
-    if (["title", "device", "scope", "slTarget", "riskScoringMethod", "reportOptions", "sbom", "acceptedNotices", "foreseeableUse"].includes(key)) continue;
+    if (["title", "device", "scope", "slTarget", "riskScoringMethod", "reportOptions", "sbom", "acceptedNotices", "foreseeableUse", "repo"].includes(key)) continue;
     assert.deepStrictEqual(savedProject[key], rl[key], "project edit lost unrelated field: " + key);
   }
 
@@ -577,6 +577,80 @@ async function wizard(h) {
   h.setValue("#p-intendedUse", "");
   await h.settle(1700);
   assert.deepStrictEqual(lastWriteJson(h, projectPath), { ...beforeCra, intendedUse: "", foreseeableUse: [] }, "clearing CRA fields changed other metadata");
+
+  const beforeRepo = lastWriteJson(h, projectPath);
+  beforeRepo.repo.futureMetadata = { tags: ["preserve"] };
+  h.overlay.set(path.join(projectDir, projectPath), JSON.stringify(beforeRepo));
+  h.close();
+  await mod.openWizard(ctx);
+  h.openDom();
+  await h.settle();
+  const repoEdits = {
+    projectBranchUrl: "https://example.com/_git/project?path=%2F&version=GBreview",
+    kbUrl: "git@example.com:team/knowledge-base.git",
+  };
+  for (const [key, value] of Object.entries(repoEdits)) {
+    assert.strictEqual(h.must("#p-" + key).value, beforeRepo.repo[key], "repository field not loaded: " + key);
+    h.setValue("#p-" + key, value);
+    h.key("z", { ctrlKey: true });
+    assert.strictEqual(h.must("#p-" + key).value, beforeRepo.repo[key], "repository field undo failed: " + key);
+    h.key("y", { ctrlKey: true });
+    assert.strictEqual(h.must("#p-" + key).value, value, "repository field redo failed: " + key);
+  }
+  await h.settle(1700);
+  assert.deepStrictEqual(lastWriteJson(h, projectPath), { ...beforeRepo, repo: { ...beforeRepo.repo, ...repoEdits } }, "repository edits did not preserve other metadata");
+  h.close();
+  await mod.openWizard(ctx);
+  h.openDom();
+  await h.settle();
+  for (const [key, value] of Object.entries(repoEdits)) {
+    assert.strictEqual(h.must("#p-" + key).value, value, "repository field not restored on reopen: " + key);
+    h.setValue("#p-" + key, "");
+  }
+  await h.settle(1700);
+  assert.deepStrictEqual(lastWriteJson(h, projectPath), { ...beforeRepo, repo: { ...beforeRepo.repo, projectBranchUrl: "", kbUrl: "" } }, "clearing repository URLs changed other metadata");
+  const withoutRepo = lastWriteJson(h, projectPath);
+  delete withoutRepo.repo;
+  h.overlay.set(path.join(projectDir, projectPath), JSON.stringify(withoutRepo));
+  h.close();
+  await mod.openWizard(ctx);
+  h.openDom();
+  await h.settle();
+  for (const key of Object.keys(repoEdits)) assert.strictEqual(h.must("#p-" + key).value, "", "missing repo did not default to empty fields");
+  h.setValue("#p-projectBranchUrl", repoEdits.projectBranchUrl);
+  await h.settle(1700);
+  assert.deepStrictEqual(lastWriteJson(h, projectPath), { ...withoutRepo, repo: { projectBranchUrl: repoEdits.projectBranchUrl, kbUrl: "" } }, "editing a legacy project did not create repo");
+  for (const cmd of ["project", "autoSave"]) {
+    for (const key of ["intendedUse", "projectBranchUrl", "kbUrl"]) {
+      const writesBefore = h.writes.length;
+      const invalid = { [key]: 42 };
+      h.deliverToHost(cmd === "project" ? { cmd, ...invalid } : { cmd, data: { project: invalid } });
+      await h.settle();
+      assert.strictEqual(h.writes.length, writesBefore, "invalid text must not write artifacts");
+      assert.ok(h.toWebview[h.toWebview.length - 1].text.includes("Invalid " + key));
+    }
+  }
+  const beforeLegacySave = lastWriteJson(h, projectPath);
+  beforeLegacySave.repo.futureMetadata = { tags: ["preserve"] };
+  h.overlay.set(path.join(projectDir, projectPath), JSON.stringify(beforeLegacySave));
+  const form = h.lastToHost((m) => m.cmd === "autoSave" && typeof m.data?.project?.name === "string").data.project;
+  const legacySave = {
+    ...form, cmd: "project", bnd: form.boundary, ...repoEdits,
+    inScope: ["  firmware  ", ""], outOfScope: ["  plant DCS  ", "   "],
+    intendedUse: "Legacy save purpose", foreseeableUse: ["  Maintenance  ", ""],
+  };
+  h.deliverToHost(legacySave);
+  await h.settle();
+  const expectedLegacySave = {
+    ...beforeLegacySave, repo: { ...beforeLegacySave.repo, ...repoEdits },
+    scope: { ...beforeLegacySave.scope, inScope: ["firmware"], outOfScope: ["plant DCS"] },
+    intendedUse: "Legacy save purpose", foreseeableUse: ["Maintenance"],
+  };
+  assert.deepStrictEqual(lastWriteJson(h, projectPath), expectedLegacySave, "explicit project save did not merge or clean new fields");
+  for (const key of ["inScope", "outOfScope", "intendedUse", "foreseeableUse", "projectBranchUrl", "kbUrl"]) delete legacySave[key];
+  h.deliverToHost(legacySave);
+  await h.settle();
+  assert.deepStrictEqual(lastWriteJson(h, projectPath), expectedLegacySave, "older save messages must preserve omitted fields");
   checkLiveDomHandlers(h);
 }
 

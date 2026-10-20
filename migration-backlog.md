@@ -102,7 +102,7 @@ Verification baseline for every item:
 - [x] **EXT-PRJ3 Project `status`** (draft / in-progress / review / released; default draft).
 - [x] **EXT-PRJ4 `scope.inScope[]` / `scope.outOfScope[]` list editors** (empty rows dropped).
 - [x] **EXT-PRJ5 CRA `intendedUse` + `foreseeableUse[]`** (Deps: EXT-PRJ4 list widget).
-- [ ] **EXT-PRJ6 `repo.projectBranchUrl` / `repo.kbUrl`** (merged into existing `repo`).
+- [x] **EXT-PRJ6 `repo.projectBranchUrl` / `repo.kbUrl`** (merged into existing `repo`).
 
 Common AC for PRJ items: field is shown in the wizard Project step, saved to the exact webapp field
 name (`webapp/client/src/types.ts`, `ProjectPanel.tsx`), other keys preserved, value shown again on
@@ -173,6 +173,7 @@ the orchestrator implements them directly (anchors: `renderProject()` and the de
 
 | Item | Impl | Review | Test | Notes |
 |---|---|---|---|---|
+| EXT-PRJ6 | ✅ | ✅ | ✅ PASS (compile, 112 model assertions, parse + runtime smoke tests) | Branch/PR and KB Git URLs merge into `repo`, including on legacy projects without it. Tests cover HTTPS queries, SSH Git syntax, undo/redo, save/reopen, clearing, unknown repo keys and invalid text rejection. Also verifies explicit project-save messages normalize scope/CRA lists and preserve omitted new fields. |
 | EXT-PRJ5 | ✅ | ✅ | ✅ PASS (compile, 112 model assertions, parse + runtime smoke tests) | Intended purpose and foreseeable-use scenarios use the webapp's top-level fields. Reuses the list editor with multiline scenario rows; tests cover literal markup/newlines, editing, add/remove, undo/redo, save/reopen, clearing and preservation of unrelated project metadata. |
 | EXT-PRJ4 | ✅ | ✅ | ✅ PASS (compile, 112 model assertions, parse + runtime smoke tests) | Reusable add/edit/remove row editor follows the wizard's existing list UI; both save handlers trim text and drop blank rows while preserving other scope keys. Runtime tests cover list loading, add/edit/remove undo/redo, save/reopen, literal markup, whitespace-only rows, clearing and invalid-list rejection. |
 | EXT-PRJ3 | ✅ | ✅ | ✅ PASS (compile, 112 model assertions, parse + runtime smoke tests) | Status selector matches all four webapp values and defaults legacy projects to draft. Runtime tests cover each value, undo/redo, save/reopen and whole-project metadata preservation; both save handlers reject invalid statuses with an explicit error before writing. |
