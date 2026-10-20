@@ -1,6 +1,7 @@
 ---
+name: tra-review-single
 description: "Review a single EmbedRisk TRA project for schema compliance, plausibility, and traceability gaps, and produce a structured audit-ready review report."
-agent: tra-reviewer
+disable-model-invocation: true
 argument-hint: "Path to the TRA project folder (e.g. webapp/projects/test)"
 ---
 Review the TRA project at the path provided (ask for it if not given). Read all step files present

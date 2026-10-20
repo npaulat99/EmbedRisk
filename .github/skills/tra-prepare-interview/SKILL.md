@@ -1,6 +1,7 @@
 ---
+name: tra-prepare-interview
 description: "Prepare a TRA interview before talking to the user: run context extraction and gap analysis on an EmbedRisk project and return a prioritized, de-duplicated list of open questions for the TRA Facilitator to ask — without asking the user anything yet."
-agent: tra-facilitator
+disable-model-invocation: true
 argument-hint: "Path to the TRA project folder"
 ---
 Prepare (do not start) a TRA interview for the project provided:
