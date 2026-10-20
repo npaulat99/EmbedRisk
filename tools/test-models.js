@@ -166,6 +166,31 @@ DfdModel.deleteNode(roundTripDfd, unrelated.id);
 assertDfdPreserved("deleteNode");
 assert.deepStrictEqual(roundTripDfd, expectedRoundTrip, "deleting the unrelated node removes only its node and flow");
 
+const orphanDfd = JSON.parse(JSON.stringify(dfd));
+orphanDfd.nodes.push({ id: "N-DEEP", type: "store", parent: "N-MCU", layer: 3 });
+const layoutValues = {
+  ifacePos: { x: 10, y: 20 },
+  ifaceRot: 90,
+  ifaceLink: { sourceHandle: "r", targetHandle: "l" },
+  portPos: { x: 30, y: 40 },
+};
+const orphanKeys = ["N-DEV:IF1", "N-MCU:IF1", "N-DEEP:IF1", "root:N-DEV", "N-DCS:N-MCU", "root:N-DEEP"];
+const retainedKeys = ["root:IF1", "N-DCS:IF1", "N-DEV-OTHER:IF1", "root:N-DEV-OTHER", "constructor:IF1", "root:toString"];
+for (const [field, value] of Object.entries(layoutValues)) {
+  orphanDfd[field] = Object.fromEntries([...orphanKeys, ...retainedKeys].map((key) => [key, value]));
+}
+DfdModel.deleteNode(orphanDfd, "N-DEV");
+for (const [field, value] of Object.entries(layoutValues)) {
+  assert.deepStrictEqual(orphanDfd[field], Object.fromEntries(retainedKeys.map((key) => [key, value])),
+    "deleteNode cleans " + field + " for the node and descendants without removing unrelated keys");
+  passed++;
+}
+ok("delete removes deeply nested descendants", !orphanDfd.nodes.some((n) => n.id === "N-DEEP"));
+ok("delete does not introduce absent layout maps", Object.keys(layoutValues).every((field) => !Object.hasOwn(d3, field)));
+const emptyLayoutDfd = { nodes: [], flows: [], ifacePos: {}, ifaceRot: {}, ifaceLink: {}, portPos: {} };
+DfdModel.deleteNode(emptyLayoutDfd, "N-MISSING");
+assert.deepStrictEqual(emptyLayoutDfd, { nodes: [], flows: [], ifacePos: {}, ifaceRot: {}, ifaceLink: {}, portPos: {} });
+
 /* ---------- Attack-defense tree model (schema-identical to the webapp) ---------- */
 const tree = {
   id: "AT-1",

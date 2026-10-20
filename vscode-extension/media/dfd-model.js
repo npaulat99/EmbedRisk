@@ -67,7 +67,7 @@
     return flow;
   }
   function deleteNode(dfd, id) {
-    var doomed = {}; doomed[id] = true;
+    var doomed = Object.create(null); doomed[id] = true;
     var changed = true;
     while (changed) {
       changed = false;
@@ -78,6 +78,15 @@
     dfd.nodes = dfd.nodes.filter(function (n) { return !doomed[n.id]; });
     dfd.flows = dfd.flows.filter(function (f) { return !doomed[f.from] && !doomed[f.to]; });
     dfd.nodes.forEach(function (n) { if (n.members) n.members = n.members.filter(function (m) { return !doomed[m]; }); });
+    ["ifacePos", "ifaceRot", "ifaceLink", "portPos"].forEach(function (field) {
+      var entries = dfd[field];
+      if (!entries) return;
+      Object.keys(entries).forEach(function (key) {
+        // Webapp layout keys are "<parent node or root>:<interface or endpoint>".
+        var separator = key.indexOf(":");
+        if (separator !== -1 && (doomed[key.slice(0, separator)] || doomed[key.slice(separator + 1)])) delete entries[key];
+      });
+    });
   }
 
   function shapeSvg(n, focus, riskColor) {

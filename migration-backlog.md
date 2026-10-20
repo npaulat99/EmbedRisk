@@ -90,9 +90,9 @@ Verification baseline for every item:
     `componentRef`, `width`/`height`; after `addNode`/`addFlow`/`deleteNode` (unrelated node) and
     `layout`, those keys are deep-equal.
   - Deps: EXT-00.
-- [ ] **EXT-DFD2 Clean orphan layout keys on node delete.**
-  - AC1: After deleting node X, no `ifacePos`/`portPos`/`ifaceLink` key references X (matching webapp
-    store `deleteNode` semantics).
+- [x] **EXT-DFD2 Clean orphan layout keys on node delete.**
+  - AC1: After deleting node X, no `ifacePos`/`ifaceRot`/`portPos`/`ifaceLink` key references X or its
+    deleted descendants; unrelated entries survive (key format from webapp `types.ts`).
   - Deps: EXT-DFD1.
 
 ## Epic 2 — Project (01) fields
@@ -173,6 +173,7 @@ the orchestrator implements them directly (anchors: `renderProject()` and the de
 
 | Item | Impl | Review | Test | Notes |
 |---|---|---|---|---|
+| EXT-DFD2 | ✅ | ✅ | ✅ PASS (compile, 112 model assertions, parse + runtime smoke tests; regression failed before fix) | Cleans parent and endpoint references in all four layout maps, including nested descendants; preserves absent/empty maps and similarly named IDs. Corrected stale reference: current webapp deletion is in `Inspector.tsx`, not the store, and does not clean these maps. Extension retains its existing recursive deletion behavior. |
 | EXT-DFD1 | ✅ | ✅ | ✅ PASS (compile, 106 model assertions, parse + runtime smoke tests) | Synthetic webapp-format fixture checks all layout maps, handles, component references, dimensions and unknown nested metadata after each edit and JSON serialization; unrelated node/flow deletion restores the original document. |
 | EXT-HOT2 | ✅ (salvaged the interrupted subagent's harness instead of redoing it) | ✅ | ✅ PASS (`tools/test-webviews-runtime.js`: 6 webviews, all wizard rail steps; failed on the old wizard, passes now) | Found + fixed: wizard SBOM source `<select>` used an inline `onchange` blocked by the nonce CSP, and `project.sbom` was never updated in memory (re-render reverted it). RL-100 fixture vendored to `tools/fixtures/RL-100` (project folders are gitignored). |
 | EXT-HOT1 | ✅ | ✅ PASS | ✅ PASS (new `tools/test-webviews.js` fails on old code, passes now; use-case delete matches webapp `Inspector.tsx`) | Runtime smoke test skipped (no jsdom) → EXT-HOT2 |
