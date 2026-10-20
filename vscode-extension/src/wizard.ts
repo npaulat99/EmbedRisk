@@ -1001,6 +1001,10 @@ function renderSystem(){
           '<div class="field"><label>Layer</label><input class="inp" type="number" min=1 max=6 data-comp='+i+' data-k="layer" value="'+(+c.layer||1)+'"></div>'+
           '<div class="field"><label>Parent</label><select class="inp" data-comp='+i+' data-k="parent">'+parentSel+'</select></div>'+
         '</div>'+
+        '<div class="grid2">'+
+          '<div class="field"><label for="comp-zone-'+i+'">Trust zone</label><input class="inp" id="comp-zone-'+i+'" data-comp='+i+' data-k="trustZone" value="'+esc(c.trustZone||'')+'"></div>'+
+          '<div class="field"><label for="comp-description-'+i+'">Description</label><textarea class="inp" id="comp-description-'+i+'" rows="2" data-comp='+i+' data-k="description">'+esc(c.description||'')+'</textarea></div>'+
+        '</div>'+
         '<details style="margin-top:4px"><summary class="hint" style="cursor:pointer;list-style:none;padding:2px 0">&#9654; SBOM metadata</summary>'+
           '<div class="grid4" style="margin-top:6px">'+
             '<div class="field"><label>Version</label><input class="inp" data-comp='+i+' data-k="version" value="'+esc(c.version||'')+'" placeholder="1.2.3"></div>'+

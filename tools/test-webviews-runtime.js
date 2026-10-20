@@ -361,6 +361,52 @@ async function checkProjectList(h, mod, key, readList) {
   assert.deepStrictEqual(readList(lastWriteJson(h, projectPath)), [], key + " removal was not persisted");
 }
 
+async function checkSystemFields(h, mod) {
+  const systemPath = "03-system-assets/system.json";
+  const original = JSON.parse(h.readText(path.join(projectDir, systemPath)));
+  original.components[0] = {
+    ...original.components[0], trustZone: "Imported zone", description: "Imported description\nSecond line",
+    futureMetadata: { tags: ["preserve"] },
+  };
+  h.overlay.set(path.join(projectDir, systemPath), JSON.stringify(original));
+  h.close();
+  await mod.openWizard(ctx);
+  h.openDom();
+  await h.settle();
+  h.click('[data-systab="components"]');
+  const edits = { trustZone: 'Zone <trusted> & "internal"', description: 'Description </textarea> & "text"\nSecond line' };
+  for (const [key, value] of Object.entries(edits)) {
+    const selector = `[data-comp="0"][data-k="${key}"]`;
+    assert.strictEqual(h.must(selector).value, original.components[0][key], "component field not loaded: " + key);
+    h.setValue(selector, value);
+    h.key("z", { ctrlKey: true });
+    assert.strictEqual(h.must(selector).value, original.components[0][key], "component field undo failed: " + key);
+    h.key("y", { ctrlKey: true });
+    assert.strictEqual(h.must(selector).value, value, "component field redo failed: " + key);
+  }
+  h.click('[data-systab="interfaces"]');
+  h.click('[data-systab="components"]');
+  for (const [key, value] of Object.entries(edits)) assert.strictEqual(h.must(`[data-comp="0"][data-k="${key}"]`).value, value, "tab switch lost component field");
+  const expected = { ...original, components: original.components.map((c, i) => i === 0 ? { ...c, ...edits } : c) };
+  await h.settle(1700);
+  assert.deepStrictEqual(lastWriteJson(h, systemPath), expected, "component edits changed unrelated system metadata");
+  h.close();
+  await mod.openWizard(ctx);
+  h.openDom();
+  await h.settle();
+  h.click('[data-systab="components"]');
+  for (const [key, value] of Object.entries(edits)) {
+    const selector = `[data-comp="0"][data-k="${key}"]`;
+    assert.strictEqual(h.must(selector).value, value, "component field not restored on reopen: " + key);
+    const newIndex = original.components.length - 1;
+    assert.strictEqual(h.must(`[data-comp="${newIndex}"][data-k="${key}"]`).value, original.components[newIndex][key] || "", "optional component field has incorrect default");
+    h.setValue(selector, "");
+  }
+  await h.settle(1700);
+  expected.components[0] = { ...expected.components[0], trustZone: "", description: "" };
+  assert.deepStrictEqual(lastWriteJson(h, systemPath), expected, "clearing component fields changed other metadata");
+}
+
 async function wizard(h) {
   const mod = await load(h, "wizard.ts");
   await mod.openWizard(ctx);
@@ -651,6 +697,7 @@ async function wizard(h) {
   h.deliverToHost(legacySave);
   await h.settle();
   assert.deepStrictEqual(lastWriteJson(h, projectPath), expectedLegacySave, "older save messages must preserve omitted fields");
+  await checkSystemFields(h, mod);
   checkLiveDomHandlers(h);
 }
 

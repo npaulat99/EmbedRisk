@@ -112,7 +112,7 @@ the orchestrator implements them directly (anchors: `renderProject()` and the de
 
 ## Epic 3 — System & assets (03), requirements (05)
 
-- [ ] **EXT-SYS1 Component `trustZone` and `description`.**
+- [x] **EXT-SYS1 Component `trustZone` and `description`.**
 - [ ] **EXT-SYS2 Interface `tag` and `hidden` (DFD visibility reset).**
 - [ ] **EXT-SYS3 Asset row summary tags** (type + C/I/A/S).
 - [ ] **EXT-REQ1 Requirement `fromCountermeasure` checkbox + "Realises CM" / "Not derived" badges.**
@@ -173,6 +173,7 @@ the orchestrator implements them directly (anchors: `renderProject()` and the de
 
 | Item | Impl | Review | Test | Notes |
 |---|---|---|---|---|
+| EXT-SYS1 | ✅ | ✅ | ✅ PASS (compile, 112 model assertions, parse + runtime smoke tests) | Adds trust-zone and multiline description fields using the existing component save/history paths. Tests cover populated/missing values, literal markup, edits, tab switches, undo/redo, save/reopen, clearing and unknown component metadata. Description is in the shared schema but not currently exposed by webapp `SystemPanel.tsx`. |
 | EXT-PRJ6 | ✅ | ✅ | ✅ PASS (compile, 112 model assertions, parse + runtime smoke tests) | Branch/PR and KB Git URLs merge into `repo`, including on legacy projects without it. Tests cover HTTPS queries, SSH Git syntax, undo/redo, save/reopen, clearing, unknown repo keys and invalid text rejection. Also verifies explicit project-save messages normalize scope/CRA lists and preserve omitted new fields. |
 | EXT-PRJ5 | ✅ | ✅ | ✅ PASS (compile, 112 model assertions, parse + runtime smoke tests) | Intended purpose and foreseeable-use scenarios use the webapp's top-level fields. Reuses the list editor with multiline scenario rows; tests cover literal markup/newlines, editing, add/remove, undo/redo, save/reopen, clearing and preservation of unrelated project metadata. |
 | EXT-PRJ4 | ✅ | ✅ | ✅ PASS (compile, 112 model assertions, parse + runtime smoke tests) | Reusable add/edit/remove row editor follows the wizard's existing list UI; both save handlers trim text and drop blank rows while preserving other scope keys. Runtime tests cover list loading, add/edit/remove undo/redo, save/reopen, literal markup, whitespace-only rows, clearing and invalid-list rejection. |
