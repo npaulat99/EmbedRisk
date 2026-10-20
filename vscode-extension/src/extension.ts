@@ -12,6 +12,9 @@ import { NativeDfdEditor } from "./nativeDfdEditor";
 import { AttackTreeEditor } from "./attackTreeEditor";
 import { UseCaseEditor } from "./useCaseEditor";
 
+// Isomorphic CommonJS webview model, reused here for the shared threatRefs/threatRef read rule.
+const AtModel = require("../media/attacktree-model.js");
+
 interface Node { id: string; label: string; type: string; layer: number; parent?: string | null }
 interface Dfd { nodes: Node[]; flows: { id: string; label?: string; from: string; to: string }[]; }
 
@@ -264,7 +267,7 @@ export function activate(ctx: vscode.ExtensionContext) {
         const d = await readDoc();
         const ids = new Set(d.trees.map((x: any) => x.id));
         const base = t ? "AT-" + t.id : "AT"; let id = base; let n = 1; while (ids.has(id)) id = `${base}-${++n}`;
-        d.trees.push({ id, title: t ? t.title : "New attack goal", threatRef: t ? t.id : "", root: { id: "n1", kind: "goal", label: t ? t.title : "Attack goal", gate: "OR", children: [{ id: "n2", kind: "step", label: "Attacker step 1", access: 3, skill: 2, cost: {}, children: [] }] } });
+        d.trees.push({ id, title: t ? t.title : "New attack goal", ...(t ? { threatRef: t.id } : {}), threatRefs: t ? [t.id] : [], root: { id: "n1", kind: "goal", label: t ? t.title : "Attack goal", gate: "OR", children: [{ id: "n2", kind: "step", label: "Attacker step 1", access: 3, skill: 2, cost: {}, children: [] }] } });
         attackTreeEditor.pendingTreeId = id; // set before writing so the new tree is focused whether or not the editor is already open
         await writeDoc(d);
         await vscode.commands.executeCommand("vscode.openWith", file, "embedrisk.attackTree");
@@ -275,13 +278,17 @@ export function activate(ctx: vscode.ExtensionContext) {
       const doc0 = await readDoc();
       const threatTitle = (ref: string) => ((threats.find((x: any) => x.id === ref) || {}).title) || "";
       const NEW: any = { label: "$(add) New attack tree\u2026", alwaysShow: true };
-      const build = (d: any) => [NEW, ...d.trees.map((t: any) => ({
-        label: (t.threatRef ? "$(target) " + t.threatRef + " \u00b7 " : "") + (t.title || t.id),
-        description: t.id,
-        detail: (t.threatRef ? threatTitle(t.threatRef) + "  \u00b7  " : "") + countNodes(t.root) + " node(s)",
-        treeId: t.id,
-        buttons: [{ iconPath: new vscode.ThemeIcon("trash"), tooltip: "Delete this attack tree" }],
-      }))];
+      const build = (d: any) => [NEW, ...d.trees.map((t: any) => {
+        const refs: string[] = AtModel.threatRefsOf(t);
+        const titles = refs.map(threatTitle).filter(Boolean).join(", ");
+        return {
+          label: (refs.length ? "$(target) " + refs.join(", ") + " \u00b7 " : "") + (t.title || t.id),
+          description: t.id,
+          detail: (titles ? titles + "  \u00b7  " : "") + countNodes(t.root) + " node(s)",
+          treeId: t.id,
+          buttons: [{ iconPath: new vscode.ThemeIcon("trash"), tooltip: "Delete this attack tree" }],
+        };
+      })];
       const qp = vscode.window.createQuickPick();
       qp.title = "Attack trees";
       qp.ignoreFocusOut = true;

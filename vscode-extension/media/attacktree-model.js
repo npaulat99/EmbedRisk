@@ -1,6 +1,9 @@
 /* Attack-defense tree model + renderer — schema-identical to tra-webapp (types.ts AdNode / AttackTree
    and lib/attackTree.ts). Isomorphic: window (webview) + module.exports (Node tests).
-   Tree: { id, title, threatRef?, description?, root: AdNode }.
+   Tree: { id, title, threatRefs?: string[], threatRef?, description?, root: AdNode }.
+   threatRefs is the preferred 0..n threat link list; threatRef is the legacy single link, kept equal to
+   threatRefs[0] on write (removed when there are no links) exactly like the webapp. Read via threatRefsOf(),
+   which returns the de-duplicated union of threatRefs and threatRef (webapp read rule).
   AdNode: { id, kind, label, gate?, access?, skill?, cost?, residualCost?, impactDimensions?, countermeasureRef?, note?, children? }.
    kind ∈ goal|step|substep|category|countermeasure|vulnerability ; gate ∈ AND|OR|SAND. */
 (function (g) {
@@ -170,6 +173,21 @@
     return { svg: edges.join("") + gates.join("") + boxes.join(""), width: Math.max(maxX + PAD, 240), height: Math.max(maxY + PAD, 180) };
   }
 
+  function threatRefsOf(tree) {
+    if (!tree) return [];
+    var refs = (Array.isArray(tree.threatRefs) ? tree.threatRefs : []).concat(tree.threatRef ? [tree.threatRef] : []);
+    var out = [];
+    refs.forEach(function (r) { if (typeof r === "string" && r && out.indexOf(r) < 0) out.push(r); });
+    return out;
+  }
+  function setThreatRefs(tree, refs) {
+    var next = [];
+    (refs || []).forEach(function (r) { if (typeof r === "string" && r && next.indexOf(r) < 0) next.push(r); });
+    tree.threatRefs = next;
+    if (next.length) tree.threatRef = next[0]; else delete tree.threatRef;
+    return next;
+  }
+
   function toHtml(root) {
     function ul(node) {
       var kids = node.children || [];
@@ -182,7 +200,7 @@
     return "<ul><li>" + ul(root) + "</li></ul>";
   }
 
-  var api = { KIND_LABEL: KIND_LABEL, GATES: GATES, COST_FACTORS: COST_FACTORS, DEFAULT_LIKELIHOOD_THRESHOLDS: DEFAULT_LIKELIHOOD_THRESHOLDS, esc: esc, isStructural: isStructural, walk: walk, find: find, parentOf: parentOf, uid: uid, newNode: newNode, addChild: addChild, addSibling: addSibling, remove: remove, cycleGate: cycleGate, setKind: setKind, stepProb: stepProb, evaluate: evaluate, likelihoodFromProb: likelihoodFromProb, render: render, toHtml: toHtml };
+  var api = { KIND_LABEL: KIND_LABEL, GATES: GATES, COST_FACTORS: COST_FACTORS, DEFAULT_LIKELIHOOD_THRESHOLDS: DEFAULT_LIKELIHOOD_THRESHOLDS, esc: esc, isStructural: isStructural, walk: walk, find: find, parentOf: parentOf, uid: uid, newNode: newNode, addChild: addChild, addSibling: addSibling, remove: remove, cycleGate: cycleGate, setKind: setKind, stepProb: stepProb, evaluate: evaluate, likelihoodFromProb: likelihoodFromProb, render: render, toHtml: toHtml, threatRefsOf: threatRefsOf, setThreatRefs: setThreatRefs };
   g.AtModel = api;
   if (typeof module !== "undefined" && module.exports) module.exports = api;
 })(typeof window !== "undefined" ? window : globalThis);

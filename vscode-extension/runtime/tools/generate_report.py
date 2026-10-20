@@ -181,13 +181,22 @@ try:
 except Exception:
     trees = []
 trees_html = ""
+def _tree_threat_refs(tr):
+    # De-duplicated union of threatRefs[] and legacy threatRef (same rule as the webapp and attacktree-model.js threatRefsOf).
+    refs = tr.get("threatRefs")
+    refs = list(refs) if isinstance(refs, list) else []
+    if tr.get("threatRef"):
+        refs.append(tr.get("threatRef"))
+    return list(dict.fromkeys(r for r in refs if isinstance(r, str) and r))
+
 for tr in trees:
-    tref = tr.get("threatRef")
-    if tref and tref not in tids:
-        issues.append(f"Attack tree '{tr.get('id')}' references unknown threat '{tref}'.")
+    trefs = _tree_threat_refs(tr)
+    for tref in trefs:
+        if tref not in tids:
+            issues.append(f"Attack tree '{tr.get('id')}' references unknown threat '{tref}'.")
     heading = _esc(tr.get("title", tr.get("id", "")))
-    if tref:
-        heading += f" &mdash; {tref}"
+    if trefs:
+        heading += f" &mdash; {_esc(', '.join(trefs))}"
     trees_html += f"<h3>{heading}</h3>{('<ul><li>' + _tree_ul(tr['root']) + '</li></ul>') if tr.get('root') else ''}"
 trees_section = f"<h2>Attack trees</h2>{trees_html}" if trees_html else ""
 

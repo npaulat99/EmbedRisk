@@ -224,6 +224,23 @@ const r = AtModel.render(tree, "s1");
 ok("render returns sized svg", r.width > 0 && r.height > 0 && r.svg.includes("data-id='s1'"));
 ok("render shows gate label", r.svg.includes(">OR<") || r.svg.includes(">AND<"));
 
+/* ---------- Attack tree threat links (threatRefs[] preferred, threatRef legacy) ---------- */
+const sameList = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+ok("threatRefsOf threatRefs only", sameList(AtModel.threatRefsOf({ threatRefs: ["T1", "T2"] }), ["T1", "T2"]));
+ok("threatRefsOf legacy threatRef only", sameList(AtModel.threatRefsOf({ threatRef: "T3" }), ["T3"]));
+ok("threatRefsOf unions threatRefs with a threatRef not already listed", sameList(AtModel.threatRefsOf({ threatRefs: ["T1", "T2"], threatRef: "T9" }), ["T1", "T2", "T9"]));
+ok("threatRefsOf does not duplicate a threatRef already in threatRefs", sameList(AtModel.threatRefsOf({ threatRefs: ["T1", "T2"], threatRef: "T2" }), ["T1", "T2"]));
+ok("threatRefsOf includes threatRef when threatRefs is empty", sameList(AtModel.threatRefsOf({ threatRefs: [], threatRef: "T3" }), ["T3"]));
+ok("threatRefsOf de-duplicates", sameList(AtModel.threatRefsOf({ threatRefs: ["T1", "T2", "T1", "T2"] }), ["T1", "T2"]));
+ok("threatRefsOf neither set", sameList(AtModel.threatRefsOf({ id: "AT1" }), []) && sameList(AtModel.threatRefsOf({ threatRef: "" }), []) && sameList(AtModel.threatRefsOf(null), []));
+const linkTree = { id: "AT1", threatRef: "T1", threatRefs: ["T1", "T2"], root: { id: "g", kind: "goal", label: "g", children: [] } };
+AtModel.setThreatRefs(linkTree, ["T2", "T3", "T2"]);
+ok("setThreatRefs writes threatRefs and syncs threatRef to the first link", sameList(linkTree.threatRefs, ["T2", "T3"]) && linkTree.threatRef === "T2");
+AtModel.addChild(linkTree.root, "g", "step");
+ok("editing tree nodes preserves threat links", sameList(AtModel.threatRefsOf(linkTree), ["T2", "T3"]));
+AtModel.setThreatRefs(linkTree, []);
+ok("setThreatRefs with no links keeps empty threatRefs and removes threatRef", sameList(linkTree.threatRefs, []) && !("threatRef" in linkTree));
+
 /* ---------- Risk model ---------- */
 ok("band Low", RiskModel.band(3, null).name === "Low");
 ok("band High", RiskModel.band(16, null).name === "High");

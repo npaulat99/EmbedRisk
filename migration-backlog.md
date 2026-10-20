@@ -53,8 +53,9 @@ Verification baseline for every item:
   - AC1: Both files are byte-identical to `webapp/.assets/knowledge-base/`.
   - AC2: A test fails if the copies drift.
   - Deps: EXT-00.
-- [ ] **EXT-A1 Attack trees support `threatRefs[]`.** The extension only reads/writes legacy `threatRef`.
-  - AC1: Model helper `threatRefsOf(tree)` returns `threatRefs` or falls back to `[threatRef]`.
+- [x] **EXT-A1 Attack trees support `threatRefs[]`.** The extension only reads/writes legacy `threatRef`.
+  - AC1: Model helper `threatRefsOf(tree)` returns the de-duplicated union of `threatRefs` and `threatRef`
+    (corrected during implementation to match the webapp's read rule).
   - AC2: Editor displays all linked threats; on save writes `threatRefs` and sets `threatRef` to the first
     entry; additional links are preserved.
   - AC3: Unit tests for the helper.
@@ -124,7 +125,8 @@ reopen, undo/redo works. Items touch the same wizard code and run sequentially.
   (`reading '02-assumptions'`). AC: falls back to default step paths (as `webapp/server/src/artifacts.js`
   does) and generates RL-100 unmodified; same fix in `tools/generate-report.mjs`.
 - [ ] **EXT-RPT2 Python report generators follow webapp residual rules** (`generate_report.py` copies still use
-  single-best-control, ignore `selected`/`unfeasible`). AC: same numbers as the `.mjs` generator on RL-100.
+  single-best-control, ignore `selected`/`unfeasible`; they also crash on projects without `steps` and with
+  `KeyError: 'access'` on attackers lacking that field, e.g. RNI01). AC: same numbers as the `.mjs` generator on RL-100.
 
 - [ ] **EXT-V1 Validation diagnostics** in the Problems panel (port of `webapp/server/src/validate.js`).
 - [ ] **EXT-E1 Traceability CSV/JSON + SBOM export commands** (parity with server endpoints).
@@ -148,6 +150,7 @@ reopen, undo/redo works. Items touch the same wizard code and run sequentially.
 
 | Item | Impl | Review | Test | Notes |
 |---|---|---|---|---|
+| EXT-A1 | ✅ (2 rounds: orchestrator corrected AC1 to webapp union semantics + "+ Tree" auto-link) | ✅ PASS | ✅ PASS (11 parity cases vs webapp, RL-100 round trip deep-equal, Python helper matches) | Also fixed unescaped `threatRef` in Python report heading |
 | EXT-K1 | ✅ | ✅ PASS | ✅ PASS (cmp identical, drift test fails helpfully, `vsce ls` includes bug-bar.json) | `bug-bar.json` bundled but unused until EXT-B1 |
 | EXT-R1b | ✅ | ❌→✅ PASS (2nd round: unfeasible rows printed false "4×5=0" arithmetic) | ✅ PASS (RL-100 20/20 threats match client `riskOf`; DFD heat matches DfdView; re-verified marker rendering) | Found pre-existing report crash on missing `steps` (EXT-RPT1) and Python drift (EXT-RPT2); `tools/generate-report.mjs` looks for `.assets/` at repo root (pre-existing, not extension) |
 | EXT-R1 | ✅ | ❌→✅ PASS (2nd round: `None` pill had no CSS background) | ✅ PASS (0 mismatches vs webapp `riskOf`, RL-100 + 16 edge cases) | Webapp server `computeRisk` gives L×I initial for unfeasible threats while client gives 0 — webapp-internal inconsistency, reported |
