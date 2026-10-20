@@ -48,7 +48,7 @@ Verification baseline for every item:
   - AC1: Both skip `selected === false` controls and treat unfeasible threats as 0/0, like `media/risk-model.js`.
   - AC2: Report numbers for `webapp/projects/RL-100` match the webapp report / `computeRisk`.
   - Deps: EXT-R1.
-- [ ] **EXT-K1 Sync bundled knowledge base.** `runtime/.assets/knowledge-base/risk-scheme.json` is missing
+- [x] **EXT-K1 Sync bundled knowledge base.** `runtime/.assets/knowledge-base/risk-scheme.json` is missing
   `likelihood.factors` / `factorScale`; `bug-bar.json` is not bundled.
   - AC1: Both files are byte-identical to `webapp/.assets/knowledge-base/`.
   - AC2: A test fails if the copies drift.
@@ -148,6 +148,7 @@ reopen, undo/redo works. Items touch the same wizard code and run sequentially.
 
 | Item | Impl | Review | Test | Notes |
 |---|---|---|---|---|
+| EXT-K1 | ✅ | ✅ PASS | ✅ PASS (cmp identical, drift test fails helpfully, `vsce ls` includes bug-bar.json) | `bug-bar.json` bundled but unused until EXT-B1 |
 | EXT-R1b | ✅ | ❌→✅ PASS (2nd round: unfeasible rows printed false "4×5=0" arithmetic) | ✅ PASS (RL-100 20/20 threats match client `riskOf`; DFD heat matches DfdView; re-verified marker rendering) | Found pre-existing report crash on missing `steps` (EXT-RPT1) and Python drift (EXT-RPT2); `tools/generate-report.mjs` looks for `.assets/` at repo root (pre-existing, not extension) |
 | EXT-R1 | ✅ | ❌→✅ PASS (2nd round: `None` pill had no CSS background) | ✅ PASS (0 mismatches vs webapp `riskOf`, RL-100 + 16 edge cases) | Webapp server `computeRisk` gives L×I initial for unfeasible threats while client gives 0 — webapp-internal inconsistency, reported |
 | EXT-00 | ✅ | ✅ PASS | ✅ PASS | Fixture moved to `tools/fixtures/`; webapp evaluator gives identical metrics for all 4 trees |

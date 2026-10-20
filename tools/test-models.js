@@ -246,6 +246,14 @@ const rUnfeasible = RiskModel.riskOf({ id: "T1", likelihood: 4, impact: 4, statu
 ok("unfeasible ⇒ initial 0 and residual 0/0", rUnfeasible.initial === 0 && rUnfeasible.residual === 0 && rUnfeasible.residualLikelihood === 0 && rUnfeasible.residualImpact === 0 && rUnfeasible.initialBand.name === "None");
 ok("band(0) is None", RiskModel.band(0, null).name === "None");
 
+/* ---------- Bundled knowledge-base drift (extension runtime vs webapp) ---------- */
+["risk-scheme.json", "bug-bar.json", "field-device-library.json"].forEach((file) => {
+  const webappFile = path.join(root, "webapp/.assets/knowledge-base", file);
+  const extFile = path.join(root, "vscode-extension/runtime/.assets/knowledge-base", file);
+  const inSync = fs.existsSync(extFile) && fs.readFileSync(webappFile).equals(fs.readFileSync(extFile));
+  ok("bundled knowledge-base " + file + " drifted from webapp copy; re-sync with: cp webapp/.assets/knowledge-base/" + file + " vscode-extension/runtime/.assets/knowledge-base/" + file, inSync);
+});
+
 /* ---------- Parity with webapp/server/src/risk.js (ESM) ---------- */
 async function checkWebappParity() {
   const { pathToFileURL } = require("node:url");

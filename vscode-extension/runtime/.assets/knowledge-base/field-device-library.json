@@ -1,17 +1,158 @@
 {
   "version": "1.0",
+  "maintainer": "Product-security unit (shared, pull-only)",
   "description": "Reusable, OT-specific threat/countermeasure library for embedded field devices. Importable into projects. Extend per device class.",
   "threats": [
-    { "key": "hart-spoof", "title": "HART/4-20mA command injection or value spoofing", "stride": ["T", "S"], "appliesTo": ["interface:HART"], "typicalImpact": 4 },
-    { "key": "bt-default-cred", "title": "Bluetooth default/weak commissioning credential", "stride": ["S", "E"], "appliesTo": ["interface:BLE"], "typicalImpact": 3 },
-    { "key": "fw-downgrade", "title": "Unauthenticated firmware update or rollback", "stride": ["T", "E"], "appliesTo": ["component:firmware", "component:bootloader"], "typicalImpact": 4 },
-    { "key": "debug-port", "title": "Exposed debug port (JTAG/SWD/UART)", "stride": ["I", "E"], "appliesTo": ["interface:debug"], "typicalImpact": 4 },
-    { "key": "level-falsify", "title": "Measurement falsification defeating overfill protection", "stride": ["T"], "appliesTo": ["asset:physical-process"], "typicalImpact": 5 }
+    {
+      "key": "hart-spoof",
+      "title": "HART/4-20mA command injection or value spoofing",
+      "stride": [
+        "S",
+        "T"
+      ],
+      "appliesTo": [
+        "interface:HART"
+      ],
+      "typicalImpact": 4
+    },
+    {
+      "key": "bt-default-cred",
+      "title": "Bluetooth default/weak commissioning credential",
+      "stride": [
+        "S",
+        "E"
+      ],
+      "appliesTo": [
+        "interface:BLE"
+      ],
+      "typicalImpact": 3
+    },
+    {
+      "key": "fw-downgrade",
+      "title": "Unauthenticated firmware update or rollback",
+      "stride": [
+        "T",
+        "E"
+      ],
+      "appliesTo": [
+        "component:firmware",
+        "component:bootloader"
+      ],
+      "typicalImpact": 4
+    },
+    {
+      "key": "debug-port",
+      "title": "Exposed debug port (JTAG/SWD/UART)",
+      "stride": [
+        "I",
+        "E"
+      ],
+      "appliesTo": [
+        "interface:debug"
+      ],
+      "typicalImpact": 4
+    },
+    {
+      "key": "level-falsify",
+      "title": "Measurement falsification defeating overfill protection",
+      "stride": [
+        "T"
+      ],
+      "appliesTo": [
+        "asset:physical-process"
+      ],
+      "typicalImpact": 5
+    }
   ],
   "countermeasures": [
-    { "key": "cmd-lock", "title": "Write protection / command lock in run mode", "for": ["hart-spoof"] },
-    { "key": "force-passcode", "title": "Force credential change at commissioning + lockout", "for": ["bt-default-cred"] },
-    { "key": "signed-update", "title": "Signed-only updates + anti-rollback", "for": ["fw-downgrade"] },
-    { "key": "disable-debug", "title": "Disable/lock debug ports in production", "for": ["debug-port"] }
+    {
+      "key": "cmd-lock",
+      "title": "Write protection / command lock in run mode",
+      "for": [
+        "hart-spoof"
+      ]
+    },
+    {
+      "key": "force-passcode",
+      "title": "Force credential change at commissioning + lockout",
+      "for": [
+        "bt-default-cred"
+      ]
+    },
+    {
+      "key": "signed-update",
+      "title": "Signed-only updates + anti-rollback",
+      "for": [
+        "fw-downgrade"
+      ]
+    },
+    {
+      "key": "disable-debug",
+      "title": "Disable/lock debug ports in production",
+      "for": [
+        "debug-port"
+      ]
+    }
+  ],
+  "assets": [
+    {
+      "key": "measurement-integrity",
+      "name": "Primary measurement integrity",
+      "type": "physical-process",
+      "objectives": {
+        "confidentiality": 1,
+        "integrity": 5,
+        "availability": 4,
+        "safety": 5
+      }
+    },
+    {
+      "key": "firmware-integrity",
+      "name": "Firmware integrity",
+      "type": "firmware",
+      "objectives": {
+        "confidentiality": 2,
+        "integrity": 5,
+        "availability": 3,
+        "safety": 4
+      }
+    },
+    {
+      "key": "commissioning-credentials",
+      "name": "Commissioning credentials",
+      "type": "credential",
+      "objectives": {
+        "confidentiality": 4,
+        "integrity": 4,
+        "availability": 2,
+        "safety": 2
+      }
+    }
+  ],
+  "riskRatings": [
+    {
+      "key": "physical-hard",
+      "note": "Physical-only surface, specialist skill",
+      "likelihoodFactors": {
+        "exposure": 1,
+        "exploitability": 2
+      }
+    },
+    {
+      "key": "fieldbus-easy",
+      "note": "Reachable fieldbus, public tooling",
+      "likelihoodFactors": {
+        "exposure": 3,
+        "exploitability": 5
+      }
+    },
+    {
+      "key": "remote-routable",
+      "note": "Remotely routable surface",
+      "likelihoodFactors": {
+        "exposure": 5,
+        "exploitability": 3
+      }
+    }
   ]
 }
