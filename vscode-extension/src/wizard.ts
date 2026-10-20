@@ -81,6 +81,7 @@ async function buildData(proj: vscode.Uri) {
   return {
     changeTracker: tracker,
     project: {
+      title: project.title || "",
       name: project.device?.name || "",
       sl: project.slTarget || "SL2",
       riskScoringMethod: project.riskScoringMethod || "cost-based",
@@ -149,6 +150,7 @@ export async function openWizard(ctx: vscode.ExtensionContext) {
 
     if (m.cmd === "project") {
       const project = await rdRaw(f.proj, "01-project-description/project.json", {});
+      if (typeof m.title === "string") project.title = m.title;
       project.device = project.device || {}; project.device.name = m.name; project.slTarget = m.sl;
       project.scope = project.scope || {}; project.scope.mode = m.mode; project.scope.boundary = m.bnd;
       project.reportOptions = project.reportOptions || {};
@@ -390,6 +392,7 @@ export async function openWizard(ctx: vscode.ExtensionContext) {
         const d = m.data || {};
         if (d.project) {
           const proj = await rdRaw(f.proj, "01-project-description/project.json", {});
+          if (typeof d.project.title === "string") proj.title = d.project.title;
           proj.device = proj.device || {}; proj.device.name = d.project.name;
           proj.slTarget = d.project.sl; proj.riskScoringMethod = d.project.riskScoringMethod || "cost-based"; proj.scope = proj.scope || {};
           proj.scope.mode = d.project.mode; proj.scope.boundary = d.project.boundary;
@@ -454,6 +457,7 @@ function shell(cssUri: vscode.Uri, riskUri: vscode.Uri, logoUri: vscode.Uri, csp
       <div class="card" id="card-project">
         <h2>01 · Project</h2>
         <div class="desc">Device, scope, and target security level.</div>
+        <div class="field"><label for="p-title">Project title</label><input class="inp" id="p-title" placeholder="TRA: ..."></div>
         <div class="row">
           <div class="field" style="flex:2"><label>Device name</label><input class="inp" id="p-name"></div>
           <div class="field"><label>SL target</label>
@@ -574,7 +578,7 @@ let changeTracker={currentVersion:null,entries:[]};
 let assumptions={attacker:[],device:[],system:[],environment:[],operational:[]};
 let system={components:[],interfaces:[],trustBoundaries:[],assets:[]};
 let requirements=[];
-let project={name:'',sl:'SL2',mode:'graybox',boundary:'',includeUseCases:false,useCaseNames:[],useCaseNoticePending:false};
+let project={title:'',name:'',sl:'SL2',mode:'graybox',boundary:'',includeUseCases:false,useCaseNames:[],useCaseNoticePending:false};
 let undoStack=[], redoStack=[], histKey='', histTime=0;
 let asmTab='device', sysTab='components';
 const $=function(s){return document.querySelector(s);};
@@ -591,8 +595,8 @@ function recordBefore(key){var now=Date.now();if(undoStack.length&&key===histKey
 function recordChanged(before){if(before===snapshot())return;pushUndo(before);histKey='';histTime=Date.now();}
 function keyOf(t){var d=t.dataset,k=(t.id||t.tagName);for(var p in d)k+='|'+p+'='+d[p];return k;}
 function applyState(s){var d=JSON.parse(s);project=d.project||project;threats=d.threats||[];cms=d.cms||[];assumptions=d.assumptions||assumptions;system=d.system||system;requirements=d.requirements||[];comps=(system.components||[]).map(function(c){return {id:c.id,name:c.name};});try{renderProject(project);}catch(e){console.error('project',e);}try{renderRail();}catch(e){console.error('rail',e);}try{renderThreats();}catch(e){console.error('threats',e);}try{renderCms();}catch(e){console.error('cms',e);}try{renderAssumptions();}catch(e){console.error('assumptions',e);}try{renderSystem();}catch(e){console.error('system',e);}try{renderRequirements();}catch(e){console.error('requirements',e);}}
-function undo(){if(!undoStack.length)return;redoStack.push(snapshot());applyState(undoStack.pop());histKey='';updUndoBtns();}
-function redo(){if(!redoStack.length)return;undoStack.push(snapshot());applyState(redoStack.pop());histKey='';updUndoBtns();}
+function undo(){if(!undoStack.length)return;redoStack.push(snapshot());applyState(undoStack.pop());histKey='';updUndoBtns();scheduleAutoSave();}
+function redo(){if(!redoStack.length)return;undoStack.push(snapshot());applyState(redoStack.pop());histKey='';updUndoBtns();scheduleAutoSave();}
 function clearHistory(){undoStack=[];redoStack=[];histKey='';histTime=0;updUndoBtns();}
 var autoSaveTimer=null;
 function scheduleAutoSave(){clearTimeout(autoSaveTimer);var st=$('#savingStatus');if(st){st.textContent='Saving…';st.style.color='var(--text-faint)';}autoSaveTimer=setTimeout(doAutoSave,1500);}
@@ -651,8 +655,9 @@ function renderRail(){
 }
 function renderProject(p){
   p=p||{};
-  project={name:p.name||'',sl:p.sl||'SL2',riskScoringMethod:p.riskScoringMethod||'cost-based',mode:p.mode||'graybox',boundary:p.boundary||'',sbom:p.sbom||{},includeUseCases:!!p.includeUseCases,useCaseNames:p.useCaseNames||[],useCaseNoticePending:!!p.useCaseNoticePending};
+  project={title:p.title||'',name:p.name||'',sl:p.sl||'SL2',riskScoringMethod:p.riskScoringMethod||'cost-based',mode:p.mode||'graybox',boundary:p.boundary||'',sbom:p.sbom||{},includeUseCases:!!p.includeUseCases,useCaseNames:p.useCaseNames||[],useCaseNoticePending:!!p.useCaseNoticePending};
   $('#devname').textContent=project.name?('· '+project.name):'';
+  $('#p-title').value=project.title;
   $('#p-name').value=project.name;$('#p-sl').value=project.sl;$('#p-risk').value=project.riskScoringMethod;$('#p-mode').value=project.mode;$('#p-bnd').value=project.boundary;
   var ucInc=$('#p-uc-inc'); if(ucInc) ucInc.checked=!!project.includeUseCases;
   var ucList=$('#p-uc-list'); if(ucList) ucList.innerHTML=(project.useCaseNames||[]).length?(project.useCaseNames||[]).map(function(n){return '<li>'+esc(n)+'</li>';}).join(''):'<li>No use-case diagrams yet.</li>';
@@ -1064,6 +1069,7 @@ document.addEventListener('input',function(e){
   var t=e.target;
   scheduleAutoSave();
   recordBefore(keyOf(t));
+  if(t.id==='p-title'){project.title=t.value;return;}
   if(t.id==='p-name'){project.name=t.value;$('#devname').textContent=t.value?('· '+t.value):'';return;}
   if(t.id==='p-sl'){project.sl=t.value;return;}
   if(t.id==='p-risk'){project.riskScoringMethod=t.value;return;}

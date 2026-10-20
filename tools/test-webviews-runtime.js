@@ -332,6 +332,7 @@ async function wizard(h) {
   assert.ok(init, "host did not answer 'ready' with 'init'");
   const rl = readProjectJson("01-project-description/project.json");
   assert.strictEqual(h.must("#p-name").value, rl.device.name, "project name not rendered from init payload");
+  assert.strictEqual(h.must("#p-title").value, rl.title || "", "project title not rendered independently from device name");
 
   // Every step in the rail (scroll targets and host commands).
   const steps = h.$$("#rail .stepitem").length;
@@ -376,6 +377,13 @@ async function wizard(h) {
   h.key("y", { ctrlKey: true });
   h.key("z", { ctrlKey: true, shiftKey: true });
 
+  const title = 'TRA: runtime <title> & "review"';
+  h.setValue("#p-title", title);
+  h.key("z", { ctrlKey: true });
+  assert.strictEqual(h.must("#p-title").value, rl.title || "", "title undo did not restore the original value");
+  h.key("y", { ctrlKey: true });
+  assert.strictEqual(h.must("#p-title").value, title, "title redo did not restore the edit");
+
   // Debounced auto-save (1.5 s) round trip through the real host handler.
   await h.settle(1700);
   const save = h.lastToHost((m) => m.cmd === "autoSave");
@@ -402,8 +410,34 @@ async function wizard(h) {
   assert.match(newest(d.threats), /^T[0-9]+$/, "new threat id");
   assert.match(newest(d.cms), /^CM[0-9]+$/, "new countermeasure id");
   assert.strictEqual(d.project.name, "RL-100 runtime test", "edited project name not auto-saved");
+  assert.strictEqual(d.project.title, title, "edited project title not auto-saved");
   assert.strictEqual(d.project.sbom.mode, "external", "SBOM source not auto-saved");
   assert.ok(lastWriteJson(h, "02-assumptions/assumptions.json"), "host did not write assumptions.json");
+  const projectPath = "01-project-description/project.json";
+  const savedProject = lastWriteJson(h, projectPath);
+  assert.strictEqual(savedProject.title, title, "host did not persist project.title");
+  assert.deepStrictEqual(savedProject.device, { ...rl.device, name: "RL-100 runtime test" }, "title editing changed device metadata");
+  for (const key of Object.keys(rl)) {
+    if (["title", "device", "scope", "slTarget", "riskScoringMethod", "reportOptions", "sbom", "acceptedNotices"].includes(key)) continue;
+    assert.deepStrictEqual(savedProject[key], rl[key], "project edit lost unrelated field: " + key);
+  }
+
+  // Undo/redo after the original save must persist, not merely update the DOM.
+  h.click("#undoBtn");
+  await h.settle(1700);
+  assert.strictEqual(lastWriteJson(h, projectPath).title, rl.title || "", "undo was not saved");
+  h.click("#redoBtn");
+  await h.settle(1700);
+  assert.strictEqual(lastWriteJson(h, projectPath).title, title, "redo was not saved");
+  h.close();
+  await mod.openWizard(ctx);
+  h.openDom();
+  await h.settle();
+  assert.strictEqual(h.must("#p-title").value, title, "title was not restored on reopen");
+  assert.strictEqual(h.must("#p-name").value, "RL-100 runtime test", "device name was changed by title editing");
+  h.setValue("#p-title", "");
+  await h.settle(1700);
+  assert.strictEqual(lastWriteJson(h, projectPath).title, "", "empty title did not clear the saved title");
   checkLiveDomHandlers(h);
 }
 
