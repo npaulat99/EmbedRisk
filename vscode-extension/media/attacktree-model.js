@@ -70,15 +70,25 @@
   function clamp01(x) { return Math.max(0, Math.min(1, x)); }
   function hasCost(cost) { return COST_FACTORS.some(function (f) { return typeof (cost || {})[f.k] === "number"; }); }
   function level(value) { return typeof value === "number" && value >= 1 && value <= 5 ? value : 0; }
-  function stepProb(cost) {
-    if (!hasCost(cost)) return 1;
-    var weightedCost = COST_FACTORS.reduce(function (sum, f) {
-      var value = typeof cost[f.k] === "number" ? cost[f.k] : 3;
-      return sum + f.weight * Math.max(1, Math.min(5, value));
-    }, 0);
-    return clamp01((6 - weightedCost) / 5);
+  function costWeightTotal(weights) {
+    return COST_FACTORS.reduce(function (sum, f) { return sum + Math.max(0, Number(weights && weights[f.k] != null ? weights[f.k] : f.weight) || 0); }, 0);
   }
-  function evaluate(node, cmById) {
+  function normalizedCostWeights(weights) {
+    var total = costWeightTotal(weights), normalized = {};
+    COST_FACTORS.forEach(function (f) { normalized[f.k] = Math.max(0, Number(weights && weights[f.k] != null ? weights[f.k] : f.weight) || 0) / (total || 1); });
+    return normalized;
+  }
+  function weightedCost(cost, weights) {
+    var normalized = normalizedCostWeights(weights);
+    return COST_FACTORS.reduce(function (sum, f) { return sum + normalized[f.k] * Math.max(1, Math.min(5, cost && cost[f.k] != null ? cost[f.k] : 3)); }, 0);
+  }
+  function stepProb(cost, weights) {
+    // Preserve the extension's public unassessed=1 behavior; webapp stepProb defaults to .6,
+    // but its evaluate uses the same unassessed=1 rule. weightedCost matches the webapp.
+    if (!hasCost(cost)) return 1;
+    return clamp01((6 - weightedCost(cost, weights)) / 5);
+  }
+  function evaluate(node, cmById, weights) {
     var kids = (node.children || []).filter(function (c) { return c.kind !== "countermeasure" && c.kind !== "vulnerability"; });
     var defChildren = (node.children || []).filter(function (c) { return c.kind === "countermeasure"; });
     var vulnChildren = (node.children || []).filter(function (c) { return c.kind === "vulnerability"; });
@@ -87,22 +97,22 @@
     var residualEntity = node.kind === "countermeasure" || node.kind === "vulnerability";
     var assessed = leafAttackStep || residualEntity;
     var assessmentCost = residualEntity ? node.residualCost : node.cost;
-    var selfProb = assessed ? stepProb(assessmentCost) : 1, selfSkill = assessed ? level(node.skill) : 0, selfAccess = assessed ? level(node.access) : 0;
+    var selfProb = assessed ? stepProb(assessmentCost, weights) : 1, selfSkill = assessed ? level(node.skill) : 0, selfAccess = assessed ? level(node.access) : 0;
     var defenceResiduals = leafAttackStep ? defChildren.filter(function (c) { return hasCost(c.residualCost); }) : [];
-    if (defenceResiduals.length) selfProb = Math.min.apply(null, defenceResiduals.map(function (c) { return stepProb(c.residualCost); }));
+    if (defenceResiduals.length) selfProb = Math.min.apply(null, defenceResiduals.map(function (c) { return stepProb(c.residualCost, weights); }));
     var vulnerabilityResiduals = leafAttackStep ? vulnChildren.filter(function (c) { return hasCost(c.residualCost); }) : [];
     if (vulnerabilityResiduals.length) {
-      var selected = vulnerabilityResiduals.reduce(function (best, c) { return stepProb(c.residualCost) > stepProb(best.residualCost) ? c : best; });
-      selfProb = stepProb(selected.residualCost); selfSkill = level(selected.skill); selfAccess = level(selected.access);
+      var selected = vulnerabilityResiduals.reduce(function (best, c) { return stepProb(c.residualCost, weights) > stepProb(best.residualCost, weights) ? c : best; });
+      selfProb = stepProb(selected.residualCost, weights); selfSkill = level(selected.skill); selfAccess = level(selected.access);
     }
     var skillReq, accessReq, prob, defenses = defChildren.length, vulns = ownVuln;
     if (!kids.length) { skillReq = selfSkill; accessReq = selfAccess; prob = selfProb; }
     else {
-      var cm = kids.map(function (k) { return evaluate(k, cmById); });
+      var cm = kids.map(function (k) { return evaluate(k, cmById, weights); });
       defenses += cm.reduce(function (s, c) { return s + c.defenses; }, 0);
       vulns += cm.reduce(function (s, c) { return s + c.vulns; }, 0);
       if (node.kind === "category" || node.gate === "OR") {
-        var alternatives = cm.concat(vulnChildren.map(function (c) { return evaluate(c, cmById); }));
+        var alternatives = cm.concat(vulnChildren.map(function (c) { return evaluate(c, cmById, weights); }));
         var best = alternatives.reduce(function (a, b) { return b.prob > a.prob ? b : a; });
         skillReq = Math.max(best.skillReq, selfSkill); accessReq = Math.max(best.accessReq, selfAccess); prob = best.prob * selfProb;
       } else {
@@ -200,7 +210,7 @@
     return "<ul><li>" + ul(root) + "</li></ul>";
   }
 
-  var api = { KIND_LABEL: KIND_LABEL, GATES: GATES, COST_FACTORS: COST_FACTORS, DEFAULT_LIKELIHOOD_THRESHOLDS: DEFAULT_LIKELIHOOD_THRESHOLDS, esc: esc, isStructural: isStructural, walk: walk, find: find, parentOf: parentOf, uid: uid, newNode: newNode, addChild: addChild, addSibling: addSibling, remove: remove, cycleGate: cycleGate, setKind: setKind, stepProb: stepProb, evaluate: evaluate, likelihoodFromProb: likelihoodFromProb, render: render, toHtml: toHtml, threatRefsOf: threatRefsOf, setThreatRefs: setThreatRefs };
+  var api = { KIND_LABEL: KIND_LABEL, GATES: GATES, COST_FACTORS: COST_FACTORS, DEFAULT_LIKELIHOOD_THRESHOLDS: DEFAULT_LIKELIHOOD_THRESHOLDS, esc: esc, isStructural: isStructural, walk: walk, find: find, parentOf: parentOf, uid: uid, newNode: newNode, addChild: addChild, addSibling: addSibling, remove: remove, cycleGate: cycleGate, setKind: setKind, costWeightTotal: costWeightTotal, normalizedCostWeights: normalizedCostWeights, weightedCost: weightedCost, stepProb: stepProb, evaluate: evaluate, likelihoodFromProb: likelihoodFromProb, render: render, toHtml: toHtml, threatRefsOf: threatRefsOf, setThreatRefs: setThreatRefs };
   g.AtModel = api;
   if (typeof module !== "undefined" && module.exports) module.exports = api;
 })(typeof window !== "undefined" ? window : globalThis);

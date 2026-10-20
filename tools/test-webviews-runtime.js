@@ -1237,13 +1237,30 @@ async function wizard(h) {
 }
 
 async function attackTreeEditor(h) {
-  const mod = await load(h, "attackTreeEditor.ts");
+  const projectPath = path.join(projectDir, "01-project-description/project.json");
+  const weights = { time: 1, exploitability: 0, window: 0, detection: 0, notoriety: 0, prep: 0, abort: 0 };
+  h.overlay.set(projectPath, JSON.stringify({ costFactorWeights: weights }));
+  h.overlay.set(path.join(projectDir, "07-attack-trees/attack-trees.json"), JSON.stringify({ trees: [{
+    id: "AT1", title: "Weighted tree", root: { id: "g", kind: "goal", label: "Goal", gate: "AND", children: [
+      { id: "s", kind: "step", label: "Weighted step", cost: { time: 1, exploitability: 5 }, skill: 2, access: 3 },
+    ] },
+  }] }));
+  const stub = h.vscodeStub();
+  let changeDocument, subscriptionDisposed = false;
+  stub.workspace.onDidChangeTextDocument = (handler) => {
+    changeDocument = handler;
+    return { dispose() { subscriptionDisposed = true; } };
+  };
+  const mod = await bundleModule(path.join(srcDir, "attackTreeEditor.ts"), stub);
   const provider = new mod.AttackTreeEditor(ctx.extensionUri);
-  await provider.resolveCustomTextEditor(h.createDocument("07-attack-trees/attack-trees.json"), h.createPanel(), {});
+  const panel = h.createPanel();
+  await provider.resolveCustomTextEditor(h.createDocument("07-attack-trees/attack-trees.json"), panel, {});
   h.openDom();
   await h.settle();
   assert.ok(h.toWebview.some((m) => m.type === "load"), "host did not answer 'ready' with 'load'");
   assert.ok(h.$$("#treesel option").length >= 1 && h.$$("#cv [data-id]").length > 1, "attack tree not rendered");
+  assert.deepStrictEqual(h.toWebview.find((m) => m.type === "load").costFactorWeights, weights);
+  assert.match(h.must("#metrics").textContent, /success ≈ 100%/, "initial project weights not evaluated");
 
   // Select a non-root node by clicking it on the canvas.
   const target = h.$$("#cv [data-id]")[1];
@@ -1251,6 +1268,31 @@ async function attackTreeEditor(h) {
   h.click(target);
   assert.strictEqual(h.must("#in-label").value.length > 0, true, "inspector not shown for selected node");
   assert.ok(h.$(`#cv [data-id="${id}"]`), "selected node vanished");
+
+  // Unsaved project edits update metrics only; malformed intermediate JSON retains valid weights.
+  for (const [text, probability] of [
+    [JSON.stringify({ costFactorWeights: { ...weights, time: 0, exploitability: 1 } }), 20],
+    ["{", 20], ["{}", 62],
+  ]) {
+    changeDocument({ document: { uri: Uri.file(projectPath), getText: () => text } });
+    await h.settle();
+    assert.match(h.must("#metrics").textContent, new RegExp(`success ≈ ${probability}%`));
+    assert.strictEqual(h.must("#in-label").value, "Weighted step", "weight change reset selection");
+  }
+  assert.strictEqual(h.toHost.filter((m) => m.type === "save").length, 0, "weight changes wrote tree data");
+  // Reopening/loading missing, malformed or empty project configuration defaults safely.
+  const readFile = stub.workspace.fs.readFile;
+  for (const text of [undefined, "{", "null", "{}"]) {
+    stub.workspace.fs.readFile = async (uri) => {
+      if (uri.fsPath !== projectPath) return readFile(uri);
+      if (text === undefined) throw new Error("ENOENT (test project config)");
+      return Buffer.from(text);
+    };
+    h.deliverToHost({ type: "ready" });
+    await h.settle();
+    assert.match(h.must("#metrics").textContent, /success ≈ 62%/, "project fallback did not restore default weights");
+  }
+  stub.workspace.fs.readFile = readFile;
 
   // Documented shortcuts: navigation, gate cycle, add child (+ prompt Enter), rename (+ Escape), delete, undo/redo.
   for (const k of ["ArrowUp", "ArrowDown", "ArrowRight", "ArrowLeft"]) h.key(k);
@@ -1281,6 +1323,8 @@ async function attackTreeEditor(h) {
   const added = saved.trees[saved.trees.length - 1];
   assert.match(added.id, /^AT[0-9]+$/, "new attack tree id has no webapp prefix");
   checkLiveDomHandlers(h);
+  panel.dispose();
+  assert.ok(subscriptionDisposed, "project document subscription was not disposed");
 }
 
 async function nativeDfdEditor(h) {

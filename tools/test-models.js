@@ -279,6 +279,69 @@ const defenceAssessment = { id: "d", kind: "countermeasure", label: "Defence", a
 const defenceMetrics = AtModel.evaluate(defenceAssessment, {});
 ok("defence residual assessment retains configured access and skill", defenceMetrics.prob === 0.2 && defenceMetrics.accessReq === 4 && defenceMetrics.skillReq === 3);
 
+// Compare against the actual webapp evaluator without adding a runtime dependency to the model.
+const esbuild = require(path.join(root, "vscode-extension/node_modules/esbuild"));
+const referenceModule = { exports: {} };
+require("node:vm").runInNewContext(esbuild.transformSync(
+  fs.readFileSync(path.join(root, "webapp/client/src/lib/attackTree.ts"), "utf8"),
+  { loader: "ts", format: "cjs" },
+).code, { module: referenceModule });
+const reference = referenceModule.exports;
+const timeOnly = { ...all(0), time: 1 }, exploitOnly = { ...all(0), exploitability: 1 };
+const weightCases = [undefined, null, {}, { time: 2 }, timeOnly, exploitOnly, all(0),
+  all(-1), { time: -2, window: null, prep: undefined }, { time: "2", abort: "invalid" }];
+const costCases = [undefined, null, {}, { time: 1 }, all(5), { time: -10, exploitability: 20 },
+  { time: 2, window: null, prep: undefined }, { time: 2, detection: "4" }];
+for (const weights of weightCases) {
+  assert.strictEqual(AtModel.costWeightTotal(weights), reference.costWeightTotal(weights));
+  assert.deepStrictEqual(AtModel.normalizedCostWeights(weights), { ...reference.normalizedCostWeights(weights) });
+  for (const cost of costCases) {
+    assert.strictEqual(AtModel.weightedCost(cost, weights), reference.weightedCost(cost, weights));
+    if (cost && Object.values(cost).some((v) => typeof v === "number")) {
+      assert.strictEqual(AtModel.stepProb(cost, weights), reference.stepProb(cost, weights));
+    }
+  }
+}
+ok("weight helpers match webapp defaults, normalization, zero/negative/nullish weights and cost clamps", true);
+ok("public stepProb retains unassessed=1 while weightedCost uses default cost=3",
+  AtModel.stepProb() === 1 && AtModel.stepProb({}) === 1 && Math.abs(AtModel.weightedCost() - 3) < 1e-9);
+
+const weightedA = { id: "a", kind: "step", cost: { time: 1, exploitability: 5 }, skill: 5, access: 1 };
+const weightedB = { id: "b", kind: "substep", cost: { time: 5, exploitability: 1 }, skill: 1, access: 5 };
+const weightedDefs = [weightedA, weightedB].map((n) => ({ ...n, kind: "countermeasure", residualCost: n.cost }));
+const weightedVulns = [weightedA, weightedB].map((n) => ({ ...n, kind: "vulnerability", residualCost: n.cost }));
+const weightedOr = { kind: "goal", gate: "OR", children: [weightedA, weightedB] };
+const weightedResidual = { ...weightedA, children: [...weightedDefs, ...weightedVulns] };
+const parityTrees = [
+  structuralGoal, derivedParent, legacyLevels, weightedA, weightedB, defenceAssessment,
+  ...costCases.map((cost) => ({ ...weightedA, cost })),
+  ...["AND", "SAND", "OR"].map((gate) => ({ kind: "goal", gate, children: [weightedOr, weightedB] })),
+  weightedOr, { ...weightedOr, kind: "category", gate: "AND" },
+  { ...weightedOr, children: [weightedB, weightedVulns[0]] },
+  { ...weightedOr, children: [weightedA, { kind: "vulnerability" }] },
+  { ...weightedA, children: weightedDefs }, weightedResidual,
+  { ...weightedA, children: [weightedVulns[1], { ...weightedVulns[1], skill: 4, access: 2 }] },
+  ...["proposed", "planned", "implemented", "verified", "unknown", undefined].map((status) => ({
+    ...weightedResidual, children: [...weightedResidual.children,
+      { kind: "countermeasure", countermeasureRef: status }, { kind: "vulnerability" }],
+  })),
+];
+const statuses = Object.fromEntries(["proposed", "planned", "implemented", "verified", "unknown"].map((status) => [status, { status }]));
+for (const weights of weightCases) {
+  for (const node of parityTrees) {
+    assert.deepStrictEqual(AtModel.evaluate(node, statuses, weights),
+      { ...reference.evaluate(node, new Map(Object.entries(statuses)), weights) },
+      `evaluation parity: ${JSON.stringify({ node, weights })}`);
+  }
+}
+ok("weighted evaluation matches webapp gates, recursive paths, residual min/max, ties and legacy modifiers", true);
+assert.deepStrictEqual(AtModel.evaluate(weightedOr, {}, timeOnly),
+  { prob: 1, skillReq: 5, accessReq: 1, defenses: 0, vulns: 0 });
+assert.deepStrictEqual(AtModel.evaluate(weightedOr, {}, exploitOnly),
+  { prob: 1, skillReq: 1, accessReq: 5, defenses: 0, vulns: 0 });
+ok("OR selects both axes from the weighted winning path and keeps first path on ties",
+  AtModel.evaluate(weightedOr, {}, all(0)).skillReq === 5);
+
 const aggregationFixture = JSON.parse(fs.readFileSync(path.join(root, "tools/fixtures/attack-tree-aggregation.json"), "utf8"));
 const aggregationById = Object.fromEntries(aggregationFixture.trees.map((fixture) => [fixture.id, fixture]));
 const fixtureOr = AtModel.evaluate(aggregationById["AT-TEST-OR"].root, {});

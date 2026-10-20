@@ -18,15 +18,17 @@ export class AttackTreeEditor implements vscode.CustomTextEditorProvider {
     const csp = `default-src 'none'; img-src ${panel.webview.cspSource}; style-src ${panel.webview.cspSource} 'unsafe-inline'; script-src 'nonce-${nonce}' ${panel.webview.cspSource};`;
 
     const projRoot = vscode.Uri.joinPath(doc.uri, "..", "..");
+    const projectUri = vscode.Uri.joinPath(projRoot, "01-project-description/project.json");
     const readRefs = async () => {
       const rd = async (rel: string, def: any) => { try { return JSON.parse(Buffer.from(await vscode.workspace.fs.readFile(vscode.Uri.joinPath(projRoot, rel))).toString()); } catch { return def; } };
       const cms = ((await rd("08-countermeasures/countermeasures.json", { countermeasures: [] })).countermeasures || []).map((c: any) => ({ id: c.id, title: c.title, status: c.status }));
       const threats = ((await rd("06-threats/threats.json", { threats: [] })).threats || []).map((t: any) => ({ id: t.id, title: t.title }));
-      return { cms, threats };
+      const project = await rd("01-project-description/project.json", {});
+      return { cms, threats, costFactorWeights: project?.costFactorWeights };
     };
 
     let lastText = "";
-    const post = async () => { const r = await readRefs(); const selectId = this.pendingTreeId; this.pendingTreeId = undefined; panel.webview.postMessage({ type: "load", doc: doc.getText() || '{"trees":[]}', cms: r.cms, threats: r.threats, selectId }); };
+    const post = async () => { const r = await readRefs(); const selectId = this.pendingTreeId; this.pendingTreeId = undefined; panel.webview.postMessage({ type: "load", doc: doc.getText() || '{"trees":[]}', cms: r.cms, threats: r.threats, costFactorWeights: r.costFactorWeights, selectId }); };
     const save = async (text: string) => {
       lastText = text;
       const ed = new vscode.WorkspaceEdit();
@@ -38,6 +40,11 @@ export class AttackTreeEditor implements vscode.CustomTextEditorProvider {
     panel.webview.html = this.html(modelUri, cssUri, logoUri, csp, nonce);
     const sub = vscode.workspace.onDidChangeTextDocument((e) => {
       if (e.document.uri.toString() === doc.uri.toString() && e.document.getText() !== lastText) post();
+      if (e.document.uri.toString() === projectUri.toString()) {
+        // Use the edited text (which may not be saved yet), without resetting tree selection/history.
+        try { panel.webview.postMessage({ type: "weights", costFactorWeights: JSON.parse(e.document.getText())?.costFactorWeights }); }
+        catch { /* Keep the last valid weights while project JSON is incomplete. */ }
+      }
     });
     panel.onDidDispose(() => sub.dispose());
     panel.webview.onDidReceiveMessage(async (m) => {
@@ -109,7 +116,7 @@ const COST_LEVELS={
   prep:[[1,'None'],[2,'Software setup'],[3,'Test environment'],[4,'Procure'],[5,'Infrastructure']],
   abort:[[1,'Robust'],[2,'Rare'],[3,'Moderate'],[4,'Frequent'],[5,'Very Likely']]
 };
-let doc={trees:[]}, ti=0, focus=null, cms=[], threats=[];
+let doc={trees:[]}, ti=0, focus=null, cms=[], threats=[], costFactorWeights;
 const $=id=>document.getElementById(id);
 function esc(s){return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
 function tree(){return doc.trees[ti];}
@@ -138,7 +145,7 @@ function drawCanvas(){
   if(!M.find(t.root,focus))focus=t.root.id;
   var r=M.render(t,focus);
   cv.setAttribute('width',Math.max(r.width,400));cv.setAttribute('height',Math.max(r.height,180));cv.innerHTML=r.svg;
-  var m=M.evaluate(t.root,cmMap());
+  var m=M.evaluate(t.root,cmMap(),costFactorWeights);
   $('metrics').textContent='success ≈ '+Math.round(m.prob*100)+'% · suggests likelihood '+M.likelihoodFromProb(m.prob)+' · access '+m.accessReq+' · skill '+m.skillReq+' · '+m.defenses+' defence(s)';
 }
 function renderTreeSel(){
@@ -225,7 +232,7 @@ window.addEventListener('keydown',function(e){
   else if(e.key==='e'||e.key==='F2'){rename();e.preventDefault();}
   else if(e.key==='d'||e.key==='Delete'){del();e.preventDefault();}
 });
-window.addEventListener('message',function(ev){var m=ev.data;if(m.type==='load'){try{doc=JSON.parse(m.doc);}catch(_){doc={trees:[]};}if(!doc.trees)doc.trees=[];if(m.cms)cms=m.cms;if(m.threats)threats=m.threats;if(m.selectId){var si=doc.trees.findIndex(function(t){return t.id===m.selectId;});if(si>=0){ti=si;focus=null;}}if(ti>=doc.trees.length)ti=0;var r=root();if(r&&!M.find(r,focus))focus=r.id;baseState=snap();updUndo();draw();}});
+window.addEventListener('message',function(ev){var m=ev.data;if(m.type==='weights'){costFactorWeights=m.costFactorWeights;drawCanvas();}if(m.type==='load'){costFactorWeights=m.costFactorWeights;try{doc=JSON.parse(m.doc);}catch(_){doc={trees:[]};}if(!doc.trees)doc.trees=[];if(m.cms)cms=m.cms;if(m.threats)threats=m.threats;if(m.selectId){var si=doc.trees.findIndex(function(t){return t.id===m.selectId;});if(si>=0){ti=si;focus=null;}}if(ti>=doc.trees.length)ti=0;var r=root();if(r&&!M.find(r,focus))focus=r.id;baseState=snap();updUndo();draw();}});
 vs.postMessage({type:'ready'});
 </script></body></html>`;
   }
