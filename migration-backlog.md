@@ -113,7 +113,7 @@ the orchestrator implements them directly (anchors: `renderProject()` and the de
 ## Epic 3 — System & assets (03), requirements (05)
 
 - [x] **EXT-SYS1 Component `trustZone` and `description`.**
-- [ ] **EXT-SYS2 Interface `tag` and `hidden` (DFD visibility reset).**
+- [x] **EXT-SYS2 Interface `tag` and `hidden` (DFD visibility reset).**
 - [ ] **EXT-SYS3 Asset row summary tags** (type + C/I/A/S).
 - [ ] **EXT-REQ1 Requirement `fromCountermeasure` checkbox + "Realises CM" / "Not derived" badges.**
 
@@ -173,6 +173,7 @@ the orchestrator implements them directly (anchors: `renderProject()` and the de
 
 | Item | Impl | Review | Test | Notes |
 |---|---|---|---|---|
+| EXT-SYS2 | ✅ | ✅ | ✅ PASS (compile, 112 model assertions, parse + runtime smoke tests) | Adds interface chip tags and the webapp's hidden-only visibility reset; unhide persists a boolean and supports undo/redo. Native DFD now respects `hidden` and watches system metadata so tag/visibility changes refresh open canvases. Tests cover save/reopen, clearing, metadata preservation, literal chip text, live hide/unhide and watcher disposal. |
 | EXT-SYS1 | ✅ | ✅ | ✅ PASS (compile, 112 model assertions, parse + runtime smoke tests) | Adds trust-zone and multiline description fields using the existing component save/history paths. Tests cover populated/missing values, literal markup, edits, tab switches, undo/redo, save/reopen, clearing and unknown component metadata. Description is in the shared schema but not currently exposed by webapp `SystemPanel.tsx`. |
 | EXT-PRJ6 | ✅ | ✅ | ✅ PASS (compile, 112 model assertions, parse + runtime smoke tests) | Branch/PR and KB Git URLs merge into `repo`, including on legacy projects without it. Tests cover HTTPS queries, SSH Git syntax, undo/redo, save/reopen, clearing, unknown repo keys and invalid text rejection. Also verifies explicit project-save messages normalize scope/CRA lists and preserve omitted new fields. |
 | EXT-PRJ5 | ✅ | ✅ | ✅ PASS (compile, 112 model assertions, parse + runtime smoke tests) | Intended purpose and foreseeable-use scenarios use the webapp's top-level fields. Reuses the list editor with multiline scenario rows; tests cover literal markup/newlines, editing, add/remove, undo/redo, save/reopen, clearing and preservation of unrelated project metadata. |

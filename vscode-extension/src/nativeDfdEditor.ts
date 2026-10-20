@@ -26,6 +26,7 @@ export class NativeDfdEditor implements vscode.CustomTextEditorProvider {
             id: itf.id, name: itf.name, tag: itf.tag || '',
             component: itf.component || '', exposure: itf.exposure || '',
             protocol: itf.protocol || '', category: itf.category || '',
+            hidden: !!itf.hidden,
           })),
           trustBoundaryIds: (sys.trustBoundaries || []).map((b: any) => b.id).filter((id: any) => typeof id === "string"),
         };
@@ -81,7 +82,11 @@ export class NativeDfdEditor implements vscode.CustomTextEditorProvider {
     const sub = vscode.workspace.onDidChangeTextDocument((e) => {
       if (e.document.uri.toString() === doc.uri.toString() && e.document.getText() !== lastText) post();
     });
-    panel.onDidDispose(() => sub.dispose());
+    const systemWatcher = vscode.workspace.createFileSystemWatcher(new vscode.RelativePattern(projRoot, "03-system-assets/system.json"));
+    systemWatcher.onDidChange(post);
+    systemWatcher.onDidCreate(post);
+    systemWatcher.onDidDelete(post);
+    panel.onDidDispose(() => { sub.dispose(); systemWatcher.dispose(); });
 
     panel.webview.onDidReceiveMessage(async (m) => {
       if (m.type === "ready") { await post(); }
@@ -207,7 +212,7 @@ function drawCanvas(){
   // Render interface chips using ancestor-lookup so they appear on whatever layer is visible
   var ifaceChips='';
   (interfaces||[]).forEach(function(itf){
-    if(!itf.component)return;
+    if(itf.hidden||!itf.component)return;
     var nb=findIfaceAnchor(itf.component);
     if(!nb)return;
     var posKey=(cur()||'root')+':'+itf.id;
@@ -237,7 +242,7 @@ function renderInspector(){
   if(!n){
     // Check if an interface chip is focused
     var ifaceId=focus&&focus.startsWith('iface:')?focus.slice(6):null;
-    var selIface=ifaceId?(interfaces||[]).find(function(f){return f.id===ifaceId;}):null;
+    var selIface=ifaceId?(interfaces||[]).find(function(f){return f.id===ifaceId&&!f.hidden;}):null;
     if(selIface){
       $('insp').innerHTML='<h3>Interface chip</h3>'+
         '<div class="field"><label>Name</label><div style="padding:4px 0">'+esc(selIface.name)+'</div></div>'+

@@ -50,6 +50,7 @@ class Harness {
     this.commands = [];         // vscode.commands.executeCommand ids
     this.pending = new Set();
     this.outbox = [];           // host messages posted before the DOM exists
+    this.fileWatchers = [];
     this.html = undefined;
     this.hostHandler = null;
     this.dom = null;
@@ -76,6 +77,7 @@ class Harness {
     const disposable = () => ({ dispose() { } });
     return {
       Uri,
+      RelativePattern: class RelativePattern { constructor(baseUri, pattern) { this.baseUri = baseUri; this.pattern = pattern; } },
       ViewColumn: { One: 1, Two: 2, Beside: -2, Active: -1 },
       Range: class Range { constructor(...a) { this.args = a; } },
       WorkspaceEdit: class WorkspaceEdit {
@@ -112,6 +114,17 @@ class Harness {
           createDirectory: async () => { },
         },
         onDidChangeTextDocument: disposable,
+        createFileSystemWatcher: (pattern) => {
+          const watcher = {
+            pattern,
+            onDidChange(handler) { this.change = handler; return disposable(); },
+            onDidCreate(handler) { this.create = handler; return disposable(); },
+            onDidDelete(handler) { this.delete = handler; return disposable(); },
+            dispose() { this.disposed = true; },
+          };
+          h.fileWatchers.push(watcher);
+          return watcher;
+        },
         applyEdit: async (edit) => { edit.ops.forEach((op) => h.recordWrite(op.uri.fsPath, op.text)); return true; },
         openTextDocument: async () => ({}),
       },
@@ -120,6 +133,7 @@ class Harness {
 
   createPanel() {
     const h = this;
+    const disposeHandlers = [];
     const webview = {
       options: {},
       cspSource: "vscode-webview://test",
@@ -132,10 +146,10 @@ class Harness {
       webview,
       visible: true,
       active: true,
-      onDidDispose: () => ({ dispose() { } }),
+      onDidDispose: (handler) => { disposeHandlers.push(handler); return { dispose() { } }; },
       onDidChangeViewState: () => ({ dispose() { } }),
       reveal() { },
-      dispose() { h.disposed = true; },
+      dispose() { h.disposed = true; disposeHandlers.forEach((handler) => handler()); },
     };
   }
 
@@ -405,6 +419,54 @@ async function checkSystemFields(h, mod) {
   await h.settle(1700);
   expected.components[0] = { ...expected.components[0], trustZone: "", description: "" };
   assert.deepStrictEqual(lastWriteJson(h, systemPath), expected, "clearing component fields changed other metadata");
+
+  const beforeInterfaces = lastWriteJson(h, systemPath);
+  beforeInterfaces.interfaces[0] = {
+    ...beforeInterfaces.interfaces[0], tag: "Imported tag", hidden: true,
+    futureMetadata: { tags: ["preserve"] },
+  };
+  h.overlay.set(path.join(projectDir, systemPath), JSON.stringify(beforeInterfaces));
+  h.close();
+  await mod.openWizard(ctx);
+  h.openDom();
+  await h.settle();
+  h.click('[data-systab="interfaces"]');
+  const tagSelector = '[data-if="0"][data-k="tag"]';
+  const hiddenSelector = '[data-if="0"][data-k="hidden"]';
+  const visibleIndex = beforeInterfaces.interfaces.length - 1;
+  assert.strictEqual(h.must(tagSelector).value, "Imported tag", "interface tag not loaded");
+  assert.strictEqual(h.must(hiddenSelector).checked, true, "hidden interface has no visibility reset");
+  assert.strictEqual(h.$(`[data-if="${visibleIndex}"][data-k="hidden"]`), null, "visible interface must not offer a hide control in the wizard");
+  assert.strictEqual(h.must(`[data-if="${visibleIndex}"][data-k="tag"]`).value, beforeInterfaces.interfaces[visibleIndex].tag || "", "optional tag default is incorrect");
+  const tag = 'BLE <&"tag">';
+  h.setValue(tagSelector, tag);
+  h.key("z", { ctrlKey: true });
+  assert.strictEqual(h.must(tagSelector).value, "Imported tag", "interface tag undo failed");
+  h.key("y", { ctrlKey: true });
+  assert.strictEqual(h.must(tagSelector).value, tag, "interface tag redo failed");
+  h.click(hiddenSelector);
+  assert.strictEqual(h.$(hiddenSelector), null, "visibility reset should disappear after unhiding");
+  h.key("z", { ctrlKey: true });
+  assert.strictEqual(h.must(hiddenSelector).checked, true, "unhide undo failed");
+  h.key("y", { ctrlKey: true });
+  assert.strictEqual(h.$(hiddenSelector), null, "unhide redo failed");
+  await h.settle(1700);
+  const expectedInterfaces = {
+    ...beforeInterfaces,
+    interfaces: beforeInterfaces.interfaces.map((itf, i) => i === 0 ? { ...itf, tag, hidden: false } : itf),
+  };
+  assert.deepStrictEqual(lastWriteJson(h, systemPath), expectedInterfaces, "tag or boolean visibility was not saved losslessly");
+  h.close();
+  await mod.openWizard(ctx);
+  h.openDom();
+  await h.settle();
+  h.click('[data-systab="interfaces"]');
+  assert.strictEqual(h.must(tagSelector).value, tag, "interface tag not restored on reopen");
+  assert.strictEqual(h.$(hiddenSelector), null, "unhidden interface was hidden again on reopen");
+  h.setValue(tagSelector, "");
+  await h.settle(1700);
+  expectedInterfaces.interfaces[0].tag = "";
+  assert.deepStrictEqual(lastWriteJson(h, systemPath), expectedInterfaces, "clearing interface tag changed other metadata");
 }
 
 async function wizard(h) {
@@ -749,12 +811,39 @@ async function attackTreeEditor(h) {
 }
 
 async function nativeDfdEditor(h) {
+  const systemPath = "03-system-assets/system.json";
+  const system = readProjectJson(systemPath);
+  const fixtureDfd = readProjectJson("04-dfd/dfd.json");
+  const anchor = fixtureDfd.nodes.find((n) => n.parent == null && n.componentRef && n.type !== "trust-boundary");
+  assert.ok(anchor, "fixture needs a root component for interface visibility checks");
+  system.interfaces.push(
+    { id: "I-TEST-HIDDEN", name: "Hidden interface", component: anchor.componentRef, exposure: "local", hidden: true, tag: "HIDDEN" },
+    { id: "I-TEST-VISIBLE", name: "Visible interface", component: anchor.componentRef, exposure: "local", tag: "VISIBLE" },
+  );
+  h.overlay.set(path.join(projectDir, systemPath), JSON.stringify(system));
   const mod = await load(h, "nativeDfdEditor.ts");
   const provider = new mod.NativeDfdEditor(ctx.extensionUri);
-  await provider.resolveCustomTextEditor(h.createDocument("04-dfd/dfd.json"), h.createPanel(), {});
+  const panel = h.createPanel();
+  await provider.resolveCustomTextEditor(h.createDocument("04-dfd/dfd.json"), panel, {});
   h.openDom();
   await h.settle();
   assert.ok(h.toWebview.some((m) => m.type === "load"), "host did not answer 'ready' with 'load'");
+  assert.strictEqual(h.$('[data-iface="I-TEST-HIDDEN"]'), null, "DFD rendered a hidden interface");
+  assert.strictEqual(h.must('[data-iface="I-TEST-VISIBLE"] text').textContent, "VISIBLE", "DFD did not use the interface tag");
+  const watcher = h.fileWatchers.find((w) => w.pattern.pattern === systemPath && w.pattern.baseUri.fsPath === projectDir);
+  assert.ok(watcher, "DFD must watch system metadata for visibility resets");
+  const hiddenInterface = system.interfaces.find((itf) => itf.id === "I-TEST-HIDDEN");
+  hiddenInterface.hidden = false;
+  hiddenInterface.tag = 'TAG<&"';
+  h.overlay.set(path.join(projectDir, systemPath), JSON.stringify(system));
+  h.track(watcher.change(Uri.file(path.join(projectDir, systemPath))));
+  await h.settle();
+  assert.strictEqual(h.must('[data-iface="I-TEST-HIDDEN"] text').textContent, 'TAG<&"', "system update did not restore the chip and its literal tag");
+  hiddenInterface.hidden = true;
+  h.overlay.set(path.join(projectDir, systemPath), JSON.stringify(system));
+  h.track(watcher.change(Uri.file(path.join(projectDir, systemPath))));
+  await h.settle();
+  assert.strictEqual(h.$('[data-iface="I-TEST-HIDDEN"]'), null, "system update did not hide the chip");
   const nodes = h.$$("#cv [data-id]");
   assert.ok(nodes.length > 1, "DFD nodes not rendered");
 
@@ -805,6 +894,8 @@ async function nativeDfdEditor(h) {
   const saved = lastWriteJson(h, "04-dfd/dfd.json");
   assert.ok(saved && Array.isArray(saved.nodes) && Array.isArray(saved.flows), "dfd.json not written by host");
   checkLiveDomHandlers(h);
+  panel.dispose();
+  assert.strictEqual(watcher.disposed, true, "system watcher was not disposed with the editor");
 }
 
 async function useCaseEditor(h) {

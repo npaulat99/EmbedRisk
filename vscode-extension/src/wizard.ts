@@ -1026,6 +1026,8 @@ function renderSystem(){
           '<div class="field"><label>Category</label><select class="inp" data-if='+i+' data-k="category">'+optTags(IF_CATS,f.category||'network')+'</select></div>'+
           '<div class="field"><label>Exposure</label><select class="inp" data-if='+i+' data-k="exposure">'+optTags(EXPOSURE,f.exposure||'local')+'</select></div>'+
           '<div class="field"><label>Protocol</label><input class="inp" data-if='+i+' data-k="protocol" value="'+esc(f.protocol||'')+'"></div>'+
+          '<div class="field"><label for="iface-tag-'+i+'">Chip tag</label><input class="inp" id="iface-tag-'+i+'" data-if='+i+' data-k="tag" value="'+esc(f.tag||'')+'" placeholder="BLE, HMI, JTAG"></div>'+
+          (f.hidden?'<div class="field"><label>DFD visibility</label><label><input type="checkbox" data-if='+i+' data-k="hidden" checked> Hide this interface</label><p class="hint">Untick to unhide this interface in the DFD view.</p></div>':'')+
         '</div></div>';
     }).join(''):'<p class="hint">No interfaces yet.</p>';
     html+='<button class="btn sm" data-act="addIf">+ Interface</button>';
@@ -1194,7 +1196,7 @@ document.addEventListener('input',function(e){
   if(t.dataset.c!==undefined&&t.dataset.j!==undefined&&t.dataset.k){cms[+t.dataset.c].addresses[+t.dataset.j][t.dataset.k]=Math.max(1,Math.min(5,+t.value||1));updatePills();return;}
   if(t.dataset.asm!==undefined&&t.dataset.ai!==undefined&&t.dataset.k){var arr=assumptions[t.dataset.asm];if(arr&&arr[+t.dataset.ai])arr[+t.dataset.ai][t.dataset.k]=t.value;return;}
   if(t.dataset.comp!==undefined&&t.dataset.k){var c=system.components[+t.dataset.comp];if(c)c[t.dataset.k]=(t.dataset.k==='layer')?(+t.value||1):(t.dataset.k==='parent'?(t.value||null):t.value);return;}
-  if(t.dataset.if!==undefined&&t.dataset.k){var f=system.interfaces[+t.dataset.if];if(f)f[t.dataset.k]=t.value;return;}
+  if(t.dataset.if!==undefined&&t.dataset.k){var f=system.interfaces[+t.dataset.if];if(f){f[t.dataset.k]=t.dataset.k==='hidden'?t.checked:t.value;if(t.dataset.k==='hidden')renderSystem();}return;}
   if(t.dataset.tb!==undefined&&t.dataset.k){var b=system.trustBoundaries[+t.dataset.tb];if(b)b[t.dataset.k]=t.value;return;}
   if(t.dataset.as!==undefined){var a=system.assets[+t.dataset.as];if(!a)return;if(t.dataset.obj){a.objectives=a.objectives||{};a.objectives[t.dataset.obj]=Math.max(0,Math.min(5,+t.value||0));}else if(t.dataset.k){a[t.dataset.k]=t.value;}return;}
   if(t.dataset.req!==undefined&&t.dataset.k){var rr=requirements[+t.dataset.req];if(rr)rr[t.dataset.k]=t.value;return;}

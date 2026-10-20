@@ -56,6 +56,7 @@ function createPanel(captured) {
 function createVscodeStub(captured) {
   return {
     Uri,
+    RelativePattern: class RelativePattern { constructor(baseUri, pattern) { this.baseUri = baseUri; this.pattern = pattern; } },
     ViewColumn: { One: 1, Two: 2, Beside: -2, Active: -1 },
     Range: class Range { constructor(...a) { this.args = a; } },
     WorkspaceEdit: class WorkspaceEdit { replace() { } },
@@ -75,6 +76,7 @@ function createVscodeStub(captured) {
         : []),
       fs: { readFile: notFound, stat: notFound, writeFile: async () => { }, createDirectory: async () => { } },
       onDidChangeTextDocument: disposable,
+      createFileSystemWatcher: () => ({ onDidChange: disposable, onDidCreate: disposable, onDidDelete: disposable, dispose() { } }),
       applyEdit: async () => true,
       openTextDocument: async () => ({}),
     },
