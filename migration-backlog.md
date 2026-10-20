@@ -100,7 +100,7 @@ Verification baseline for every item:
 - [x] **EXT-PRJ1 Project `title`** (separate from `device.name`).
 - [x] **EXT-PRJ2 Device `type`, `version`, `modelReference`.**
 - [x] **EXT-PRJ3 Project `status`** (draft / in-progress / review / released; default draft).
-- [ ] **EXT-PRJ4 `scope.inScope[]` / `scope.outOfScope[]` list editors** (empty rows dropped).
+- [x] **EXT-PRJ4 `scope.inScope[]` / `scope.outOfScope[]` list editors** (empty rows dropped).
 - [ ] **EXT-PRJ5 CRA `intendedUse` + `foreseeableUse[]`** (Deps: EXT-PRJ4 list widget).
 - [ ] **EXT-PRJ6 `repo.projectBranchUrl` / `repo.kbUrl`** (merged into existing `repo`).
 
@@ -173,6 +173,7 @@ the orchestrator implements them directly (anchors: `renderProject()` and the de
 
 | Item | Impl | Review | Test | Notes |
 |---|---|---|---|---|
+| EXT-PRJ4 | ✅ | ✅ | ✅ PASS (compile, 112 model assertions, parse + runtime smoke tests) | Reusable add/edit/remove row editor follows the wizard's existing list UI; both save handlers trim text and drop blank rows while preserving other scope keys. Runtime tests cover list loading, add/edit/remove undo/redo, save/reopen, literal markup, whitespace-only rows, clearing and invalid-list rejection. |
 | EXT-PRJ3 | ✅ | ✅ | ✅ PASS (compile, 112 model assertions, parse + runtime smoke tests) | Status selector matches all four webapp values and defaults legacy projects to draft. Runtime tests cover each value, undo/redo, save/reopen and whole-project metadata preservation; both save handlers reject invalid statuses with an explicit error before writing. |
 | EXT-PRJ2 | ✅ | ✅ | ✅ PASS (compile, 112 model assertions, parse + runtime smoke tests) | Device type, version and model reference use the shared `device` fields; both save handlers merge into existing metadata. Runtime coverage verifies loading, editing, undo/redo, clearing and reopening all three fields. `modelReference` is defined in webapp `types.ts` but currently absent from `ProjectPanel.tsx`. |
 | EXT-PRJ1 | ✅ | ✅ | ✅ PASS (compile, 112 model assertions, parse + runtime smoke tests) | Project title is loaded, edited and saved independently of device name; runtime tests cover literal text, clearing, reopen, metadata preservation and persisted keyboard/toolbar undo/redo. Fixed undo/redo not scheduling auto-save after an earlier save completed. |

@@ -91,6 +91,8 @@ async function buildData(proj: vscode.Uri) {
       riskScoringMethod: project.riskScoringMethod || "cost-based",
       mode: project.scope?.mode || "graybox",
       boundary: project.scope?.boundary || "",
+      inScope: project.scope?.inScope || [],
+      outOfScope: project.scope?.outOfScope || [],
       sbom: project.sbom || {},
       includeUseCases: !!project.reportOptions?.includeUseCases,
       useCaseNames: (useCases.diagrams || []).map((d: any) => d.name || d.id),
@@ -134,6 +136,10 @@ function managedSlcAttacker(sl: string) {
   return { id: `ATK-SLC-${level}`, name: `Threat Actor ${level}: ${names[level]}`, capability, motivation: "Managed by the selected SL-C level", resources: "Managed SL-C attacker profile", text: `SL-C ${level} attacker profile managed by EmbedRisk.` };
 }
 
+function cleanProjectList(items: string[]) {
+  return items.map((item) => item.trim()).filter(Boolean);
+}
+
 export async function openWizard(ctx: vscode.ExtensionContext) {
   const f = await locate();
   if (!f) { vscode.window.showWarningMessage("No EmbedRisk project found. Use 'EmbedRisk: New Project' to create one."); return; }
@@ -152,9 +158,16 @@ export async function openWizard(ctx: vscode.ExtensionContext) {
   panel.webview.onDidReceiveMessage(async (m) => {
     if (m.cmd === "ready") return sendInit();
 
-    const status: unknown = m.cmd === "project" ? m.status : m.cmd === "autoSave" ? m.data?.project?.status : undefined;
+    const projectInput = m.cmd === "project" ? m : m.cmd === "autoSave" ? m.data?.project : undefined;
+    const status: unknown = projectInput?.status;
     if (status !== undefined && (typeof status !== "string" || !["draft", "in-progress", "review", "released"].includes(status))) {
       return panel.webview.postMessage({ cmd: "err", text: "Invalid project status. Choose draft, in-progress, review or released." });
+    }
+    for (const key of ["inScope", "outOfScope"]) {
+      const items: unknown = projectInput?.[key];
+      if (items !== undefined && (!Array.isArray(items) || !items.every((item) => typeof item === "string"))) {
+        return panel.webview.postMessage({ cmd: "err", text: `Invalid ${key} list. Each item must be text.` });
+      }
     }
 
     if (m.cmd === "project") {
@@ -166,6 +179,9 @@ export async function openWizard(ctx: vscode.ExtensionContext) {
         if (typeof m[key] === "string") project.device[key] = m[key];
       }
       project.scope = project.scope || {}; project.scope.mode = m.mode; project.scope.boundary = m.bnd;
+      for (const key of ["inScope", "outOfScope"]) {
+        if (Array.isArray(m[key])) project.scope[key] = cleanProjectList(m[key]);
+      }
       project.reportOptions = project.reportOptions || {};
       project.reportOptions.includeUseCases = !!m.includeUseCases;
       if (project.reportOptions.includeUseCases && Array.isArray(project.acceptedNotices)) {
@@ -413,6 +429,9 @@ export async function openWizard(ctx: vscode.ExtensionContext) {
           }
           proj.slTarget = d.project.sl; proj.riskScoringMethod = d.project.riskScoringMethod || "cost-based"; proj.scope = proj.scope || {};
           proj.scope.mode = d.project.mode; proj.scope.boundary = d.project.boundary;
+          for (const key of ["inScope", "outOfScope"]) {
+            if (Array.isArray(d.project[key])) proj.scope[key] = cleanProjectList(d.project[key]);
+          }
           proj.reportOptions = proj.reportOptions || {};
           proj.reportOptions.includeUseCases = !!d.project.includeUseCases;
           if (proj.reportOptions.includeUseCases && Array.isArray(proj.acceptedNotices)) {
@@ -491,6 +510,10 @@ function shell(cssUri: vscode.Uri, riskUri: vscode.Uri, logoUri: vscode.Uri, csp
             <select class="inp" id="p-status"><option>draft</option><option>in-progress</option><option>review</option><option>released</option></select></div>
         </div>
         <div class="field"><label>Boundary</label><input class="inp" id="p-bnd"></div>
+        <div class="grid2">
+          <div class="field"><label>In scope</label><div id="p-inScope"></div></div>
+          <div class="field"><label>Out of scope</label><div id="p-outOfScope"></div></div>
+        </div>
         <div class="field" style="margin-top:8px">
           <label class="hint" style="display:flex;gap:8px;align-items:center"><input type="checkbox" id="p-uc-inc"> Include use-case diagrams in report</label>
         </div>
@@ -603,6 +626,7 @@ let assumptions={attacker:[],device:[],system:[],environment:[],operational:[]};
 let system={components:[],interfaces:[],trustBoundaries:[],assets:[]};
 let requirements=[];
 let project={title:'',status:'draft',name:'',type:'',version:'',modelReference:'',sl:'SL2',mode:'graybox',boundary:'',includeUseCases:false,useCaseNames:[],useCaseNoticePending:false};
+const PROJECT_LIST_LABELS={inScope:'In scope',outOfScope:'Out of scope'};
 let undoStack=[], redoStack=[], histKey='', histTime=0;
 let asmTab='device', sysTab='components';
 const $=function(s){return document.querySelector(s);};
@@ -677,10 +701,17 @@ function renderRail(){
   html+='<div class="grouplabel">Views</div><button class="stepitem" data-kind="cmd" data-target="kb"><span class="num">&#128218;</span><span class="txt"><b>Knowledge base</b><span>Reusable library</span></span></button>';
   $('#rail').innerHTML=html;
 }
+function renderProjectList(key){
+  $('#p-'+key).innerHTML=project[key].map(function(item,i){
+    return '<div class="row" style="gap:6px;margin:3px 0"><input class="inp grow" data-project-list="'+key+'" data-list-index="'+i+'" aria-label="'+esc(PROJECT_LIST_LABELS[key])+' item '+(i+1)+'" value="'+esc(item)+'">'+
+      '<button class="btn sm danger" data-act="delProjectList" data-list="'+key+'" data-list-index="'+i+'" aria-label="Remove '+esc(PROJECT_LIST_LABELS[key])+' item '+(i+1)+'">Remove</button></div>';
+  }).join('')+'<button class="btn sm" data-act="addProjectList" data-list="'+key+'">+ Add item</button>';
+}
 function renderProject(p){
   p=p||{};
   project={title:p.title||'',name:p.name||'',sl:p.sl||'SL2',riskScoringMethod:p.riskScoringMethod||'cost-based',mode:p.mode||'graybox',boundary:p.boundary||'',sbom:p.sbom||{},includeUseCases:!!p.includeUseCases,useCaseNames:p.useCaseNames||[],useCaseNoticePending:!!p.useCaseNoticePending};
   project.status=p.status||'draft';$('#p-status').value=project.status;
+  Object.keys(PROJECT_LIST_LABELS).forEach(function(key){project[key]=p[key]||[];renderProjectList(key);});
   ['type','version','modelReference'].forEach(function(key){project[key]=p[key]||'';$('#p-'+key).value=project[key];});
   $('#devname').textContent=project.name?('· '+project.name):'';
   $('#p-title').value=project.title;
@@ -1023,7 +1054,9 @@ document.addEventListener('click',function(e){
   }
   if(cmd){vs.postMessage({cmd:cmd});return;}
   var before=snapshot();
-  if(act==='addT'){threats.push({id:uid('T',threats.map(function(x){return x.id;})),title:'New threat',stride:['T'],components:[],likelihood:3,impact:3,status:'open'});renderThreats();renderRail();}
+  if(act==='addProjectList'){project[el.dataset.list].push('');renderProjectList(el.dataset.list);}
+  else if(act==='delProjectList'){project[el.dataset.list].splice(+el.dataset.listIndex,1);renderProjectList(el.dataset.list);}
+  else if(act==='addT'){threats.push({id:uid('T',threats.map(function(x){return x.id;})),title:'New threat',stride:['T'],components:[],likelihood:3,impact:3,status:'open'});renderThreats();renderRail();}
   else if(act==='delT'){threats.splice(+el.dataset.i,1);renderThreats();renderRail();}
   else if(act==='addC'){cms.push({id:uid('CM',cms.map(function(x){return x.id;})),title:'New countermeasure',type:'preventive',status:'proposed',addresses:[]});renderCms();renderRail();}
   else if(act==='delC'){cms.splice(+el.dataset.i,1);renderCms();updatePills();renderRail();}
@@ -1095,6 +1128,7 @@ document.addEventListener('input',function(e){
   var t=e.target;
   scheduleAutoSave();
   recordBefore(keyOf(t));
+  if(t.dataset.projectList){project[t.dataset.projectList][+t.dataset.listIndex]=t.value;return;}
   if(t.id==='p-title'){project.title=t.value;return;}
   if(t.id==='p-status'){project.status=t.value;return;}
   if(t.id==='p-name'){project.name=t.value;$('#devname').textContent=t.value?('· '+t.value):'';return;}

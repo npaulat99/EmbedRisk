@@ -322,6 +322,45 @@ function lastWriteJson(h, rel) {
 }
 
 /* ---------- Scenarios ---------- */
+async function checkProjectList(h, mod, key, readList) {
+  const projectPath = "01-project-description/project.json";
+  const original = readList(JSON.parse(h.readText(path.join(projectDir, projectPath)))) || [];
+  const inputs = () => h.$$(`[data-project-list="${key}"]`);
+  const values = () => inputs().map((input) => input.value);
+  const add = () => h.click(`[data-act="addProjectList"][data-list="${key}"]`);
+  assert.deepStrictEqual(values(), original, key + " not loaded");
+  add();
+  h.key("z", { ctrlKey: true });
+  assert.deepStrictEqual(values(), original, key + " add undo failed");
+  h.key("y", { ctrlKey: true });
+  assert.deepStrictEqual(values(), [...original, ""], key + " add redo failed");
+  const text = '<scope> & "scenario"';
+  h.setValue(inputs()[original.length], "  " + text + "  ");
+  h.key("z", { ctrlKey: true });
+  assert.strictEqual(inputs()[original.length].value, "", key + " edit undo failed");
+  h.key("y", { ctrlKey: true });
+  assert.strictEqual(inputs()[original.length].value, "  " + text + "  ", key + " edit redo failed");
+  add();
+  add();
+  h.setValue(inputs()[original.length + 2], "   ");
+  await h.settle(1700);
+  const expected = [...original.map((item) => item.trim()).filter(Boolean), text];
+  assert.deepStrictEqual(readList(lastWriteJson(h, projectPath)), expected, key + " must save trimmed nonempty rows only");
+  h.close();
+  await mod.openWizard(ctx);
+  h.openDom();
+  await h.settle();
+  assert.deepStrictEqual(values(), expected, key + " not restored on reopen");
+  h.click(`[data-act="delProjectList"][data-list="${key}"][data-list-index="${expected.length - 1}"]`);
+  h.key("z", { ctrlKey: true });
+  assert.deepStrictEqual(values(), expected, key + " remove undo failed");
+  h.key("y", { ctrlKey: true });
+  assert.deepStrictEqual(values(), expected.slice(0, -1), key + " remove redo failed");
+  while (inputs().length) h.click(`[data-act="delProjectList"][data-list="${key}"]`);
+  await h.settle(1700);
+  assert.deepStrictEqual(readList(lastWriteJson(h, projectPath)), [], key + " removal was not persisted");
+}
+
 async function wizard(h) {
   const mod = await load(h, "wizard.ts");
   await mod.openWizard(ctx);
@@ -495,6 +534,27 @@ async function wizard(h) {
     await h.settle();
     assert.strictEqual(h.writes.length, writesBefore, "invalid status must not write any artifacts");
     assert.match(h.toWebview[h.toWebview.length - 1].text, /Invalid project status/, "invalid status must report an error");
+  }
+  const beforeLists = lastWriteJson(h, projectPath);
+  beforeLists.scope.futureMetadata = { tags: ["preserve"] };
+  h.overlay.set(path.join(projectDir, projectPath), JSON.stringify(beforeLists));
+  h.close();
+  await mod.openWizard(ctx);
+  h.openDom();
+  await h.settle();
+  for (const key of ["inScope", "outOfScope"]) {
+    await checkProjectList(h, mod, key, (doc) => doc.scope[key]);
+  }
+  assert.deepStrictEqual(lastWriteJson(h, projectPath), {
+    ...beforeLists, scope: { ...beforeLists.scope, inScope: [], outOfScope: [] },
+  }, "scope list editing lost other project or scope metadata");
+  for (const cmd of ["project", "autoSave"]) {
+    const writesBefore = h.writes.length;
+    const invalid = { inScope: ["valid", 42] };
+    h.deliverToHost(cmd === "project" ? { cmd, ...invalid } : { cmd, data: { project: invalid } });
+    await h.settle();
+    assert.strictEqual(h.writes.length, writesBefore, "invalid list must not write artifacts");
+    assert.match(h.toWebview[h.toWebview.length - 1].text, /Invalid inScope list/);
   }
   checkLiveDomHandlers(h);
 }
