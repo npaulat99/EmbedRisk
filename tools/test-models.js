@@ -134,6 +134,38 @@ ok("delete removes node + descendants", !d3.nodes.some((n) => ["N-DEV", "N-MCU",
 ok("delete removes flows touching removed nodes", !d3.flows.some((f) => ["N-DEV", "N-MCU", "N-CFG"].includes(f.from) || ["N-DEV", "N-MCU"].includes(f.to)));
 ok("delete cleans trust-boundary members", d3.nodes.filter((n) => n.id === "TB-ENC").every((tb) => !(tb.members || []).includes("N-DEV")));
 
+// Webapp-owned layout fields and future metadata must survive extension edits and JSON saves.
+const roundTripDfd = {
+  nodes: [
+    { id: "N-KEEP", type: "process", layer: 1, parent: null, componentRef: "C1", width: 240, height: 100, x: 17, y: 23, extra: { tags: ["node"] } },
+    { id: "N-CHILD", type: "store", layer: 2, parent: "N-KEEP", componentRef: "C2", width: 180, height: 80, x: 31, y: 47 },
+  ],
+  flows: [{ id: "F1", from: "N-KEEP", to: "N-CHILD", sourceHandle: "r", targetHandle: "l", extra: { tags: ["flow"] } }],
+  ifacePos: { "root:IF1": { x: 10, y: 20 }, "N-KEEP:IF1": { x: 30, y: 40 } },
+  ifaceRot: { "root:IF1": 90, "N-KEEP:IF1": 180 },
+  ifaceLink: { "N-KEEP:IF1": { sourceHandle: "b", targetHandle: "t" } },
+  portPos: { "N-KEEP:N-CHILD": { x: 50, y: 60 } },
+  extra: { version: 1, tags: ["diagram"] },
+};
+const expectedRoundTrip = JSON.parse(JSON.stringify(roundTripDfd));
+function assertDfdPreserved(operation) {
+  const saved = JSON.parse(JSON.stringify(roundTripDfd));
+  saved.nodes = saved.nodes.filter((n) => expectedRoundTrip.nodes.some((original) => original.id === n.id));
+  saved.flows = saved.flows.filter((f) => expectedRoundTrip.flows.some((original) => original.id === f.id));
+  assert.deepStrictEqual(saved, expectedRoundTrip, operation + " preserves existing DFD metadata");
+  passed++;
+}
+const unrelated = DfdModel.addNode(roundTripDfd, null, "process", "Unrelated");
+assertDfdPreserved("addNode");
+DfdModel.addFlow(roundTripDfd, "N-KEEP", unrelated.id, "Unrelated flow");
+assertDfdPreserved("addFlow");
+DfdModel.layout(roundTripDfd, null);
+DfdModel.layout(roundTripDfd, "N-KEEP");
+assertDfdPreserved("layout");
+DfdModel.deleteNode(roundTripDfd, unrelated.id);
+assertDfdPreserved("deleteNode");
+assert.deepStrictEqual(roundTripDfd, expectedRoundTrip, "deleting the unrelated node removes only its node and flow");
+
 /* ---------- Attack-defense tree model (schema-identical to the webapp) ---------- */
 const tree = {
   id: "AT-1",

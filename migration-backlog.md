@@ -85,7 +85,7 @@ Verification baseline for every item:
   `A-O-`, `AS-`; webapp uses `AD-`, `SYSA-`, `AE-`, `AO-`, `AST-`.
   - AC1: New items get the webapp prefixes; existing IDs are untouched.
   - Deps: none.
-- [ ] **EXT-DFD1 DFD round-trip preservation test.** Lock in that unknown keys survive editing.
+- [x] **EXT-DFD1 DFD round-trip preservation test.** Lock in that unknown keys survive editing.
   - AC1: Fixture with `ifacePos`, `ifaceRot`, `ifaceLink`, `portPos`, `sourceHandle`/`targetHandle`,
     `componentRef`, `width`/`height`; after `addNode`/`addFlow`/`deleteNode` (unrelated node) and
     `layout`, those keys are deep-equal.
@@ -173,6 +173,7 @@ the orchestrator implements them directly (anchors: `renderProject()` and the de
 
 | Item | Impl | Review | Test | Notes |
 |---|---|---|---|---|
+| EXT-DFD1 | ✅ | ✅ | ✅ PASS (compile, 106 model assertions, parse + runtime smoke tests) | Synthetic webapp-format fixture checks all layout maps, handles, component references, dimensions and unknown nested metadata after each edit and JSON serialization; unrelated node/flow deletion restores the original document. |
 | EXT-HOT2 | ✅ (salvaged the interrupted subagent's harness instead of redoing it) | ✅ | ✅ PASS (`tools/test-webviews-runtime.js`: 6 webviews, all wizard rail steps; failed on the old wizard, passes now) | Found + fixed: wizard SBOM source `<select>` used an inline `onchange` blocked by the nonce CSP, and `project.sbom` was never updated in memory (re-render reverted it). RL-100 fixture vendored to `tools/fixtures/RL-100` (project folders are gitignored). |
 | EXT-HOT1 | ✅ | ✅ PASS | ✅ PASS (new `tools/test-webviews.js` fails on old code, passes now; use-case delete matches webapp `Inspector.tsx`) | Runtime smoke test skipped (no jsdom) → EXT-HOT2 |
 | EXT-ID1 | ✅ | ✅ PASS | ✅ PASS (19 parity cases vs webapp `uid`, prefixes cited per entity, RL-100 DFD round trip) | Shared `nextId` in `media/dfd-model.js`; surfaced EXT-HOT1 |
