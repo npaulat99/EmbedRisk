@@ -832,6 +832,108 @@ async function checkDocumentEnvelopes(h, mod) {
   }
 }
 
+async function checkThreatCostPersistence(h, mod) {
+  const rel = "06-threats/threats.json", file = path.join(projectDir, rel);
+  const compIds = JSON.parse(h.readText(path.join(projectDir, "03-system-assets/system.json"))).components.map((c) => c.id);
+  const envelope = { revision: 0, futureMetadata: { nested: ["keep envelope"] } };
+  const metadata = { nested: ["keep row", { enabled: false }] };
+  const costs = { requiredSkill: 2, requiredAccess: 4,
+    costFactors: { time: 5, exploitability: 2, futureMetadata: metadata },
+    costRationales: { time: "Assessed time", exploitability: "", futureMetadata: metadata },
+    costLikelihood: 0, costLikelihoodProposal: 0 };
+  const keys = Object.keys(costs);
+  const bare = { id: "T-COST", title: "Cost persistence", stride: ["T"], components: [compIds[0]],
+    likelihood: 3, impact: 3, status: "open", assets: [], futureMetadata: metadata };
+  const saved = () => JSON.parse(h.readText(file)).threats[0];
+  const absent = (row) => keys.forEach((key) => assert.ok(!Object.hasOwn(row, key), `${key} must remain absent`));
+  const reopen = async () => {
+    h.close(); await mod.openWizard(ctx); h.openDom(); await h.settle();
+    assert.deepStrictEqual(h.toWebview.filter((m) => m.cmd === "init").at(-1).data.threats, [saved()]);
+  };
+  const save = async (mode, row) => {
+    const start = h.writes.length;
+    h.deliverToHost(mode === "explicit" ? { cmd: "threats", threats: [row], compIds }
+      : { cmd: "autoSave", data: { threats: [row] } });
+    await h.settle();
+    assert.ok(h.writes.length > start, `${mode} did not save`);
+    const doc = JSON.parse(h.readText(file)); delete doc.threats;
+    assert.deepStrictEqual(doc, envelope, `${mode} lost document envelope`);
+    return saved();
+  };
+  for (const mode of ["explicit", "autoSave"]) {
+    h.overlay.set(file, JSON.stringify({ ...envelope, threats: [] }));
+    const defaults = { ...bare }; delete defaults.likelihood;
+    absent(await save(mode, defaults));
+    if (mode === "explicit") assert.strictEqual(saved().likelihood, 3, "missing likelihood defaults to 3");
+    await reopen();
+    assert.strictEqual(h.must('[data-i="0"][data-k="likelihood"]').value, "3");
+    // New row with zero probability/proposal and an independently accepted likelihood.
+    let expected = { ...bare, id: `T-COST-${mode}`, likelihood: 4, ...costs, incomingMetadata: metadata };
+    assert.deepStrictEqual(await save(mode, expected), expected);
+    expected = { ...expected, requiredSkill: 5, requiredAccess: 1, costLikelihood: 0.75,
+      costLikelihoodProposal: 5, costFactors: { ...costs.costFactors, time: 1 },
+      costRationales: { ...costs.costRationales, time: "Reassessed" } };
+    assert.deepStrictEqual(await save(mode, expected), expected, "existing cost edits lost or accepted automatically");
+    expected = { ...expected, likelihood: 0 };
+    assert.deepStrictEqual(await save(mode, expected), expected, "manual zero likelihood replaced by proposal");
+    await reopen();
+    assert.strictEqual(h.must('[data-i="0"][data-k="likelihood"]').value, "0");
+    assert.strictEqual(h.must('[data-i="0"][data-k="likelihood"]').min, "0");
+    const omitted = { ...expected, title: "Unrelated edit" }; keys.forEach((key) => delete omitted[key]);
+    if (mode === "explicit") delete omitted.futureMetadata;
+    assert.deepStrictEqual(await save(mode, omitted), mode === "explicit" ? { ...expected, title: omitted.title } : omitted,
+      "explicit omission must preserve; autosave omission must remove");
+    await save(mode, expected);
+    const cleared = { ...expected }; keys.forEach((key) => { cleared[key] = null; });
+    const removed = { ...expected }; keys.forEach((key) => delete removed[key]);
+    assert.deepStrictEqual(await save(mode, cleared), removed, "null must remove every optional cost field");
+    absent(saved());
+    await save(mode, expected);
+    expected = { ...expected, costFactors: {}, costRationales: { time: "" } };
+    assert.deepStrictEqual(await save(mode, expected), expected, "empty map/string resurrected assessment");
+    expected = { ...expected, costRationales: {} };
+    assert.deepStrictEqual(await save(mode, expected), expected, "empty rationales resurrected assessment");
+    await reopen();
+  }
+  // Real UI edits/history must carry the complete assessment without recomputation.
+  const assessed = { ...bare, likelihood: 0, ...costs, costLikelihoodProposal: 4 };
+  await save("explicit", { ...assessed, likelihood: 3 }); await reopen();
+  const likelihood = '[data-i="0"][data-k="likelihood"]';
+  h.setValue(likelihood, "0"); await h.settle(1700);
+  assert.deepStrictEqual(saved(), assessed, "UI likelihood zero must survive autosave independently of proposal");
+  h.click("#undoBtn"); await h.settle(1700);
+  assert.deepStrictEqual(saved(), { ...assessed, likelihood: 3 }, "undo must restore selected likelihood");
+  h.click("#redoBtn"); await h.settle(1700);
+  assert.deepStrictEqual(saved(), assessed, "redo must restore likelihood zero");
+  await reopen();
+  assert.strictEqual(h.must(likelihood).value, "0", "UI likelihood zero must survive reopen");
+  await save("explicit", assessed); await reopen();
+  const title = '[data-i="0"][data-k="title"]';
+  h.setValue(title, "Title only");
+  await h.settle(1700);
+  assert.deepStrictEqual(saved(), { ...assessed, title: "Title only" });
+  h.click("#undoBtn"); await h.settle(1700);
+  assert.deepStrictEqual(saved(), assessed);
+  h.click("#redoBtn"); await h.settle(1700);
+  assert.deepStrictEqual(saved(), { ...assessed, title: "Title only" });
+  await reopen();
+  assert.strictEqual(h.must(title).value, "Title only");
+  // No cost controls yet: a real title edit records the pre-update snapshot, then the
+  // explicit host response supplies cost changes. Undo/redo persists those full snapshots.
+  await save("autoSave", bare); await reopen();
+  for (const next of [assessed, { ...assessed, costFactors: {}, costRationales: { time: "" } }]) {
+    const previous = saved();
+    h.setValue(title, "History checkpoint");
+    await save("explicit", next);
+    h.click("#undoBtn"); await h.settle(1700);
+    assert.deepStrictEqual(saved(), previous, "undo must restore full snapshot, including absent cost fields");
+    h.click("#redoBtn"); await h.settle(1700);
+    assert.deepStrictEqual(saved(), next, "redo must restore cost edits/clearing without recomputation");
+    await reopen();
+  }
+  console.log("  Threat cost persistence: both save paths, omission/null/empty/zero, metadata, reopen and history passed.");
+}
+
 async function checkBugBar(h, mod) {
   const threatPath = "06-threats/threats.json", cmPath = "08-countermeasures/countermeasures.json";
   const kbPath = path.join(extDir, "runtime/.assets/knowledge-base/bug-bar.json");
@@ -1232,6 +1334,7 @@ async function wizard(h) {
   await checkRequirementDerivation(h, mod);
   await checkCountermeasureFields(h, mod);
   await checkDocumentEnvelopes(h, mod);
+  await checkThreatCostPersistence(h, mod);
   await checkBugBar(h, mod);
   checkLiveDomHandlers(h);
 }

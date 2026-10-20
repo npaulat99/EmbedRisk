@@ -129,6 +129,38 @@ the orchestrator implements them directly (anchors: `renderProject()` and the de
 - [x] **EXT-A2 Attack-tree cost weights** in `evaluate()` matching `webapp/client/src/lib/attackTree.ts`.
 - [ ] **EXT-T1 Cost-based feasibility fields on threats** (`costFactors`, `costRationales`,
   `costLikelihood`, `costLikelihoodProposal`) (Deps: EXT-A2).
+  - Sized L after inspecting `RiskCalculator.tsx:20-65`, `attackTree.ts:6-55,200-204`,
+    and wizard rendering/save handlers: split below; parent stays open until all children pass.
+  - [x] **EXT-T1a Threat cost-field persistence** (M; Deps: EXT-A2).
+    - AC1: The threat save handler round-trips `requiredSkill`, `requiredAccess`, `costFactors`,
+      `costRationales`, `costLikelihood`, and `costLikelihoodProposal` without deriving or replacing
+      the independently selected `likelihood`; preserve zero likelihood/probability/proposal.
+    - AC2: Explicit-save omitted cost fields preserve existing values; null removes these optional fields
+      on either save path (autosave remains a full snapshot, so omission there removes a field);
+      empty maps and empty rationale strings clear assessments without resurrecting saved values.
+      Unknown row/nested metadata and document envelopes survive unrelated edits.
+    - AC3: Focused runtime tests cover new/existing threats, defaults remaining absent, edits/clearing,
+      save/reopen and undo/redo round trips using in-memory fixtures. Full baseline passes.
+      This child adds persistence only, not cost controls or automatic calculations.
+  - [ ] **EXT-T1b Threat feasibility computation model** (M; Deps: EXT-T1a).
+    - AC: Isomorphic helpers match `RiskCalculator.tsx:20-47` and `attackTree.ts` for weighted costs
+      (missing factors default to 3, unlike the extension's public unassessed tree `stepProb`),
+      access probabilities, skill/capability gating, status transitions and configured likelihood
+      thresholds. Tests compare actual webapp computations for defaults, edits/clearing, partial,
+      zero/negative weights and threshold boundaries; calculations do not mutate accepted likelihood
+      merely by reading a threat, or discard unknown metadata. Preserve existing tree behavior.
+  - [ ] **EXT-T1c Threat feasibility wizard controls** (M; Deps: EXT-T1b).
+    - AC: Integrate seven factor selectors/rationales, required skill/access, probability/proposal
+      display and cost-based/default scoring mode, retaining legacy exposure/exploitability mode.
+      Match webapp explicit calculator-update behavior while preserving stored manual overrides on
+      unrelated edits/reopen; show proposal/accepted-likelihood differences. Support unfeasible L0,
+      configured project weights/access/thresholds and selected SL-C capability. Runtime tests cover
+      controls, defaults, clearing, computation, metadata, persistence and undo/redo/reopen.
+      Re-size before starting; split further if implementation plus tests exceeds M.
+  - [ ] **EXT-T1d Threat likelihood schema compatibility** (S; Deps: EXT-T1a).
+    - AC: Align the bundled threat schema's likelihood range with the shared 0–5 matrix (currently
+      `runtime/.assets/schema/threats.schema.json:23` rejects L0); check the corresponding webapp
+      schema and add focused validation coverage for L0 and out-of-range values. No fixture edits.
 - [ ] **EXT-M1 5×5 risk matrix heat map** (initial vs residual) (Deps: EXT-R1).
 - [ ] **EXT-D1 Defects (09) editor** writing `09-defects/defects.json` in webapp format.
 - [ ] **EXT-X1 Threat/countermeasure JSON import/export** compatible with `ThreatCmImportExport.tsx`.
@@ -177,6 +209,7 @@ the orchestrator implements them directly (anchors: `renderProject()` and the de
 
 | Item | Impl | Review | Test | Notes |
 |---|---|---|---|---|
+| EXT-T1a | ✅ | ✅ Finding fixed and regression verified | ✅ PASS (compile, 116 model assertions, 6 parsed scripts + 6 runtime webviews, diff check) | Split L EXT-T1; persistence child only. Both save paths retain six cost/skill/access fields and independent accepted likelihood, including zero. Explicit omission preserves saved fields; autosave snapshots retain omission; null removes optional fields; empty maps/strings clear assessments. Unknown row/nested metadata and document envelopes preserved. In-memory runtime coverage exercises new/existing rows, absent defaults, edits/clearing, reopen and undo/redo. Verifier found the UI likelihood clamp still forced L0 to L1; fixed in the one allowed round with a real input/autosave/undo/redo/reopen regression and full baseline rerun. Computation, cost controls and schema compatibility remain EXT-T1b/c/d; no fixtures changed or manual VS Code session. |
 | EXT-A2 | ✅ | ✅ PASS | ✅ PASS (compile, 116 model assertions, 6 parsed scripts + 6 runtime webviews, diff check) | Normalizes project cost weights and propagates them through all gates, residual assessments and OR alternatives. Direct webapp parity tests cover defaults, configured/partial/zero/negative weights, clamping, unassessed nodes, ties and legacy modifiers; weighted-OR negative control fails against HEAD before this item. Editor loads `project.costFactorWeights` and refreshes metrics on valid project document edits without tree writes/history resets. CommonJS/browser compatibility and public unassessed `stepProb()` behavior preserved. No fixture edits or EXT-T1 work; no filesystem watcher or manual VS Code session. |
 | EXT-R3 | ✅ | ✅ PASS (direct diff review) | ✅ PASS (compile, 112 model assertions, 6 parsed scripts + 6 runtime webviews) | Explicit save and autosave merge threat/CM arrays into existing envelopes, including the project-autosave threat update; row normalization is unchanged. In-memory regressions cover both document kinds and save paths, nested/zero/null metadata, intermediate writes and reopen. Uses webapp document field names; envelope preservation follows this round-trip AC (webapp save currently replaces envelopes too). No fixture JSON edits or manual VS Code UI session. |
 | EXT-B1 | ✅ | ✅ PASS | ✅ PASS (compile, 112 model assertions, 6 parsed scripts + 6 runtime webviews) | Shared threat/residual scenario matrix loads bundled Bug Bar rule, labels and scenarios. Matches webapp toggle-clear, four-axis maximum (empty → 0), rating date, selected/filled states and missing/unavailable hints. Runtime tests cover escaped catalogue text, unknown row/link/dimension metadata, autosave, undo/redo and reopen; negative control fails against the previous wizard. No fixture/catalogue JSON edits. Pre-existing envelope metadata loss tracked separately as EXT-R3; no manual VS Code UI session. |

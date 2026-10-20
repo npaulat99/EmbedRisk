@@ -7,6 +7,15 @@ const rdRaw = async (proj: vscode.Uri, rel: string, def: any) => {
 };
 const write = (proj: vscode.Uri, rel: string, obj: any) => vscode.workspace.fs.writeFile(vscode.Uri.joinPath(proj, rel), Buffer.from(JSON.stringify(obj, null, 2)));
 
+function threatCostFields(row: any) {
+  const out = { ...row };
+  // Null explicitly clears these optional assessments; omitted snapshot fields stay absent.
+  for (const key of ["requiredSkill", "requiredAccess", "costFactors", "costRationales", "costLikelihood", "costLikelihoodProposal"]) {
+    if (out[key] === null) delete out[key];
+  }
+  return out;
+}
+
 async function locate(): Promise<PF | undefined> {
   const candidates = await vscode.workspace.findFiles("**/01-project-description/project.json", "**/node_modules/**");
   const norm = (u: vscode.Uri) => u.path.replace(/\\/g, "/");
@@ -285,11 +294,11 @@ export async function openWizard(ctx: vscode.ExtensionContext) {
       const norm = rows.map((t: any) => {
         const base: any = prev.get(t.id) || {};
         const out: any = {
-          ...base,
+          ...base, ...t,
           id: t.id, title: t.title,
           stride: (t.stride || []).map((s: string) => s.toUpperCase()),
           components: t.components || [],
-          likelihood: Math.max(1, Math.min(5, +t.likelihood || 3)),
+          likelihood: Math.max(0, Math.min(5, +(t.likelihood ?? 3))),
           impact: Math.max(1, Math.min(5, +t.impact || 3)),
           status: t.status || base.status || "open",
           assets: t.assets || base.assets || [],
@@ -301,7 +310,7 @@ export async function openWizard(ctx: vscode.ExtensionContext) {
           'likelihoodRationale', 'impactRationale',
           'acceptedBy', 'acceptanceRationale', 'reviewDate',
           'assumptionRefs'].forEach(pick);
-        return out;
+        return threatCostFields(out);
       });
       await write(f.proj, "06-threats/threats.json", { ...threatDoc, threats: norm });
       return panel.webview.postMessage({ cmd: "threats", threats: norm, counts: await counts(), text: "Threats saved." });
@@ -512,7 +521,7 @@ export async function openWizard(ctx: vscode.ExtensionContext) {
         }
         if (Array.isArray(d.threats)) {
           const threatDoc = await rdRaw(f.proj, "06-threats/threats.json", { threats: [] });
-          await write(f.proj, "06-threats/threats.json", { ...threatDoc, threats: d.threats });
+          await write(f.proj, "06-threats/threats.json", { ...threatDoc, threats: d.threats.map(threatCostFields) });
         }
         if (Array.isArray(d.cms)) {
           const cmDoc = await rdRaw(f.proj, "08-countermeasures/countermeasures.json", { countermeasures: [] });
@@ -936,7 +945,7 @@ function renderThreats(){
       '<td><input class="inp" data-i='+i+' data-k="title" value="'+esc(t.title)+'"></td>'+
       '<td><div class="chips">'+st+'</div></td>'+
       '<td><div class="chips">'+cc+'</div></td>'+
-      '<td class="num"><input class="inp" type="number" min=1 max=5 data-i='+i+' data-k="likelihood" value="'+(t.likelihood||3)+'"></td>'+
+      '<td class="num"><input class="inp" type="number" min=0 max=5 data-i='+i+' data-k="likelihood" value="'+(t.likelihood??3)+'"></td>'+
       '<td class="num"><input class="inp" type="number" min=1 max=5 data-i='+i+' data-k="impact" value="'+(t.impact??3)+'"></td>'+
       '<td id="tp-'+i+'">'+riskCell(t)+'</td>'+
       '<td class="stat"><div class="statwrap"><span class="badge st-'+esc(t.status||'open')+'">'+esc(statusLabel(t.status))+'</span>'+
@@ -1285,7 +1294,7 @@ document.addEventListener('input',function(e){
   if(t.id==='p-uc-inc'){project.includeUseCases=!!t.checked;return;}
   if(t.id==='p-sbom-mode'||t.id==='p-sbom-format'||t.id==='p-sbom-url-inp'){project.sbom=readSbom();showSbomFields(project.sbom.mode);return;}
   if(t.dataset.i!==undefined&&t.dataset.k){var i=+t.dataset.i,k=t.dataset.k;
-    if(k==='likelihood'||k==='impact'){threats[i][k]=Math.max(1,Math.min(5,+t.value||1));var el=document.getElementById('tp-'+i);if(el)el.innerHTML=riskCell(threats[i]);}
+    if(k==='likelihood'||k==='impact'){var min=k==='likelihood'?0:1;threats[i][k]=Math.max(min,Math.min(5,+t.value||min));var el=document.getElementById('tp-'+i);if(el)el.innerHTML=riskCell(threats[i]);}
     else if(k==='status'){threats[i].status=t.value;var cell=t.closest('td');var bd=cell&&cell.querySelector('.badge');if(bd){bd.className='badge st-'+t.value;bd.textContent=statusLabel(t.value);}}
     else threats[i][k]=t.value;return;}
   if(t.dataset.ci!==undefined&&t.dataset.k){
