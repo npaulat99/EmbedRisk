@@ -187,7 +187,7 @@ export async function openWizard(ctx: vscode.ExtensionContext) {
   const csp = `default-src 'none'; img-src ${panel.webview.cspSource}; style-src ${panel.webview.cspSource} 'unsafe-inline'; script-src 'nonce-${nonce}' ${panel.webview.cspSource};`;
   panel.webview.html = shell(cssUri, riskUri, logoUri, csp, nonce);
 
-  const sendInit = async () => panel.webview.postMessage({ cmd: "init", data: await buildData(f.proj) });
+  const sendInit = async () => panel.webview.postMessage({ cmd: "init", data: await buildData(f.proj), bugBar: await rdRaw(ctx.extensionUri, "runtime/.assets/knowledge-base/bug-bar.json", null) });
   const counts = async () => (await buildData(f.proj)).counts;
 
   panel.webview.onDidReceiveMessage(async (m) => {
@@ -536,6 +536,16 @@ export async function openWizard(ctx: vscode.ExtensionContext) {
 function shell(cssUri: vscode.Uri, riskUri: vscode.Uri, logoUri: vscode.Uri, csp: string, nonce: string): string {
   return `<!doctype html><html><head><meta charset="utf8"><meta http-equiv="Content-Security-Policy" content="${csp}">
 <link rel="stylesheet" href="${cssUri}">
+<style>
+.bbselect { overflow-x:auto; }
+.bbselect table { width:100%; table-layout:fixed; min-width:600px; }
+.bbselect th, .bbselect td { padding:4px; vertical-align:top; text-align:left; }
+.bbselect th:first-child { width:90px; }
+.bbsel-badge { margin-left:6px; font-weight:bold; }
+.bbcell { width:100%; padding:8px; text-align:left; cursor:pointer; font:inherit; color:var(--text); background:var(--surface); border:1px solid var(--border); border-radius:4px; }
+.bbcell.filled { background:color-mix(in srgb, var(--accent) 16%, var(--surface)); }
+.bbcell.selected { border:2px solid var(--accent); font-weight:bold; }
+</style>
 </head><body>
 <div class="app">
   <div class="topbar">
@@ -688,7 +698,7 @@ const OBJS=[['confidentiality','C'],['integrity','I'],['availability','A'],['saf
 const EXPOSURE_OPTS=[[1,'Physical (open enclosure)'],[2,'Local (on site)'],[3,'Adjacent / fieldbus'],[4,'Remote (authenticated)'],[5,'Remote (unauthenticated)']];
 const EXPLOIT_OPTS=[[1,'Very hard (nation-state)'],[2,'Hard (specialist)'],[3,'Moderate'],[4,'Easy'],[5,'Trivial / automated']];
 const DIM_KEYS=['confidentiality','integrity','availability','safety'];
-const DIM_LBLS=['C · Confidentiality','I · Integrity','A · Availability','S · Safety'];
+let bugBar=null;
 let threats=[], cms=[], comps=[], counts={};
 let changeTracker={currentVersion:null,entries:[]};
 let assumptions={attacker:[],device:[],system:[],environment:[],operational:[]};
@@ -797,20 +807,32 @@ function renderProject(p){
   showSbomFields(sbomMode);
   var urlInp=$('#p-sbom-url-inp');if(urlInp)urlInp.value=sbom.url||'';
 }
+function bugBarSelector(dims,dAttr,dimAttr){
+  var dimensions=bugBar&&bugBar.dimensions||[];
+  if(!dimensions.length)return '<p class="hint">Bug bar reference not available.</p>';
+  var missing=DIM_KEYS.filter(function(k){return typeof dims[k]!=='number';}),impact=R.deriveImpact(dims);
+  return (bugBar.rule?'<p class="hint">'+esc(bugBar.rule)+'</p>':'')+
+    '<table><thead><tr><th>Level</th>'+dimensions.map(function(d){
+      return '<th>'+esc(d.label)+'<span class="bbsel-badge'+(typeof dims[d.key]==='number'?'':' unset')+'">'+esc(typeof dims[d.key]==='number'?dims[d.key]:'–')+'</span></th>';
+    }).join('')+'</tr></thead><tbody>'+[5,4,3,2,1].map(function(score){
+      var label=dimensions[0].levels.find(function(l){return l.score===score;});
+      return '<tr><td><b>'+score+'</b> · '+esc(label&&label.label)+'</td>'+dimensions.map(function(d){
+        var level=d.levels.find(function(l){return l.score===score;}),selected=dims[d.key];
+        return '<td><button type="button" class="bbcell'+(typeof selected==='number'&&score<=selected?' filled':'')+(selected===score?' selected':'')+
+          '" aria-pressed="'+(selected===score)+'" data-act="bugBar" '+dAttr+' '+dimAttr+'="'+esc(d.key)+'" data-score="'+score+'">'+esc(level&&level.scenario)+'</button></td>';
+      }).join('')+'</tr>';
+    }).join('')+'</tbody></table><p class="hint">'+
+    (impact!=null?'Impact = worst selected dimension — currently <b>'+impact+'</b>.':'Select the applicable scenario in every column.')+
+    (missing.length&&missing.length<4?' Still missing: '+missing.join(', ')+'.':'')+'</p>';
+}
 function calcBlock(dims,fac,cv,dAttr,dimAttr,facAttr,cvssAttr,seedAct){
-  var derivedI=R.deriveImpact(dims),derivedL=R.deriveLikelihood(fac);
+  var derivedL=R.deriveLikelihood(fac);
   var autoBase=cv.vector?R.cvssBaseScore(cv.vector):null;
   var cvssVer=cv.version||'3.1';
   if(cv.vector&&String(cv.vector).indexOf('CVSS:4.0/')===0)cvssVer='4.0';
   else if(cv.vector&&String(cv.vector).indexOf('CVSS:3.')===0)cvssVer='3.1';
   var cvssPlaceholder=cvssVer==='4.0'?'CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:N/VC:H/VI:H/VA:H/SC:H/SI:H/SA:H':'CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H';
   var suggestExp=R.cvssExploitability(cv.vector);
-  var dimSelects=DIM_KEYS.map(function(k,di){
-    return '<div class="field"><label>'+DIM_LBLS[di]+'</label>'+
-      '<select class="inp" '+dAttr+' '+dimAttr+'="'+k+'">'+
-      '<option value="">—</option>'+[1,2,3,4,5].map(function(n){return '<option'+(+dims[k]===n?' selected':'')+'>'+n+'</option>';}).join('')+
-      '</select></div>';
-  }).join('');
   var expSel='<div class="field"><label title="How reachable is the attack surface">Exposure</label>'+
     '<select class="inp" '+dAttr+' '+facAttr+'="exposure"><option value="">—</option>'+
     EXPOSURE_OPTS.map(function(o){return '<option value="'+o[0]+'"'+(+fac.exposure===o[0]?' selected':'')+'>'+o[0]+' · '+o[1]+'</option>';}).join('')+
@@ -823,8 +845,7 @@ function calcBlock(dims,fac,cv,dAttr,dimAttr,facAttr,cvssAttr,seedAct){
     '&#9654; Guided rating — Bug Bar · Exposure × Exploitability · CVSS</summary>'+
     '<div style="margin-top:8px">'+
       '<b style="font-size:11px">Bug Bar impact</b> '+
-      '<span class="hint">impact = worst dimension'+(derivedI!=null?' → <b>'+derivedI+'</b>':'')+'</span>'+
-      '<div class="grid4" style="margin-top:4px">'+dimSelects+'</div>'+
+      '<div class="bbselect">'+bugBarSelector(dims,dAttr,dimAttr)+'</div>'+
     '</div>'+
     '<div style="margin-top:8px">'+
       '<b style="font-size:11px">Likelihood — Exposure × Exploitability</b> '+
@@ -908,7 +929,7 @@ function renderThreats(){
       '<td><div class="chips">'+st+'</div></td>'+
       '<td><div class="chips">'+cc+'</div></td>'+
       '<td class="num"><input class="inp" type="number" min=1 max=5 data-i='+i+' data-k="likelihood" value="'+(t.likelihood||3)+'"></td>'+
-      '<td class="num"><input class="inp" type="number" min=1 max=5 data-i='+i+' data-k="impact" value="'+(t.impact||3)+'"></td>'+
+      '<td class="num"><input class="inp" type="number" min=1 max=5 data-i='+i+' data-k="impact" value="'+(t.impact??3)+'"></td>'+
       '<td id="tp-'+i+'">'+riskCell(t)+'</td>'+
       '<td class="stat"><div class="statwrap"><span class="badge st-'+esc(t.status||'open')+'">'+esc(statusLabel(t.status))+'</span>'+
         '<select class="inp" data-i='+i+' data-k="status">'+T_STATUS.map(function(s){return '<option value="'+s[0]+'"'+((t.status||'open')===s[0]?' selected':'')+'>'+s[1]+'</option>';}).join('')+'</select></div></td>'+
@@ -945,7 +966,7 @@ function renderCms(){
           '<div class="field"><label>Residual likelihood</label>'+
             '<input class="inp" type="number" min=1 max=5 data-c='+i+' data-j='+j+' data-k="residualLikelihood" value="'+(a.residualLikelihood||2)+'"></div>'+
           '<div class="field"><label>Residual impact</label>'+
-            '<input class="inp" type="number" min=1 max=5 data-c='+i+' data-j='+j+' data-k="residualImpact" value="'+(a.residualImpact||2)+'"></div>'+
+            '<input class="inp" type="number" min=1 max=5 data-c='+i+' data-j='+j+' data-k="residualImpact" value="'+(a.residualImpact??2)+'"></div>'+
         '</div>'+
         rBlock+
         '<div class="row" style="margin-top:6px"><div class="field"><label for="rated-by-'+i+'-'+j+'">Rated by</label><input class="inp" id="rated-by-'+i+'-'+j+'" data-c='+i+' data-j='+j+' data-k="ratedBy" value="'+esc(a.ratedBy||'')+'" placeholder="name / initials"></div>'+
@@ -1151,7 +1172,24 @@ document.addEventListener('click',function(e){
   }
   if(cmd){vs.postMessage({cmd:cmd});return;}
   var before=snapshot();
-  if(act==='addProjectList'){project[el.dataset.list].push('');renderProjectList(el.dataset.list);}
+  if(act==='bugBar'){
+    var residual=el.dataset.rdim!==undefined,bi=+(residual?el.dataset.ri:el.dataset.i),bj=+el.dataset.rj;
+    var target=residual?cms[bi].addresses[bj]:threats[bi],dim=residual?el.dataset.rdim:el.dataset.dim,score=+el.dataset.score;
+    var dims=Object.assign({},target.impactDimensions||{});
+    if(dims[dim]===score)delete dims[dim];else dims[dim]=score;
+    target.impactDimensions=dims;
+    var impact=R.deriveImpact(dims)??0;
+    target[residual?'residualImpact':'impact']=impact;
+    target.ratedAt=new Date().toISOString().slice(0,10);
+    if(residual)markResidualRated(bi,bj);
+    var input=residual?'[data-c="'+bi+'"][data-j="'+bj+'"][data-k="residualImpact"]':'[data-i="'+bi+'"][data-k="impact"]';
+    $(input).value=impact;
+    var container=el.closest('.bbselect'),dAttr=residual?'data-ri='+bi+' data-rj='+bj:'data-i='+bi;
+    container.innerHTML=bugBarSelector(dims,dAttr,residual?'data-rdim':'data-dim');
+    container.querySelector('[data-score="'+score+'"]['+(residual?'data-rdim':'data-dim')+'="'+dim+'"]').focus();
+    updatePills();
+  }
+  else if(act==='addProjectList'){project[el.dataset.list].push('');renderProjectList(el.dataset.list);}
   else if(act==='delProjectList'){project[el.dataset.list].splice(+el.dataset.listIndex,1);renderProjectList(el.dataset.list);}
   else if(act==='addT'){threats.push({id:uid('T',threats.map(function(x){return x.id;})),title:'New threat',stride:['T'],components:[],likelihood:3,impact:3,status:'open'});renderThreats();renderRail();}
   else if(act==='delT'){threats.splice(+el.dataset.i,1);renderThreats();renderRail();}
@@ -1257,15 +1295,6 @@ document.addEventListener('input',function(e){
   if(t.dataset.tb!==undefined&&t.dataset.k){var b=system.trustBoundaries[+t.dataset.tb];if(b)b[t.dataset.k]=t.value;return;}
   if(t.dataset.as!==undefined){var a=system.assets[+t.dataset.as];if(!a)return;if(t.dataset.obj){a.objectives=a.objectives||{};a.objectives[t.dataset.obj]=Math.max(0,Math.min(5,+t.value||0));}else if(t.dataset.k){a[t.dataset.k]=t.value;}$('#asset-summary-'+t.dataset.as).innerHTML=assetSummary(a);return;}
   if(t.dataset.req!==undefined&&t.dataset.k){var rr=requirements[+t.dataset.req];if(rr){rr[t.dataset.k]=t.dataset.k==='fromCountermeasure'?t.checked:t.value;if(t.dataset.k==='fromCountermeasure')renderRequirements();}return;}
-  // Bug Bar dimension (threat)
-  if(t.dataset.dim!==undefined&&t.dataset.i!==undefined){
-    var tIdx=+t.dataset.i,tk=t.dataset.dim;
-    threats[tIdx].impactDimensions=threats[tIdx].impactDimensions||{};
-    if(t.value!=='')threats[tIdx].impactDimensions[tk]=+t.value;else delete threats[tIdx].impactDimensions[tk];
-    var dv=R.deriveImpact(threats[tIdx].impactDimensions);
-    if(dv!=null){threats[tIdx].impact=dv;var dInp=document.querySelector('[data-i="'+tIdx+'"][data-k="impact"]');if(dInp)dInp.value=dv;var dEl=document.getElementById('tp-'+tIdx);if(dEl)dEl.innerHTML=riskCell(threats[tIdx]);}
-    return;
-  }
   // Likelihood factor (threat)
   if(t.dataset.fac!==undefined&&t.dataset.i!==undefined){
     var tIdx=+t.dataset.i,fk=t.dataset.fac;
@@ -1287,17 +1316,6 @@ document.addEventListener('input',function(e){
       var cexp=R.cvssExploitability(t.value);
       if(cexp!=null){threats[tIdx].likelihoodFactors=threats[tIdx].likelihoodFactors||{};threats[tIdx].likelihoodFactors.exploitability=cexp;var clv=R.deriveLikelihood(threats[tIdx].likelihoodFactors);if(clv!=null){threats[tIdx].likelihood=clv;var clInp=document.querySelector('[data-i="'+tIdx+'"][data-k="likelihood"]');if(clInp)clInp.value=clv;var clEl=document.getElementById('tp-'+tIdx);if(clEl)clEl.innerHTML=riskCell(threats[tIdx]);}}
     }
-    return;
-  }
-  // Residual Bug Bar dimension (CM address)
-  if(t.dataset.rdim!==undefined&&t.dataset.ri!==undefined&&t.dataset.rj!==undefined){
-    var ri=+t.dataset.ri,rj=+t.dataset.rj,rdk=t.dataset.rdim;
-    if(!cms[ri]||!cms[ri].addresses[rj])return;
-    markResidualRated(ri,rj);
-    cms[ri].addresses[rj].impactDimensions=cms[ri].addresses[rj].impactDimensions||{};
-    if(t.value!=='')cms[ri].addresses[rj].impactDimensions[rdk]=+t.value;else delete cms[ri].addresses[rj].impactDimensions[rdk];
-    var rdv=R.deriveImpact(cms[ri].addresses[rj].impactDimensions);
-    if(rdv!=null){cms[ri].addresses[rj].residualImpact=rdv;var rdInp=document.querySelector('[data-ri="'+ri+'"][data-rj="'+rj+'"][data-k="residualImpact"]');if(rdInp)rdInp.value=rdv;updatePills();}
     return;
   }
   // Residual likelihood factor (CM address)
@@ -1330,6 +1348,7 @@ document.addEventListener('input',function(e){
 
 window.addEventListener('message',function(ev){
   var m=ev.data;
+  if(m.cmd==='init')bugBar=m.bugBar||null;
   if(m.cmd==='init'){threats=m.data.threats||[];cms=m.data.cms||[];comps=m.data.comps||[];counts=m.data.counts||{};changeTracker=m.data.changeTracker||changeTracker;assumptions=m.data.assumptions||assumptions;system=m.data.system||system;requirements=m.data.requirements||[];try{renderProject(m.data.project);}catch(e){console.error('project',e);}try{renderRail();}catch(e){console.error('rail',e);}try{renderThreats();}catch(e){console.error('threats',e);}try{renderCms();}catch(e){console.error('cms',e);}try{renderAssumptions();}catch(e){console.error('assumptions',e);}try{renderSystem();}catch(e){console.error('system',e);}try{renderRequirements();}catch(e){console.error('requirements',e);}try{renderVersions();}catch(e){console.error('versions',e);}clearHistory();}
   else if(m.cmd==='threats'){threats=m.threats||[];counts=m.counts||counts;renderThreats();renderCms();renderRequirements();renderRail();toast('ok',m.text);}
   else if(m.cmd==='cms'){cms=m.cms||[];counts=m.counts||counts;renderCms();updatePills();renderRequirements();renderRail();toast('ok',m.text);}

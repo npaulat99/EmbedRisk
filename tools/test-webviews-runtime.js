@@ -688,8 +688,8 @@ async function checkCountermeasureFields(h, mod) {
   assert.strictEqual(h.must("#rated-at-0-0").textContent, "Last rated " + initial[0].addresses[0].ratedAt, "date undo failed");
   h.key("y", { ctrlKey: true });
   assert.strictEqual(h.must(assessor).value, 'Reviewer <&"name">', "assessor redo failed");
-  for (const selector of ['[data-ri="0"][data-rj="1"][data-rdim="confidentiality"]', '[data-ri="0"][data-rj="1"][data-rfac="exposure"]']) {
-    h.setValue(selector, "1");
+  for (const selector of ['[data-ri="0"][data-rj="1"][data-rdim="confidentiality"][data-score="1"]', '[data-ri="0"][data-rj="1"][data-rfac="exposure"]']) {
+    if (h.must(selector).tagName === "BUTTON") h.click(selector); else h.setValue(selector, "1");
     assert.strictEqual(h.must("#rated-at-0-1").textContent, "Last rated " + today, "guided rating did not stamp date");
     h.key("z", { ctrlKey: true });
     assert.strictEqual(h.must("#rated-at-0-1").textContent, "Last rated " + initial[0].addresses[1].ratedAt, "guided rating undo lost date");
@@ -783,6 +783,111 @@ async function checkCountermeasureFields(h, mod) {
       assert.strictEqual(h.toWebview[h.toWebview.length - 1].cmd, "err", "invalid countermeasure fields must report an error");
     }
   }
+}
+
+async function checkBugBar(h, mod) {
+  const threatPath = "06-threats/threats.json", cmPath = "08-countermeasures/countermeasures.json";
+  const kbPath = path.join(extDir, "runtime/.assets/knowledge-base/bug-bar.json");
+  const catalogue = JSON.parse(h.readText(kbPath)), today = new Date().toISOString().slice(0, 10);
+  const unknownDims = { futureScore: 99, futureMetadata: { tags: ["keep dimensions"] } };
+  const threat = {
+    ...JSON.parse(h.readText(path.join(projectDir, threatPath))).threats[0],
+    likelihood: 3, impact: 2, status: "open", impactDimensions: unknownDims, ratedAt: "2020-01-02",
+    futureMetadata: { nested: ["keep threat"] },
+  };
+  const cm = {
+    id: "CM-BUGBAR", title: "Bug Bar regression", selected: true, futureMetadata: { nested: ["keep CM"] },
+    addresses: [{ threat: threat.id, residualLikelihood: 2, residualImpact: 2, impactDimensions: unknownDims,
+      ratedAt: "2020-01-02", ratedBy: "Reviewer", futureMetadata: { nested: ["keep link"] } }],
+  };
+  h.overlay.set(path.join(projectDir, threatPath), JSON.stringify({ threats: [threat] }));
+  h.overlay.set(path.join(projectDir, cmPath), JSON.stringify({ countermeasures: [cm] }));
+  const reopen = async () => { h.close(); await mod.openWizard(ctx); h.openDom(); await h.settle(); };
+  await reopen();
+  for (const residual of [false, true]) {
+    const attrs = residual ? '[data-ri="0"][data-rj="0"]' : '[data-i="0"]';
+    const dimAttr = residual ? "data-rdim" : "data-dim";
+    const button = (key, score) => `${attrs}[${dimAttr}="${key}"][data-score="${score}"]`;
+    const matrix = () => h.must(button("confidentiality", 3)).closest(".bbselect");
+    const numeric = residual ? '[data-c="0"][data-j="0"][data-k="residualImpact"]' : '[data-i="0"][data-k="impact"]';
+    const saved = () => residual ? lastWriteJson(h, cmPath).countermeasures[0].addresses[0] : lastWriteJson(h, threatPath).threats[0];
+    const expected = JSON.parse(JSON.stringify(residual ? cm.addresses[0] : threat));
+    assert.ok(matrix().textContent.includes(catalogue.rule), "bundled rule missing");
+    assert.deepStrictEqual([...matrix().querySelectorAll(":scope > table > tbody > tr")].map((r) => r.cells[0].textContent),
+      [5, 4, 3, 2, 1].map((score) => `${score} · ${catalogue.dimensions[0].levels.find((l) => l.score === score).label}`));
+    for (const d of catalogue.dimensions) {
+      assert.ok(matrix().textContent.includes(d.label), "bundled dimension label missing");
+      for (const l of d.levels) assert.strictEqual(h.must(button(d.key, l.score)).textContent, l.scenario);
+    }
+    assert.strictEqual(matrix().querySelectorAll(".unset").length, 4);
+    assert.ok(matrix().textContent.includes("Select the applicable scenario in every column."));
+    const details = matrix().closest("details"); details.open = true;
+    const savesBefore = h.toHost.filter((m) => m.cmd === "autoSave").length;
+    h.click(button("confidentiality", 3));
+    assert.ok(details.open && details.isConnected, "selection collapsed or replaced guided details");
+    assert.strictEqual(h.document.activeElement, h.must(button("confidentiality", 3)), "selection lost keyboard focus");
+    assert.strictEqual(h.must(numeric).value, "3");
+    assert.strictEqual(matrix().querySelectorAll('[aria-pressed="true"]').length, 1);
+    assert.strictEqual(h.must(button("confidentiality", 3)).getAttribute("aria-pressed"), "true");
+    assert.strictEqual(matrix().querySelectorAll(".filled").length, 3);
+    assert.strictEqual(h.must(button("confidentiality", 2)).getAttribute("aria-pressed"), "false");
+    assert.ok(matrix().textContent.includes("Still missing: integrity, availability, safety."));
+    h.click(button("safety", 5));
+    assert.strictEqual(h.must(numeric).value, "5", "impact must be max of known dimensions only");
+    assert.ok(matrix().textContent.includes("currently 5"));
+    assert.deepStrictEqual(h.$$("#tp-0 .pill").map((p) => Number(p.textContent.split(" · ")[0])), residual ? [15, 10] : [15, 4]);
+    h.click(button("safety", 5));
+    assert.strictEqual(h.must(numeric).value, "3", "exact scenario click must unset");
+    h.click(button("confidentiality", 3));
+    assert.strictEqual(h.must(numeric).value, "0", "clearing final known dimension must reset impact");
+    assert.strictEqual(matrix().querySelectorAll(".filled, .selected").length, 0);
+    assert.strictEqual(matrix().querySelectorAll(".unset").length, 4);
+    assert.deepStrictEqual(h.$$("#tp-0 .pill").map((p) => Number(p.textContent.split(" · ")[0])), residual ? [15, 0] : [0, 0]);
+    Object.assign(expected, { [residual ? "residualImpact" : "impact"]: 0, ratedAt: today });
+    await h.settle(1700);
+    assert.strictEqual(h.toHost.filter((m) => m.cmd === "autoSave").length, savesBefore + 1, "selector double-saved");
+    assert.deepStrictEqual(saved(), expected, "auto-save lost date or unrelated nested metadata");
+    h.key("z", { ctrlKey: true });
+    assert.strictEqual(h.must(numeric).value, "3");
+    await h.settle(1700);
+    assert.deepStrictEqual(saved(), { ...expected, [residual ? "residualImpact" : "impact"]: 3,
+      impactDimensions: { ...unknownDims, confidentiality: 3 } }, "undo was not persisted");
+    h.key("y", { ctrlKey: true });
+    assert.strictEqual(h.must(numeric).value, "0");
+    await h.settle(1700);
+    assert.deepStrictEqual(saved(), expected, "redo was not persisted");
+    await reopen();
+    assert.strictEqual(h.must(numeric).value, "0", "reopen replaced zero with default impact");
+    assert.strictEqual(matrix().querySelectorAll(".unset").length, 4);
+    if (residual) assert.strictEqual(h.must("#rated-at-0-0").textContent, "Last rated " + today);
+    else {
+      // Give residual edits an initial impact ceiling so their risk pill changes are observable.
+      h.click(button("safety", 5));
+      await h.settle(1700);
+    }
+  }
+  assert.deepStrictEqual(lastWriteJson(h, cmPath).countermeasures[0].futureMetadata, cm.futureMetadata);
+  assert.ok(!JSON.stringify(h.lastToHost((m) => m.cmd === "autoSave").data).includes(catalogue.rule), "catalogue leaked into project state");
+  const escaped = '<img src=x onerror="alert(1)"> & "catalogue"';
+  catalogue.rule = escaped;
+  catalogue.dimensions[0].label = escaped;
+  catalogue.dimensions[0].levels.find((l) => l.score === 5).label = escaped;
+  catalogue.dimensions[0].levels.find((l) => l.score === 5).scenario = escaped;
+  h.overlay.set(kbPath, JSON.stringify(catalogue));
+  await reopen();
+  const matrix = h.must('[data-dim="confidentiality"][data-score="5"]').closest(".bbselect");
+  assert.strictEqual(matrix.querySelector("p").textContent, escaped);
+  assert.ok(matrix.querySelector("thead").textContent.includes(escaped));
+  assert.ok(matrix.querySelector("tbody td").textContent.includes(escaped));
+  assert.strictEqual(h.must('[data-dim="confidentiality"][data-score="5"]').textContent, escaped);
+  assert.strictEqual(matrix.querySelector("img"), null, "catalogue text was rendered as HTML");
+  checkLiveDomHandlers(h);
+  // Invalid/unreadable JSON uses the same host fallback as an unavailable installed bundle.
+  h.overlay.set(kbPath, "");
+  await reopen();
+  assert.strictEqual(h.$$('[data-act="bugBar"]').length, 0);
+  assert.ok(h.$$(".bbselect").every((el) => el.textContent === "Bug bar reference not available."));
+  h.overlay.delete(kbPath);
 }
 
 async function wizard(h) {
@@ -1079,6 +1184,7 @@ async function wizard(h) {
   await checkAssetSummaries(h, mod);
   await checkRequirementDerivation(h, mod);
   await checkCountermeasureFields(h, mod);
+  await checkBugBar(h, mod);
   checkLiveDomHandlers(h);
 }
 
