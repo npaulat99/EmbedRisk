@@ -82,6 +82,7 @@ async function buildData(proj: vscode.Uri) {
     changeTracker: tracker,
     project: {
       title: project.title || "",
+      status: project.status || "draft",
       name: project.device?.name || "",
       type: project.device?.type || "",
       version: project.device?.version || "",
@@ -151,9 +152,15 @@ export async function openWizard(ctx: vscode.ExtensionContext) {
   panel.webview.onDidReceiveMessage(async (m) => {
     if (m.cmd === "ready") return sendInit();
 
+    const status: unknown = m.cmd === "project" ? m.status : m.cmd === "autoSave" ? m.data?.project?.status : undefined;
+    if (status !== undefined && (typeof status !== "string" || !["draft", "in-progress", "review", "released"].includes(status))) {
+      return panel.webview.postMessage({ cmd: "err", text: "Invalid project status. Choose draft, in-progress, review or released." });
+    }
+
     if (m.cmd === "project") {
       const project = await rdRaw(f.proj, "01-project-description/project.json", {});
       if (typeof m.title === "string") project.title = m.title;
+      if (status !== undefined) project.status = status;
       project.device = project.device || {}; project.device.name = m.name; project.slTarget = m.sl;
       for (const key of ["type", "version", "modelReference"]) {
         if (typeof m[key] === "string") project.device[key] = m[key];
@@ -399,6 +406,7 @@ export async function openWizard(ctx: vscode.ExtensionContext) {
         if (d.project) {
           const proj = await rdRaw(f.proj, "01-project-description/project.json", {});
           if (typeof d.project.title === "string") proj.title = d.project.title;
+          if (status !== undefined) proj.status = status;
           proj.device = proj.device || {}; proj.device.name = d.project.name;
           for (const key of ["type", "version", "modelReference"]) {
             if (typeof d.project[key] === "string") proj.device[key] = d.project[key];
@@ -479,6 +487,8 @@ function shell(cssUri: vscode.Uri, riskUri: vscode.Uri, logoUri: vscode.Uri, csp
           <div class="field"><label>Risk scoring</label><select class="inp" id="p-risk"><option value="exposure-exploitability-impact">Exposure x Exploitability x Impact</option><option value="cost-based">Cost-based</option></select></div>
           <div class="field"><label>Scope mode</label>
             <select class="inp" id="p-mode"><option>blackbox</option><option>graybox</option><option>whitebox</option></select></div>
+          <div class="field"><label for="p-status">Status</label>
+            <select class="inp" id="p-status"><option>draft</option><option>in-progress</option><option>review</option><option>released</option></select></div>
         </div>
         <div class="field"><label>Boundary</label><input class="inp" id="p-bnd"></div>
         <div class="field" style="margin-top:8px">
@@ -592,7 +602,7 @@ let changeTracker={currentVersion:null,entries:[]};
 let assumptions={attacker:[],device:[],system:[],environment:[],operational:[]};
 let system={components:[],interfaces:[],trustBoundaries:[],assets:[]};
 let requirements=[];
-let project={title:'',name:'',type:'',version:'',modelReference:'',sl:'SL2',mode:'graybox',boundary:'',includeUseCases:false,useCaseNames:[],useCaseNoticePending:false};
+let project={title:'',status:'draft',name:'',type:'',version:'',modelReference:'',sl:'SL2',mode:'graybox',boundary:'',includeUseCases:false,useCaseNames:[],useCaseNoticePending:false};
 let undoStack=[], redoStack=[], histKey='', histTime=0;
 let asmTab='device', sysTab='components';
 const $=function(s){return document.querySelector(s);};
@@ -670,6 +680,7 @@ function renderRail(){
 function renderProject(p){
   p=p||{};
   project={title:p.title||'',name:p.name||'',sl:p.sl||'SL2',riskScoringMethod:p.riskScoringMethod||'cost-based',mode:p.mode||'graybox',boundary:p.boundary||'',sbom:p.sbom||{},includeUseCases:!!p.includeUseCases,useCaseNames:p.useCaseNames||[],useCaseNoticePending:!!p.useCaseNoticePending};
+  project.status=p.status||'draft';$('#p-status').value=project.status;
   ['type','version','modelReference'].forEach(function(key){project[key]=p[key]||'';$('#p-'+key).value=project[key];});
   $('#devname').textContent=project.name?('· '+project.name):'';
   $('#p-title').value=project.title;
@@ -1085,6 +1096,7 @@ document.addEventListener('input',function(e){
   scheduleAutoSave();
   recordBefore(keyOf(t));
   if(t.id==='p-title'){project.title=t.value;return;}
+  if(t.id==='p-status'){project.status=t.value;return;}
   if(t.id==='p-name'){project.name=t.value;$('#devname').textContent=t.value?('· '+t.value):'';return;}
   if(t.id==='p-type'||t.id==='p-version'||t.id==='p-modelReference'){project[t.id.slice(2)]=t.value;return;}
   if(t.id==='p-sl'){project.sl=t.value;return;}

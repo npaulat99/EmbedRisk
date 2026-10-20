@@ -333,6 +333,7 @@ async function wizard(h) {
   const rl = readProjectJson("01-project-description/project.json");
   assert.strictEqual(h.must("#p-name").value, rl.device.name, "project name not rendered from init payload");
   assert.strictEqual(h.must("#p-title").value, rl.title || "", "project title not rendered independently from device name");
+  assert.strictEqual(h.must("#p-status").value, rl.status || "draft", "project status not rendered from init payload");
 
   // Every step in the rail (scroll targets and host commands).
   const steps = h.$$("#rail .stepitem").length;
@@ -463,6 +464,38 @@ async function wizard(h) {
   }
   await h.settle(1700);
   assert.deepStrictEqual(lastWriteJson(h, projectPath).device, { ...expectedDevice, type: "", version: "", modelReference: "" }, "clearing device fields changed other metadata");
+
+  const beforeStatusEdits = lastWriteJson(h, projectPath);
+  delete beforeStatusEdits.status;
+  h.overlay.set(path.join(projectDir, projectPath), JSON.stringify(beforeStatusEdits));
+  h.close();
+  await mod.openWizard(ctx);
+  h.openDom();
+  await h.settle();
+  assert.strictEqual(h.must("#p-status").value, "draft", "legacy project without status must default to draft");
+  assert.deepStrictEqual(h.$$("#p-status option").map((option) => option.value), ["draft", "in-progress", "review", "released"]);
+  for (const status of ["in-progress", "review", "released", "draft"]) {
+    const previous = h.must("#p-status").value;
+    h.setValue("#p-status", status);
+    h.key("z", { ctrlKey: true });
+    assert.strictEqual(h.must("#p-status").value, previous, "status undo failed");
+    h.key("y", { ctrlKey: true });
+    assert.strictEqual(h.must("#p-status").value, status, "status redo failed");
+    await h.settle(1700);
+    assert.deepStrictEqual(lastWriteJson(h, projectPath), { ...beforeStatusEdits, status }, "status save changed other project metadata");
+    h.close();
+    await mod.openWizard(ctx);
+    h.openDom();
+    await h.settle();
+    assert.strictEqual(h.must("#p-status").value, status, "status not restored on reopen");
+  }
+  for (const cmd of ["project", "autoSave"]) {
+    const writesBefore = h.writes.length;
+    h.deliverToHost(cmd === "project" ? { cmd, status: "invalid" } : { cmd, data: { project: { status: "invalid" } } });
+    await h.settle();
+    assert.strictEqual(h.writes.length, writesBefore, "invalid status must not write any artifacts");
+    assert.match(h.toWebview[h.toWebview.length - 1].text, /Invalid project status/, "invalid status must report an error");
+  }
   checkLiveDomHandlers(h);
 }
 
