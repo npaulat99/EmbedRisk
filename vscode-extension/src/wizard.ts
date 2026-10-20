@@ -280,7 +280,8 @@ export async function openWizard(ctx: vscode.ExtensionContext) {
         });
       });
       if (problems.length) return panel.webview.postMessage({ cmd: "err", text: "Cannot save:\n" + problems.join("\n") });
-      const prev = new Map(((await rdRaw(f.proj, "06-threats/threats.json", { threats: [] })).threats || []).map((t: any) => [t.id, t]));
+      const threatDoc = await rdRaw(f.proj, "06-threats/threats.json", { threats: [] });
+      const prev = new Map((threatDoc.threats || []).map((t: any) => [t.id, t]));
       const norm = rows.map((t: any) => {
         const base: any = prev.get(t.id) || {};
         const out: any = {
@@ -302,7 +303,7 @@ export async function openWizard(ctx: vscode.ExtensionContext) {
           'assumptionRefs'].forEach(pick);
         return out;
       });
-      await write(f.proj, "06-threats/threats.json", { threats: norm });
+      await write(f.proj, "06-threats/threats.json", { ...threatDoc, threats: norm });
       return panel.webview.postMessage({ cmd: "threats", threats: norm, counts: await counts(), text: "Threats saved." });
     }
 
@@ -325,7 +326,8 @@ export async function openWizard(ctx: vscode.ExtensionContext) {
         });
       });
       if (problems.length) return panel.webview.postMessage({ cmd: "err", text: "Cannot save:\n" + problems.join("\n") });
-      const prev = new Map(((await rdRaw(f.proj, "08-countermeasures/countermeasures.json", { countermeasures: [] })).countermeasures || []).map((c: any) => [c.id, c]));
+      const cmDoc = await rdRaw(f.proj, "08-countermeasures/countermeasures.json", { countermeasures: [] });
+      const prev = new Map((cmDoc.countermeasures || []).map((c: any) => [c.id, c]));
       const norm = rows.map((c: any) => {
         const base: any = prev.get(c.id) || {};
         return {
@@ -352,7 +354,7 @@ export async function openWizard(ctx: vscode.ExtensionContext) {
           }),
         };
       });
-      await write(f.proj, "08-countermeasures/countermeasures.json", { countermeasures: norm });
+      await write(f.proj, "08-countermeasures/countermeasures.json", { ...cmDoc, countermeasures: norm });
       return panel.webview.postMessage({ cmd: "cms", cms: norm, counts: await counts(), text: "Countermeasures saved." });
     }
 
@@ -506,10 +508,16 @@ export async function openWizard(ctx: vscode.ExtensionContext) {
           const assumptions = await rdRaw(f.proj, "02-assumptions/assumptions.json", {});
           await write(f.proj, "02-assumptions/assumptions.json", { ...assumptions, attacker: [attacker] });
           const threatDoc = await rdRaw(f.proj, "06-threats/threats.json", { threats: [] });
-          await write(f.proj, "06-threats/threats.json", { threats: (threatDoc.threats || []).map((threat: any) => ({ ...threat, attackerRef: attacker.id, status: typeof threat.requiredSkill === "number" && threat.requiredSkill > attacker.capability ? "unfeasible" : threat.status === "unfeasible" ? "open" : threat.status })) });
+          await write(f.proj, "06-threats/threats.json", { ...threatDoc, threats: (threatDoc.threats || []).map((threat: any) => ({ ...threat, attackerRef: attacker.id, status: typeof threat.requiredSkill === "number" && threat.requiredSkill > attacker.capability ? "unfeasible" : threat.status === "unfeasible" ? "open" : threat.status })) });
         }
-        if (Array.isArray(d.threats)) await write(f.proj, "06-threats/threats.json", { threats: d.threats });
-        if (Array.isArray(d.cms)) await write(f.proj, "08-countermeasures/countermeasures.json", { countermeasures: d.cms.map((c: any) => ({ ...c, ...countermeasureSaveFields(c) })) });
+        if (Array.isArray(d.threats)) {
+          const threatDoc = await rdRaw(f.proj, "06-threats/threats.json", { threats: [] });
+          await write(f.proj, "06-threats/threats.json", { ...threatDoc, threats: d.threats });
+        }
+        if (Array.isArray(d.cms)) {
+          const cmDoc = await rdRaw(f.proj, "08-countermeasures/countermeasures.json", { countermeasures: [] });
+          await write(f.proj, "08-countermeasures/countermeasures.json", { ...cmDoc, countermeasures: d.cms.map((c: any) => ({ ...c, ...countermeasureSaveFields(c) })) });
+        }
         if (d.assumptions) await write(f.proj, "02-assumptions/assumptions.json", d.assumptions);
         if (d.system) {
           const prev = await rdRaw(f.proj, "03-system-assets/system.json", {});

@@ -94,7 +94,7 @@ Verification baseline for every item:
   - AC1: After deleting node X, no `ifacePos`/`ifaceRot`/`portPos`/`ifaceLink` key references X or its
     deleted descendants; unrelated entries survive (key format from webapp `types.ts`).
   - Deps: EXT-DFD1.
-- [ ] **EXT-R3 Preserve threat/CM document envelope metadata on save.**
+- [x] **EXT-R3 Preserve threat/CM document envelope metadata on save.**
   - AC1: Explicit save and autosave merge `threats` / `countermeasures` into the existing document,
     preserving unknown top-level keys; regression tests cover both paths and reopen.
   - Deps: none. Pre-existing envelope replacement identified during EXT-B1 verification.
@@ -177,6 +177,7 @@ the orchestrator implements them directly (anchors: `renderProject()` and the de
 
 | Item | Impl | Review | Test | Notes |
 |---|---|---|---|---|
+| EXT-R3 | ✅ | ✅ PASS (direct diff review) | ✅ PASS (compile, 112 model assertions, 6 parsed scripts + 6 runtime webviews) | Explicit save and autosave merge threat/CM arrays into existing envelopes, including the project-autosave threat update; row normalization is unchanged. In-memory regressions cover both document kinds and save paths, nested/zero/null metadata, intermediate writes and reopen. Uses webapp document field names; envelope preservation follows this round-trip AC (webapp save currently replaces envelopes too). No fixture JSON edits or manual VS Code UI session. |
 | EXT-B1 | ✅ | ✅ PASS | ✅ PASS (compile, 112 model assertions, 6 parsed scripts + 6 runtime webviews) | Shared threat/residual scenario matrix loads bundled Bug Bar rule, labels and scenarios. Matches webapp toggle-clear, four-axis maximum (empty → 0), rating date, selected/filled states and missing/unavailable hints. Runtime tests cover escaped catalogue text, unknown row/link/dimension metadata, autosave, undo/redo and reopen; negative control fails against the previous wizard. No fixture/catalogue JSON edits. Pre-existing envelope metadata loss tracked separately as EXT-R3; no manual VS Code UI session. |
 | EXT-C1 | ✅ | ✅ | ✅ PASS (compile, 112 model assertions, parse + runtime smoke tests) | Adds negative effects, product/deployment/shared responsibility, verification evidence and per-link assessor/date display. Assessor and guided residual edits stamp the date; new links inherit threat provenance. Ticket lists read legacy `ticketUrl`, trim blanks and synchronize the primary link. Tests cover both save paths, clearing/omission, undo/redo, reopen, status-dependent fields, unknown metadata and invalid-input rejection. |
 | EXT-REQ1 | ✅ | ✅ | ✅ PASS (compile, 112 model assertions, parse + runtime smoke tests) | Checkbox and badges follow webapp derivation rules: CM links force checked/disabled and set the flag on linking; removing the last link retains the flag. Tests cover absent/false/true flags, threat-only and CM-linked rows, multiple links, persisted undo/redo, reopen and unknown row fields. Uses the backlog's badge wording (webapp labels these `is CM` / `standalone`). |

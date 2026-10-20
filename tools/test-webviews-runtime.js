@@ -785,6 +785,53 @@ async function checkCountermeasureFields(h, mod) {
   }
 }
 
+async function checkDocumentEnvelopes(h, mod) {
+  const cases = [
+    ["threats", "06-threats/threats.json", "threats", '[data-i="0"][data-k="title"]'],
+    ["cms", "08-countermeasures/countermeasures.json", "countermeasures", '[data-ci="0"][data-k="title"]'],
+  ];
+  const threat = { ...readProjectJson(cases[0][1]).threats[0], likelihood: 3, impact: 3 };
+  const cm = { id: "CM-ENVELOPE", title: "Envelope control", type: "corrective", status: "proposed",
+    addresses: [{ threat: threat.id, residualLikelihood: 2, residualImpact: 2 }] };
+  const metadata = { futureMetadata: { nested: ["preserve", { enabled: false }] }, revision: 0, note: null };
+  for (const [i, [, rel, key]] of cases.entries()) {
+    h.overlay.set(path.join(projectDir, rel), JSON.stringify({ ...metadata, [key]: [i ? cm : threat] }));
+  }
+  const reopen = async () => { h.close(); await mod.openWizard(ctx); h.openDom(); await h.settle(); };
+  await reopen();
+  for (const [cmd, rel, key, selector] of cases) {
+    for (const mode of ["explicit", "autoSave"]) {
+      const title = `${cmd} ${mode} envelope regression`;
+      const start = h.writes.length;
+      if (mode === "explicit") {
+        const rows = JSON.parse(h.readText(path.join(projectDir, rel)))[key];
+        rows[0].title = title;
+        const compIds = JSON.parse(h.readText(path.join(projectDir, "03-system-assets/system.json"))).components.map((c) => c.id);
+        h.deliverToHost({ cmd, [cmd]: rows, compIds });
+        await h.settle();
+      } else {
+        h.setValue(selector, title);
+        await h.settle(1700);
+      }
+      assert.strictEqual(lastWriteJson(h, rel)[key][0].title, title, `${cmd} ${mode} did not save`);
+      // Also check the intermediate threat write made by project autosave.
+      for (const [, docRel, docKey] of cases) {
+        for (const write of h.writes.slice(start).filter((w) => w.path === path.join(projectDir, docRel))) {
+          const envelope = JSON.parse(write.text);
+          delete envelope[docKey];
+          assert.deepStrictEqual(envelope, metadata, `${cmd} ${mode} lost ${docKey} envelope`);
+        }
+      }
+      await reopen();
+      assert.strictEqual(h.must(selector).value, title, `${cmd} ${mode} not restored on reopen`);
+      const doc = JSON.parse(h.readText(path.join(projectDir, rel)));
+      assert.deepStrictEqual(h.toWebview.filter((m) => m.cmd === "init").at(-1).data[cmd], doc[key]);
+      delete doc[key];
+      assert.deepStrictEqual(doc, metadata, `${cmd} ${mode} envelope lost on reopen`);
+    }
+  }
+}
+
 async function checkBugBar(h, mod) {
   const threatPath = "06-threats/threats.json", cmPath = "08-countermeasures/countermeasures.json";
   const kbPath = path.join(extDir, "runtime/.assets/knowledge-base/bug-bar.json");
@@ -1184,6 +1231,7 @@ async function wizard(h) {
   await checkAssetSummaries(h, mod);
   await checkRequirementDerivation(h, mod);
   await checkCountermeasureFields(h, mod);
+  await checkDocumentEnvelopes(h, mod);
   await checkBugBar(h, mod);
   checkLiveDomHandlers(h);
 }
