@@ -21,6 +21,16 @@ Verification baseline for every item:
 
 ## Epic 0 — Test baseline
 
+- [ ] **EXT-HOT1 Webview inline scripts fail to parse (critical, pre-existing).** Found while testing EXT-ID1:
+  the wizard script has a template-literal regex `[ _\-:.]` → `[ _-:.]` ("Range out of order") and an
+  unclosed `{` in `renderAssumptions()`; the use-case editor has `(d.connections||[])=` (invalid
+  assignment). Each error stops the whole webview script from running.
+  - AC1: All three are fixed; behaviour matches the intent (ID validation regex allows `-`; entity deletion
+    drops its connections, as in webapp `UseCasesPanel.tsx`).
+  - AC2: A regression test bundles every webview-producing module (`src/*.ts`), extracts every inline
+    `<script>` from the generated HTML and syntax-checks it; it fails on HEAD~ and passes after the fix.
+  - Deps: none.
+
 - [x] **EXT-00 Restore the attack-tree aggregation fixture.**
   `tools/test-models.js` reads `webapp/projects/test/07-attack-trees/attack-trees.json`, which was never
   committed (project folders are gitignored), so the suite fails on a clean checkout.
@@ -60,7 +70,7 @@ Verification baseline for every item:
     entry; additional links are preserved.
   - AC3: Unit tests for the helper.
   - Deps: EXT-00.
-- [ ] **EXT-ID1 Webapp ID prefixes for new assumptions and assets.** Wizard creates `A-D-`, `A-S-`, `A-E-`,
+- [x] **EXT-ID1 Webapp ID prefixes for new assumptions and assets.** Wizard creates `A-D-`, `A-S-`, `A-E-`,
   `A-O-`, `AS-`; webapp uses `AD-`, `SYSA-`, `AE-`, `AO-`, `AST-`.
   - AC1: New items get the webapp prefixes; existing IDs are untouched.
   - Deps: none.
@@ -150,6 +160,7 @@ reopen, undo/redo works. Items touch the same wizard code and run sequentially.
 
 | Item | Impl | Review | Test | Notes |
 |---|---|---|---|---|
+| EXT-ID1 | ✅ | ✅ PASS | ✅ PASS (19 parity cases vs webapp `uid`, prefixes cited per entity, RL-100 DFD round trip) | Shared `nextId` in `media/dfd-model.js`; surfaced EXT-HOT1 |
 | EXT-A1 | ✅ (2 rounds: orchestrator corrected AC1 to webapp union semantics + "+ Tree" auto-link) | ✅ PASS | ✅ PASS (11 parity cases vs webapp, RL-100 round trip deep-equal, Python helper matches) | Also fixed unescaped `threatRef` in Python report heading |
 | EXT-K1 | ✅ | ✅ PASS | ✅ PASS (cmp identical, drift test fails helpfully, `vsce ls` includes bug-bar.json) | `bug-bar.json` bundled but unused until EXT-B1 |
 | EXT-R1b | ✅ | ❌→✅ PASS (2nd round: unfeasible rows printed false "4×5=0" arithmetic) | ✅ PASS (RL-100 20/20 threats match client `riskOf`; DFD heat matches DfdView; re-verified marker rendering) | Found pre-existing report crash on missing `steps` (EXT-RPT1) and Python drift (EXT-RPT2); `tools/generate-report.mjs` looks for `.assets/` at repo root (pre-existing, not extension) |

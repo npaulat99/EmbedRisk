@@ -14,6 +14,8 @@ import { UseCaseEditor } from "./useCaseEditor";
 
 // Isomorphic CommonJS webview model, reused here for the shared threatRefs/threatRef read rule.
 const AtModel = require("../media/attacktree-model.js");
+// Shared webapp-compatible id scheme (prefix + lowest free number), from the isomorphic DFD model.
+const { nextId } = require("../media/dfd-model.js") as { nextId: (prefix: string, ids: unknown[]) => string };
 
 interface Node { id: string; label: string; type: string; layer: number; parent?: string | null }
 interface Dfd { nodes: Node[]; flows: { id: string; label?: string; from: string; to: string }[]; }
@@ -174,7 +176,7 @@ async function openLayer(target: number) {
   if (!dfd.nodes.some((n) => n.layer === target)) {
     const create = await vscode.window.showInformationMessage(`Layer ${target} has no components yet. Create it?`, "Create", "Cancel");
     if (create !== "Create") return;
-    dfd.nodes.push({ id: `N-L${target}-1`, label: `New component (L${target})`, type: "process", layer: target, parent: dfd.nodes[0]?.id ?? null });
+    dfd.nodes.push({ id: nextId("N-", dfd.nodes.map((n) => n.id)), label: `New component (L${target})`, type: "process", layer: target, parent: dfd.nodes[0]?.id ?? null });
     await vscode.workspace.fs.writeFile(u, encodeJson(dfd));
   }
   layer = target;
@@ -256,7 +258,7 @@ export function activate(ctx: vscode.ExtensionContext) {
       const countNodes = (n: any): number => 1 + (n.children || []).reduce((s: number, c: any) => s + countNodes(c), 0);
       const openTree = async (id?: string) => { attackTreeEditor.pendingTreeId = id; await vscode.commands.executeCommand("vscode.openWith", file, "embedrisk.attackTree"); };
 
-      // Create a new tree, first asking which threat it models (so it carries the threat prefix).
+      // Create a new tree, first asking which threat it models (linked via threatRef/threatRefs).
       const createForThreat = async () => {
         const threats = await readThreats();
         const items: any[] = threats.map((t: any) => ({ label: t.id, description: t.title, t }));
@@ -265,8 +267,7 @@ export function activate(ctx: vscode.ExtensionContext) {
         if (!pick) return;
         const t = (pick as any).t;
         const d = await readDoc();
-        const ids = new Set(d.trees.map((x: any) => x.id));
-        const base = t ? "AT-" + t.id : "AT"; let id = base; let n = 1; while (ids.has(id)) id = `${base}-${++n}`;
+        const id = nextId("AT", d.trees.map((x: any) => x.id));
         d.trees.push({ id, title: t ? t.title : "New attack goal", ...(t ? { threatRef: t.id } : {}), threatRefs: t ? [t.id] : [], root: { id: "n1", kind: "goal", label: t ? t.title : "Attack goal", gate: "OR", children: [{ id: "n2", kind: "step", label: "Attacker step 1", access: 3, skill: 2, cost: {}, children: [] }] } });
         attackTreeEditor.pendingTreeId = id; // set before writing so the new tree is focused whether or not the editor is already open
         await writeDoc(d);

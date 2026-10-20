@@ -579,7 +579,8 @@ let undoStack=[], redoStack=[], histKey='', histTime=0;
 let asmTab='device', sysTab='components';
 const $=function(s){return document.querySelector(s);};
 function esc(s){return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
-function uid(prefix,ids){var i=1,id;do{id=prefix+i++;}while((ids||[]).indexOf(id)>=0);return id;}
+function uid(prefix,ids){var used={};(ids||[]).forEach(function(id){if(typeof id!=='string'||id.indexOf(prefix)!==0)return;var rest=id.slice(prefix.length);if(/^[0-9]+$/.test(rest))used[Number(rest)]=true;});var n=1;while(used[n])n++;return prefix+n;}
+var ASM_PREFIX={device:'AD-',system:'SYSA-',environment:'AE-',operational:'AO-'};
 function optTags(list,val){return list.map(function(o){var v=o&&o.length&&typeof o!=='string'?o[0]:o;var l=o&&o.length&&typeof o!=='string'?o[1]:o;return '<option value="'+esc(v)+'"'+(String(val)===String(v)?' selected':'')+'>'+esc(l)+'</option>';}).join('');}
 function statusLabel(s){var m={open:'Open',mitigated:'Mitigated',accepted:'Accepted',transferred:'Transferred'};return m[s||'open']||'Open';}
 // ---- undo / redo history: snapshots of the editable project state (toolbar buttons + Ctrl+Z / Ctrl+Y) ----
@@ -873,7 +874,7 @@ function renderAssumptions(){
   {
     var key=asmTab, arr=assumptions[key]||[];
     html+=arr.length?arr.map(function(item,i){
-      return '<div class="itemcard"><div class="head" style="align-items:flex-start"><span class="idtag">'+esc(item.id||('A-'+(i+1)))+'</span>'+
+      return '<div class="itemcard"><div class="head" style="align-items:flex-start"><span class="idtag">'+esc(item.id||(ASM_PREFIX[key]+(i+1)))+'</span>'+
         '<textarea class="inp grow" rows=2 data-asm="'+key+'" data-ai='+i+' data-k="text" placeholder="Assumption text">'+esc(item.text||'')+'</textarea>'+
         '<select class="inp" style="width:120px" data-asm="'+key+'" data-ai='+i+' data-k="confidence">'+['','low','medium','high'].map(function(c){return '<option value="'+c+'"'+((item.confidence||'')===c?' selected':'')+'>'+(c||'confidence…')+'</option>';}).join('')+'</select>'+
         '<button class="btn sm danger" data-act="delAsm" data-asm="'+key+'" data-i='+i+'>&#10005;</button></div></div>';
@@ -937,7 +938,7 @@ function renderSystem(){
       var o=a.objectives||{};
       var comp=cList.length?cList.map(function(c){return chip(c.id,(a.components||[]).indexOf(c.id)>=0,'data-act="asComp" data-as='+i+' data-val="'+esc(c.id)+'"',c.name);}).join(''):'<span class="hint">Add components first.</span>';
       var objs=OBJS.map(function(ob){return '<div class="field"><label>'+ob[1]+' · '+ob[0]+'</label><select class="inp" data-as='+i+' data-obj="'+ob[0]+'">'+[0,1,2,3,4,5].map(function(n){return '<option'+((+o[ob[0]]||0)===n?' selected':'')+'>'+n+'</option>';}).join('')+'</select></div>';}).join('');
-      return '<div class="itemcard"><div class="head"><span class="idtag">'+esc(a.id||('AS-'+(i+1)))+'</span>'+
+      return '<div class="itemcard"><div class="head"><span class="idtag">'+esc(a.id||('AST-'+(i+1)))+'</span>'+
         '<input class="inp grow" data-as='+i+' data-k="name" value="'+esc(a.name||'')+'">'+
         '<button class="btn sm danger" data-act="delAs" data-i='+i+'>&#10005;</button></div>'+
         '<div class="grid3"><div class="field"><label>Type</label><select class="inp" data-as='+i+' data-k="type">'+optTags(ASSET_TYPES,a.type||'function')+'</select></div>'+
@@ -984,15 +985,15 @@ document.addEventListener('click',function(e){
   }
   if(cmd){vs.postMessage({cmd:cmd});return;}
   var before=snapshot();
-  if(act==='addT'){threats.push({id:'T'+(threats.length+1),title:'New threat',stride:['T'],components:[],likelihood:3,impact:3,status:'open'});renderThreats();renderRail();}
+  if(act==='addT'){threats.push({id:uid('T',threats.map(function(x){return x.id;})),title:'New threat',stride:['T'],components:[],likelihood:3,impact:3,status:'open'});renderThreats();renderRail();}
   else if(act==='delT'){threats.splice(+el.dataset.i,1);renderThreats();renderRail();}
-  else if(act==='addC'){cms.push({id:'CM'+(cms.length+1),title:'New countermeasure',type:'preventive',status:'proposed',addresses:[]});renderCms();renderRail();}
+  else if(act==='addC'){cms.push({id:uid('CM',cms.map(function(x){return x.id;})),title:'New countermeasure',type:'preventive',status:'proposed',addresses:[]});renderCms();renderRail();}
   else if(act==='delC'){cms.splice(+el.dataset.i,1);renderCms();updatePills();renderRail();}
   else if(act==='delAddr'){cms[+el.dataset.c].addresses.splice(+el.dataset.j,1);renderCms();updatePills();}
   else if(act==='addAddr'){cms[+el.dataset.c].addresses.push({threat:el.dataset.val,residualLikelihood:2,residualImpact:2});renderCms();updatePills();}
   else if(act==='addTicket'){var cm2=cms[+el.dataset.ci];cm2.ticketUrls=cm2.ticketUrls&&cm2.ticketUrls.length?cm2.ticketUrls:[''];cm2.ticketUrls.push('');renderCms();}
   else if(act==='delTicket'){var cm3=cms[+el.dataset.ci],ti3=+el.dataset.ti;var urls3=cm3.ticketUrls&&cm3.ticketUrls.length?cm3.ticketUrls:[''];urls3.splice(ti3,1);cm3.ticketUrls=urls3;renderCms();}
-  else if(act==='addAsm'){var ak=el.dataset.asm;assumptions[ak]=assumptions[ak]||[];assumptions[ak].push({id:uid('A-'+ak.charAt(0).toUpperCase()+'-',assumptions[ak].map(function(x){return x.id;})),text:''});renderAssumptions();}
+  else if(act==='addAsm'){var ak=el.dataset.asm;assumptions[ak]=assumptions[ak]||[];assumptions[ak].push({id:uid(ASM_PREFIX[ak],assumptions[ak].map(function(x){return x.id;})),text:''});renderAssumptions();}
   else if(act==='delAsm'){assumptions[el.dataset.asm].splice(+el.dataset.i,1);renderAssumptions();}
   else if(act==='addComp'){system.components=system.components||[];system.components.push({id:uid('C-',system.components.map(function(x){return x.id;})),name:'New component',kind:'software',layer:2,parent:(system.components[0]||{}).id||null});sysTab='components';renderSystem();renderThreats();}
   else if(act==='delComp'){system.components.splice(+el.dataset.i,1);renderSystem();renderThreats();}
@@ -1000,7 +1001,7 @@ document.addEventListener('click',function(e){
   else if(act==='delIf'){system.interfaces.splice(+el.dataset.i,1);renderSystem();}
   else if(act==='addTb'){system.trustBoundaries=system.trustBoundaries||[];system.trustBoundaries.push({id:uid('TB-',system.trustBoundaries.map(function(x){return x.id;})),name:'New boundary',members:[]});sysTab='boundaries';renderSystem();}
   else if(act==='delTb'){system.trustBoundaries.splice(+el.dataset.i,1);renderSystem();}
-  else if(act==='addAs'){system.assets=system.assets||[];system.assets.push({id:uid('AS-',system.assets.map(function(x){return x.id;})),name:'New asset',type:'function',components:[],objectives:{confidentiality:1,integrity:3,availability:3,safety:1}});sysTab='assets';renderSystem();}
+  else if(act==='addAs'){system.assets=system.assets||[];system.assets.push({id:uid('AST-',system.assets.map(function(x){return x.id;})),name:'New asset',type:'function',components:[],objectives:{confidentiality:1,integrity:3,availability:3,safety:1}});sysTab='assets';renderSystem();}
   else if(act==='delAs'){system.assets.splice(+el.dataset.i,1);renderSystem();}
   else if(act==='tbMem'){var bb=system.trustBoundaries[+el.dataset.tb];bb.members=bb.members||[];var mk=bb.members.indexOf(el.dataset.val);if(mk>=0)bb.members.splice(mk,1);else bb.members.push(el.dataset.val);renderSystem();}
   else if(act==='asComp'){var aa=system.assets[+el.dataset.as];aa.components=aa.components||[];var ck=aa.components.indexOf(el.dataset.val);if(ck>=0)aa.components.splice(ck,1);else aa.components.push(el.dataset.val);renderSystem();}

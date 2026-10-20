@@ -24,10 +24,21 @@
     var p = dfd.nodes.find(function (n) { return n.id === parentId; });
     return (p && p.layer ? p.layer : 1) + 1;
   }
-  function uid(dfd, prefix) {
-    var i = 1, id;
-    do { id = prefix + i++; } while (dfd.nodes.some(function (n) { return n.id === id; }));
-    return id;
+  // Same scheme as the webapp's uid() (webapp/client/src/state/store.ts): prefix + the lowest
+  // positive integer not already taken by an existing id of the exact form <prefix><digits>.
+  function nextId(prefix, existingIds) {
+    var used = {};
+    (existingIds || []).forEach(function (id) {
+      if (typeof id !== "string" || id.indexOf(prefix) !== 0) return;
+      var rest = id.slice(prefix.length);
+      if (/^[0-9]+$/.test(rest)) used[Number(rest)] = true;
+    });
+    var n = 1;
+    while (used[n]) n++;
+    return prefix + n;
+  }
+  function uid(dfd, prefix, reservedIds) {
+    return nextId(prefix, dfd.nodes.map(function (n) { return n.id; }).concat(reservedIds || []));
   }
   function layout(dfd, parentId) {
     var view = viewNodes(dfd, parentId);
@@ -40,14 +51,17 @@
     });
     return view;
   }
-  function addNode(dfd, parentId, type, label) {
-    var node = { id: uid(dfd, "N"), label: label || ("New " + type), type: type, layer: layerOf(dfd, parentId), parent: parentId };
+  // Webapp prefixes: trust-boundary nodes "TB-<n>" (also avoiding system trust-boundary ids passed
+  // in reservedIds, since a DFD boundary node shares its id with its system trust boundary), all
+  // other nodes "N-<n>".
+  function addNode(dfd, parentId, type, label, reservedIds) {
+    var prefix = type === "trust-boundary" ? "TB-" : "N-";
+    var node = { id: uid(dfd, prefix, reservedIds), label: label || ("New " + type), type: type, layer: layerOf(dfd, parentId), parent: parentId };
     dfd.nodes.push(node);
     return node;
   }
   function addFlow(dfd, from, to, label) {
-    var i = 1, id;
-    do { id = "F" + i++; } while (dfd.flows.some(function (f) { return f.id === id; }));
+    var id = nextId("F", dfd.flows.map(function (f) { return f.id; }));
     var flow = { id: id, label: label || "", from: from, to: to, crossesBoundary: null };
     dfd.flows.push(flow);
     return flow;
@@ -163,7 +177,7 @@
     return parts.join("");
   }
 
-  var api = { ROW: ROW, esc: esc, siblings: siblings, children: children, viewNodes: viewNodes, layerOf: layerOf, uid: uid, layout: layout, addNode: addNode, addFlow: addFlow, deleteNode: deleteNode, render: render };
+  var api = { ROW: ROW, esc: esc, siblings: siblings, children: children, viewNodes: viewNodes, layerOf: layerOf, nextId: nextId, uid: uid, layout: layout, addNode: addNode, addFlow: addFlow, deleteNode: deleteNode, render: render };
   g.DfdModel = api;
   if (typeof module !== "undefined" && module.exports) module.exports = api;
 })(typeof window !== "undefined" ? window : globalThis);

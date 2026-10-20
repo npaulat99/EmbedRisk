@@ -2,6 +2,9 @@ import * as vscode from "vscode";
 import { dfdToDrawio } from "../../tools/dfd-to-drawio.mjs";
 import { drawioToDfd } from "../../tools/drawio-to-dfd.mjs";
 
+// Shared webapp-compatible id scheme (prefix + lowest free number), from the isomorphic DFD model.
+const { nextId } = require("../media/dfd-model.js") as { nextId: (prefix: string, ids: unknown[]) => string };
+
 // Custom editor for dfd.json: embeds the real draw.io editor (embed protocol) and syncs both ways.
 // Uses a locally vendored draw.io (media/drawio) when present (offline); otherwise the hosted embed.
 export class DfdEditor implements vscode.CustomTextEditorProvider {
@@ -41,7 +44,7 @@ export class DfdEditor implements vscode.CustomTextEditorProvider {
         if (!kids.length) {
           const c = await vscode.window.showInformationMessage(`'${lbl(focus)}' has no sub-components. Create one?`, "Create", "Cancel");
           if (c !== "Create") return;
-          const d = dfd(); d.nodes.push({ id: `N-${focus}-1`, label: `Sub-component of ${lbl(focus)}`, type: "process", parent: focus, layer: path.length + 2 }); await writeDfd(d);
+          const d = dfd(); d.nodes.push({ id: nextId("N-", (d.nodes as any[]).map((n) => n.id)), label: `Sub-component of ${lbl(focus)}`, type: "process", parent: focus, layer: path.length + 2 }); await writeDfd(d);
         }
         path.push(focus); focus = null; push(); status();
       } else if (m.type === "nav") {                             // up to parent

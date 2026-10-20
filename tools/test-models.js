@@ -113,6 +113,21 @@ ok("addNode adds a node with parent null/layer1", added.parent === null && added
 const fl = DfdModel.addFlow(d2, "N-DCS", added.id, "x");
 ok("addFlow adds a flow", d2.flows.some((f) => f.id === fl.id && f.from === "N-DCS"));
 
+// Id scheme mirrors the webapp's uid(): prefix + lowest free positive integer among <prefix><digits> ids.
+ok("nextId starts at 1 with no ids", DfdModel.nextId("AD-", []) === "AD-1");
+ok("nextId fills the lowest gap", DfdModel.nextId("T", ["T1", "T3"]) === "T2");
+ok("nextId ignores ids of other forms", DfdModel.nextId("T", ["T-1", "TB-1", "T1a", "AT1", "T"]) === "T1");
+ok("nextId treats zero-padded numbers by value", DfdModel.nextId("AD-", ["AD-01"]) === "AD-2");
+ok("nextId tolerates non-string ids", DfdModel.nextId("N-", [null, undefined, 7, "N-1"]) === "N-2");
+ok("addNode uses webapp node prefix N-", added.id === "N-1");
+ok("addFlow uses webapp flow prefix F and skips existing", fl.id === "F4");
+const d4 = { nodes: [{ id: "N-1", label: "a", type: "process", layer: 1, parent: null }, { id: "TB-1", label: "b", type: "trust-boundary", layer: 1, parent: null }], flows: [] };
+const tbNode = DfdModel.addNode(d4, null, "trust-boundary", "TB", ["TB-2"]);
+ok("addNode gives trust boundaries TB- ids avoiding reserved system TB ids", tbNode.id === "TB-3");
+const pNode = DfdModel.addNode(d4, null, "external-entity", "EE");
+ok("addNode numbers N- nodes after existing ones", pNode.id === "N-2");
+ok("addNode never rewrites existing ids", d4.nodes.slice(0, 2).map((n) => n.id).join() === "N-1,TB-1");
+
 const d3 = JSON.parse(JSON.stringify(dfd));
 DfdModel.deleteNode(d3, "N-DEV");
 ok("delete removes node + descendants", !d3.nodes.some((n) => ["N-DEV", "N-MCU", "N-BT", "N-HART", "N-CFG", "TB-CORE"].includes(n.id)));

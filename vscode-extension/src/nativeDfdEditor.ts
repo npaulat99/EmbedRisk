@@ -27,8 +27,9 @@ export class NativeDfdEditor implements vscode.CustomTextEditorProvider {
             component: itf.component || '', exposure: itf.exposure || '',
             protocol: itf.protocol || '', category: itf.category || '',
           })),
+          trustBoundaryIds: (sys.trustBoundaries || []).map((b: any) => b.id).filter((id: any) => typeof id === "string"),
         };
-      } catch { return { components: [], interfaces: [] }; }
+      } catch { return { components: [], interfaces: [], trustBoundaryIds: [] }; }
     };
 
     let lastText = "";
@@ -66,7 +67,7 @@ export class NativeDfdEditor implements vscode.CustomTextEditorProvider {
     const post = async () => {
       const sys = await readSystemData();
       const riskData = await readRiskData();
-      panel.webview.postMessage({ type: "load", dfd: doc.getText() || '{"nodes":[],"flows":[]}', components: sys.components, interfaces: sys.interfaces, riskData });
+      panel.webview.postMessage({ type: "load", dfd: doc.getText() || '{"nodes":[],"flows":[]}', components: sys.components, interfaces: sys.interfaces, trustBoundaryIds: sys.trustBoundaryIds, riskData });
     };
     const save = async (text: string) => {
       lastText = text;
@@ -148,7 +149,7 @@ svg{display:block}
 <script nonce="${nonce}">
 const M=DfdModel, vs=acquireVsCodeApi();
 const TYPES=['external-entity','process','multiprocess','store','trust-boundary'];
-let dfd={nodes:[],flows:[]}, components=[], interfaces=[], riskData={}, stack=[], focus=null, connect=false, connectFrom=null;
+let dfd={nodes:[],flows:[]}, components=[], interfaces=[], trustBoundaryIds=[], riskData={}, stack=[], focus=null, connect=false, connectFrom=null;
 let drag=null, chipDrag=null, dragMoved=false, dragging=false;
 const $=id=>document.getElementById(id);
 function esc(s){return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
@@ -318,7 +319,7 @@ function down(){
   stack.push(focus);focus=null;draw();
 }
 function add(type){
-  var n=M.addNode(dfd,cur(),type,'New '+type.replace('-',' '));
+  var n=M.addNode(dfd,cur(),type,'New '+type.replace('-',' '),trustBoundaryIds);
   if(type==='trust-boundary'){n.members=[];delete n.x;delete n.y;}
   focus=n.id;persist('add');draw();
   promptBox('Name for new '+type,n.label,function(v){if(v!=null&&v!==''){n.label=v;persist('add');draw();}});
@@ -405,7 +406,7 @@ window.addEventListener('keydown',function(e){
 });
 
 window.addEventListener('message',function(ev){var m=ev.data;
-  if(m.type==='load'){try{dfd=JSON.parse(m.dfd);}catch(_){dfd={nodes:[],flows:[]};}if(!dfd.nodes)dfd.nodes=[];if(!dfd.flows)dfd.flows=[];if(m.components)components=m.components;if(m.interfaces)interfaces=m.interfaces;if(m.riskData)riskData=m.riskData;baseState=snap();updUndo();if(dragging)return;draw();}
+  if(m.type==='load'){try{dfd=JSON.parse(m.dfd);}catch(_){dfd={nodes:[],flows:[]};}if(!dfd.nodes)dfd.nodes=[];if(!dfd.flows)dfd.flows=[];if(m.components)components=m.components;if(m.interfaces)interfaces=m.interfaces;if(m.trustBoundaryIds)trustBoundaryIds=m.trustBoundaryIds;if(m.riskData)riskData=m.riskData;baseState=snap();updUndo();if(dragging)return;draw();}
 });
 vs.postMessage({type:'ready'});
 </script></body></html>`;

@@ -2,6 +2,9 @@ import * as vscode from "vscode";
 import * as path from "node:path";
 import { readdir } from "node:fs/promises";
 
+// Shared webapp-compatible id scheme (prefix + lowest free number), from the isomorphic DFD model.
+const { nextId } = require("../media/dfd-model.js") as { nextId: (prefix: string, ids: unknown[]) => string };
+
 const esc = (s: any) => String(s ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/"/g, "&quot;");
 const decoder = new TextDecoder();
 
@@ -63,8 +66,7 @@ export async function openKbBrowser(ctx: vscode.ExtensionContext) {
       const src = threats[m.i];
       const u = vscode.Uri.joinPath(proj, "06-threats/threats.json");
       const doc = await readJson(u, { threats: [] });
-      const ids = new Set((doc.threats || []).map((t: any) => t.id));
-      let id = "T-" + src.key; let n = 1; while (ids.has(id)) id = `T-${src.key}-${++n}`;
+      const id = nextId("T", (doc.threats || []).map((t: any) => t.id));
       doc.threats = doc.threats || [];
       doc.threats.push({ id, title: src.title, stride: src.stride || [], components: [], assets: [], likelihood: 3, impact: src.typicalImpact || 3, status: "open", source: "knowledge-base:" + src.key });
       await vscode.workspace.fs.writeFile(u, Buffer.from(JSON.stringify(doc, null, 2)));
@@ -73,8 +75,7 @@ export async function openKbBrowser(ctx: vscode.ExtensionContext) {
       const src = cms[m.i];
       const u = vscode.Uri.joinPath(proj, "08-countermeasures/countermeasures.json");
       const doc = await readJson(u, { countermeasures: [] });
-      const ids = new Set((doc.countermeasures || []).map((c: any) => c.id));
-      let id = "CM-" + src.key; let n = 1; while (ids.has(id)) id = `CM-${src.key}-${++n}`;
+      const id = nextId("CM", (doc.countermeasures || []).map((c: any) => c.id));
       doc.countermeasures = doc.countermeasures || [];
       doc.countermeasures.push({ id, title: src.title, type: "preventive", status: "proposed", components: [], addresses: [], source: "knowledge-base:" + src.key });
       await vscode.workspace.fs.writeFile(u, Buffer.from(JSON.stringify(doc, null, 2)));

@@ -109,7 +109,8 @@ body{display:flex;flex-direction:column;background:#0f1115;color:#e8eaee}
 const vs=acquireVsCodeApi();
 const $=(id)=>document.getElementById(id);
 const esc=(s)=>String(s==null?'':s).replace(/[&<>"']/g,(c)=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-const uid=(p,arr)=>{let i=1,id;const used=new Set((arr||[]).map(x=>x.id));do{id=p+i++;}while(used.has(id));return id;};
+const uid=(p,arr)=>{const used=new Set();(arr||[]).forEach(x=>{const id=x&&x.id;if(typeof id!=='string'||id.indexOf(p)!==0)return;const rest=id.slice(p.length);if(/^[0-9]+$/.test(rest))used.add(Number(rest));});let n=1;while(used.has(n))n++;return p+n;};
+const ENTITY_PREFIX={actor:'A','misuse-actor':'MA',action:'U','misuse-action':'MU'};
 
 let doc={diagrams:[]};
 let di=0;
@@ -182,7 +183,7 @@ function save(){
 }
 
 function addDiagram(){
-	const id=uid('UC-',doc.diagrams);
+	const id=uid('UC',doc.diagrams);
 	doc.diagrams.push({id,name:'New use case '+id,entities:[],connections:[],groups:[],drawioXml:''});
 	di=doc.diagrams.length-1;
 	save();
@@ -232,11 +233,11 @@ document.addEventListener('click',(e)=>{
 	if(t.id==='addDiag'){addDiagram();return;}
 	if(t.id==='delDiag'){if(!d)return;doc.diagrams.splice(di,1);ensure();save();return;}
 	if(t.id==='exitBtn'){vs.postMessage({type:'exit'});return;}
-	if(t.id==='addConn'&&d){d.connections=d.connections||[];d.connections.push({id:uid('UC-L-',d.connections),from:'',to:'',arrow:'none',label:'',dashed:false});save();return;}
-	if(t.id==='addGroup'&&d){d.groups=d.groups||[];d.groups.push({id:uid('UC-G-',d.groups),name:'Group',members:[]});save();return;}
+	if(t.id==='addConn'&&d){d.connections=d.connections||[];d.connections.push({id:uid('CN',d.connections),from:'',to:'',arrow:'none',label:'',dashed:false});save();return;}
+	if(t.id==='addGroup'&&d){d.groups=d.groups||[];d.groups.push({id:uid('G',d.groups),name:'Group',members:[]});save();return;}
 
 	const addKind=t.getAttribute&&t.getAttribute('data-add-kind');
-	if(addKind&&d){d.entities=d.entities||[];d.entities.push({id:uid('UC-E-',d.entities),kind:addKind,name:addKind.replace('-',' '),x:80+(d.entities.length%4)*220,y:90+Math.floor(d.entities.length/4)*170});save();return;}
+	if(addKind&&d){d.entities=d.entities||[];d.entities.push({id:uid(ENTITY_PREFIX[addKind],d.entities),kind:addKind,name:addKind.replace('-',' '),x:80+(d.entities.length%4)*220,y:90+Math.floor(d.entities.length/4)*170});save();return;}
 
 	if(t.hasAttribute&&t.hasAttribute('data-del-entity')&&d){d.entities.splice(+t.getAttribute('data-del-entity'),1);(d.groups||[]).forEach((g)=>g.members=(g.members||[]).filter((m)=>d.entities.some((x)=>x.id===m)));(d.connections||[])= (d.connections||[]).filter((c)=>d.entities.some((x)=>x.id===c.from)&&d.entities.some((x)=>x.id===c.to));save();return;}
 	if(t.hasAttribute&&t.hasAttribute('data-del-conn')&&d){d.connections.splice(+t.getAttribute('data-del-conn'),1);save();return;}
