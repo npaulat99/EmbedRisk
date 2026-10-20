@@ -520,6 +520,101 @@ async function checkAssetSummaries(h, mod) {
   assert.deepStrictEqual(badges(0), ["data", "C1/I0/A5/S3"], "asset summary not restored on reopen");
 }
 
+async function checkRequirementDerivation(h, mod) {
+  const reqPath = "05-requirements/requirements.json";
+  const original = JSON.parse(h.readText(path.join(projectDir, reqPath))).requirements;
+  const cms = JSON.parse(h.readText(path.join(projectDir, "08-countermeasures/countermeasures.json"))).countermeasures;
+  const threats = JSON.parse(h.readText(path.join(projectDir, "06-threats/threats.json"))).threats;
+  assert.ok(cms.length >= 2 && threats.length, "requirement parity checks need two countermeasures and a threat");
+  const cases = [
+    { derivedFromThreat: [], satisfiedByCM: [] },
+    { fromCountermeasure: false, derivedFromThreat: [], satisfiedByCM: [] },
+    { fromCountermeasure: true, derivedFromThreat: [], satisfiedByCM: [] },
+    { fromCountermeasure: false, derivedFromThreat: [threats[0].id], satisfiedByCM: [] },
+    { fromCountermeasure: true, derivedFromThreat: [threats[0].id], satisfiedByCM: [] },
+    { derivedFromThreat: [], satisfiedByCM: [cms[0].id] },
+    { fromCountermeasure: false, derivedFromThreat: [threats[0].id], satisfiedByCM: [cms[0].id] },
+  ];
+  const rows = original.concat(cases.map((state, i) => ({
+    id: "R-PARITY-" + i, text: "Requirement parity " + i, standardRef: "IEC 62443-4-2 CR 1.1",
+    futureMetadata: { tags: ["preserve"] }, ...state,
+  })));
+  h.overlay.set(path.join(projectDir, reqPath), JSON.stringify({ requirements: rows }));
+  h.close();
+  await mod.openWizard(ctx);
+  h.openDom();
+  await h.settle();
+  const index = (i) => original.length + i;
+  const checkbox = (i) => h.must(`[data-req="${index(i)}"][data-k="fromCountermeasure"]`);
+  const badge = (i) => h.$(`[data-req-badge="${index(i)}"]`)?.textContent || null;
+  function state(i, checked, disabled, text) {
+    assert.strictEqual(checkbox(i).checked, checked, "requirement checkbox state: " + i);
+    assert.strictEqual(checkbox(i).disabled, disabled, "requirement checkbox lock: " + i);
+    assert.strictEqual(badge(i), text, "requirement derivation badge: " + i);
+  }
+  state(0, false, false, "Not derived");
+  state(1, false, false, "Not derived");
+  state(2, true, false, "Realises CM");
+  state(3, false, false, null);
+  state(4, true, false, "Realises CM");
+  state(5, true, true, "Realises CM");
+  state(6, true, true, "Realises CM");
+
+  h.click(checkbox(0));
+  state(0, true, false, "Realises CM");
+  await h.settle(1700);
+  assert.strictEqual(lastWriteJson(h, reqPath).requirements[index(0)].fromCountermeasure, true, "manual CM flag not saved as a boolean");
+  h.key("z", { ctrlKey: true });
+  state(0, false, false, "Not derived");
+  await h.settle(1700);
+  assert.deepStrictEqual(lastWriteJson(h, reqPath).requirements, rows, "undo did not persist the original requirements");
+  h.key("y", { ctrlKey: true });
+  state(0, true, false, "Realises CM");
+  await h.settle(1700);
+  assert.strictEqual(lastWriteJson(h, reqPath).requirements[index(0)].fromCountermeasure, true, "redo did not persist CM flag");
+  h.click(checkbox(0));
+  rows[index(0)].fromCountermeasure = false;
+  state(0, false, false, "Not derived");
+
+  const cmChip = (i, cm) => `[data-act="reqCm"][data-req="${index(i)}"][data-val="${cm.id}"]`;
+  h.click(cmChip(3, cms[0]));
+  state(3, true, true, "Realises CM");
+  h.key("z", { ctrlKey: true });
+  state(3, false, false, null);
+  h.key("y", { ctrlKey: true });
+  state(3, true, true, "Realises CM");
+  h.click(cmChip(3, cms[1]));
+  h.click(cmChip(3, cms[0]));
+  state(3, true, true, "Realises CM");
+  h.click(cmChip(3, cms[1]));
+  state(3, true, false, "Realises CM");
+  await h.settle(1700);
+  assert.deepStrictEqual(lastWriteJson(h, reqPath).requirements[index(3)], { ...rows[index(3)], fromCountermeasure: true }, "removing the last CM must preserve the flag set by linking");
+  h.click(checkbox(3));
+  state(3, false, false, null);
+  const threatChip = `[data-act="reqThreat"][data-req="${index(3)}"][data-val="${threats[0].id}"]`;
+  h.click(threatChip);
+  state(3, false, false, "Not derived");
+  h.click(threatChip);
+  state(3, false, false, null);
+
+  // Imported links imply a checked UI without silently rewriting an explicit false flag.
+  h.click(cmChip(6, cms[0]));
+  state(6, false, false, null);
+  rows[index(6)].satisfiedByCM = [];
+  await h.settle(1700);
+  assert.deepStrictEqual(lastWriteJson(h, reqPath).requirements, rows, "requirement derivation edits lost unrelated fields or links");
+  h.close();
+  await mod.openWizard(ctx);
+  h.openDom();
+  await h.settle();
+  state(0, false, false, "Not derived");
+  state(2, true, false, "Realises CM");
+  state(3, false, false, null);
+  state(5, true, true, "Realises CM");
+  state(6, false, false, null);
+}
+
 async function wizard(h) {
   const mod = await load(h, "wizard.ts");
   await mod.openWizard(ctx);
@@ -812,6 +907,7 @@ async function wizard(h) {
   assert.deepStrictEqual(lastWriteJson(h, projectPath), expectedLegacySave, "older save messages must preserve omitted fields");
   await checkSystemFields(h, mod);
   await checkAssetSummaries(h, mod);
+  await checkRequirementDerivation(h, mod);
   checkLiveDomHandlers(h);
 }
 

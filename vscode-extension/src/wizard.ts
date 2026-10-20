@@ -1068,9 +1068,13 @@ function renderSystem(){
 function renderRequirements(){
   var list=requirements||[];
   var html=list.length?list.map(function(r,i){
+    var linkedCm=(r.satisfiedByCM||[]).length>0, realisesCm=!!r.fromCountermeasure||linkedCm;
+    var badge=realisesCm?'<span class="badge" data-req-badge="'+i+'" title="Realises a countermeasure that reduces a threat&#39;s risk">Realises CM</span>':
+      !(r.derivedFromThreat||[]).length?'<span class="badge" data-req-badge="'+i+'" title="Not derived from a threat or countermeasure">Not derived</span>':'';
     var th=threats.length?threats.map(function(t){return chip(t.id,(r.derivedFromThreat||[]).indexOf(t.id)>=0,'data-act="reqThreat" data-req='+i+' data-val="'+esc(t.id)+'"',t.title);}).join(''):'<span class="hint">No threats yet (step 06).</span>';
     var cc=cms.length?cms.map(function(c){return chip(c.id,(r.satisfiedByCM||[]).indexOf(c.id)>=0,'data-act="reqCm" data-req='+i+' data-val="'+esc(c.id)+'"',c.title);}).join(''):'<span class="hint">No countermeasures yet (step 08).</span>';
     return '<div class="itemcard"><div class="head" style="align-items:flex-start"><span class="idtag">'+esc(r.id||('R'+(i+1)))+'</span>'+
+      badge+
       '<textarea class="inp grow" rows=2 data-req='+i+' data-k="text" placeholder="Testable security requirement">'+esc(r.text||'')+'</textarea>'+
       '<button class="btn sm danger" data-act="delReq" data-i='+i+'>&#10005;</button></div>'+
       '<div class="grid2">'+
@@ -1078,7 +1082,8 @@ function renderRequirements(){
         '<div class="field"><label>SL / Foundational Requirement</label><input class="inp" data-req='+i+' data-k="slFr" value="'+esc(r.slFr||'')+'" placeholder="FR1 SL2"></div>'+
       '</div>'+
       '<div class="hint" style="margin-top:6px">Derived from threats</div><div class="chips">'+th+'</div>'+
-      '<div class="hint" style="margin-top:6px">Satisfied by countermeasures</div><div class="chips">'+cc+'</div></div>';
+      '<div class="hint" style="margin-top:6px">Satisfied by countermeasures</div><div class="chips">'+cc+'</div>'+
+      '<label class="hint"><input type="checkbox" data-req='+i+' data-k="fromCountermeasure"'+(realisesCm?' checked':'')+(linkedCm?' disabled':'')+'> This requirement realises a countermeasure</label></div>';
   }).join(''):'<p class="hint">No requirements yet.</p>';
   $('#req-body').innerHTML=html;
 }
@@ -1125,7 +1130,7 @@ document.addEventListener('click',function(e){
   else if(act==='addReq'){requirements=requirements||[];requirements.push({id:uid('R',requirements.map(function(x){return x.id;})),text:'',standardRef:'',slFr:'',derivedFromThreat:[],satisfiedByCM:[]});renderRequirements();}
   else if(act==='delReq'){requirements.splice(+el.dataset.i,1);renderRequirements();}
   else if(act==='reqThreat'){var rq=requirements[+el.dataset.req];rq.derivedFromThreat=rq.derivedFromThreat||[];var rk=rq.derivedFromThreat.indexOf(el.dataset.val);if(rk>=0)rq.derivedFromThreat.splice(rk,1);else rq.derivedFromThreat.push(el.dataset.val);renderRequirements();}
-  else if(act==='reqCm'){var rc=requirements[+el.dataset.req];rc.satisfiedByCM=rc.satisfiedByCM||[];var rck=rc.satisfiedByCM.indexOf(el.dataset.val);if(rck>=0)rc.satisfiedByCM.splice(rck,1);else rc.satisfiedByCM.push(el.dataset.val);renderRequirements();}
+  else if(act==='reqCm'){var rc=requirements[+el.dataset.req];rc.satisfiedByCM=rc.satisfiedByCM||[];var rck=rc.satisfiedByCM.indexOf(el.dataset.val);if(rck>=0)rc.satisfiedByCM.splice(rck,1);else rc.satisfiedByCM.push(el.dataset.val);if(rc.satisfiedByCM.length)rc.fromCountermeasure=true;renderRequirements();}
   else if(act==='recordVersion'){
     var assessors=String(($('#vAssessors')||{}).value||'').split(',').map(function(x){return x.trim();}).filter(Boolean);
     if(!assessors.length){toast('err','Add at least one assessor name.');return;}
@@ -1205,7 +1210,7 @@ document.addEventListener('input',function(e){
   if(t.dataset.if!==undefined&&t.dataset.k){var f=system.interfaces[+t.dataset.if];if(f){f[t.dataset.k]=t.dataset.k==='hidden'?t.checked:t.value;if(t.dataset.k==='hidden')renderSystem();}return;}
   if(t.dataset.tb!==undefined&&t.dataset.k){var b=system.trustBoundaries[+t.dataset.tb];if(b)b[t.dataset.k]=t.value;return;}
   if(t.dataset.as!==undefined){var a=system.assets[+t.dataset.as];if(!a)return;if(t.dataset.obj){a.objectives=a.objectives||{};a.objectives[t.dataset.obj]=Math.max(0,Math.min(5,+t.value||0));}else if(t.dataset.k){a[t.dataset.k]=t.value;}$('#asset-summary-'+t.dataset.as).innerHTML=assetSummary(a);return;}
-  if(t.dataset.req!==undefined&&t.dataset.k){var rr=requirements[+t.dataset.req];if(rr)rr[t.dataset.k]=t.value;return;}
+  if(t.dataset.req!==undefined&&t.dataset.k){var rr=requirements[+t.dataset.req];if(rr){rr[t.dataset.k]=t.dataset.k==='fromCountermeasure'?t.checked:t.value;if(t.dataset.k==='fromCountermeasure')renderRequirements();}return;}
   // Bug Bar dimension (threat)
   if(t.dataset.dim!==undefined&&t.dataset.i!==undefined){
     var tIdx=+t.dataset.i,tk=t.dataset.dim;
