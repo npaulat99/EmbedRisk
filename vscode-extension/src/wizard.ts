@@ -985,6 +985,11 @@ function renderAssumptions(){
   }
   $('#asm-body').innerHTML=html;
 }
+function assetSummary(a){
+  var o=a.objectives||{};
+  return '<span class="badge">'+esc(a.type||'function')+'</span> <span class="badge" title="Confidentiality / Integrity / Availability / Safety">'+
+    OBJS.map(function(ob){return ob[1]+esc(o[ob[0]]==null?0:o[ob[0]]);}).join('/')+'</span>';
+}
 function renderSystem(){
   var tabs=[['components','Components',(system.components||[]).length],['interfaces','Interfaces',(system.interfaces||[]).length],['boundaries','Trust boundaries',(system.trustBoundaries||[]).length],['assets','Assets',(system.assets||[]).length]];
   $('#sys-tabs').innerHTML=tabs.map(function(t){return '<button class="tab'+(sysTab===t[0]?' active':'')+'" data-systab="'+t[0]+'">'+esc(t[1])+' <span class="badge">'+t[2]+'</span></button>';}).join('');
@@ -1049,6 +1054,7 @@ function renderSystem(){
       var objs=OBJS.map(function(ob){return '<div class="field"><label>'+ob[1]+' · '+ob[0]+'</label><select class="inp" data-as='+i+' data-obj="'+ob[0]+'">'+[0,1,2,3,4,5].map(function(n){return '<option'+((+o[ob[0]]||0)===n?' selected':'')+'>'+n+'</option>';}).join('')+'</select></div>';}).join('');
       return '<div class="itemcard"><div class="head"><span class="idtag">'+esc(a.id||('AST-'+(i+1)))+'</span>'+
         '<input class="inp grow" data-as='+i+' data-k="name" value="'+esc(a.name||'')+'">'+
+        '<span id="asset-summary-'+i+'">'+assetSummary(a)+'</span>'+
         '<button class="btn sm danger" data-act="delAs" data-i='+i+'>&#10005;</button></div>'+
         '<div class="grid3"><div class="field"><label>Type</label><select class="inp" data-as='+i+' data-k="type">'+optTags(ASSET_TYPES,a.type||'function')+'</select></div>'+
           '<div class="field" style="grid-column:span 2"><label>Storage</label><input class="inp" data-as='+i+' data-k="storage" value="'+esc(a.storage||'')+'"></div></div>'+
@@ -1198,7 +1204,7 @@ document.addEventListener('input',function(e){
   if(t.dataset.comp!==undefined&&t.dataset.k){var c=system.components[+t.dataset.comp];if(c)c[t.dataset.k]=(t.dataset.k==='layer')?(+t.value||1):(t.dataset.k==='parent'?(t.value||null):t.value);return;}
   if(t.dataset.if!==undefined&&t.dataset.k){var f=system.interfaces[+t.dataset.if];if(f){f[t.dataset.k]=t.dataset.k==='hidden'?t.checked:t.value;if(t.dataset.k==='hidden')renderSystem();}return;}
   if(t.dataset.tb!==undefined&&t.dataset.k){var b=system.trustBoundaries[+t.dataset.tb];if(b)b[t.dataset.k]=t.value;return;}
-  if(t.dataset.as!==undefined){var a=system.assets[+t.dataset.as];if(!a)return;if(t.dataset.obj){a.objectives=a.objectives||{};a.objectives[t.dataset.obj]=Math.max(0,Math.min(5,+t.value||0));}else if(t.dataset.k){a[t.dataset.k]=t.value;}return;}
+  if(t.dataset.as!==undefined){var a=system.assets[+t.dataset.as];if(!a)return;if(t.dataset.obj){a.objectives=a.objectives||{};a.objectives[t.dataset.obj]=Math.max(0,Math.min(5,+t.value||0));}else if(t.dataset.k){a[t.dataset.k]=t.value;}$('#asset-summary-'+t.dataset.as).innerHTML=assetSummary(a);return;}
   if(t.dataset.req!==undefined&&t.dataset.k){var rr=requirements[+t.dataset.req];if(rr)rr[t.dataset.k]=t.value;return;}
   // Bug Bar dimension (threat)
   if(t.dataset.dim!==undefined&&t.dataset.i!==undefined){

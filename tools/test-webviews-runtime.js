@@ -469,6 +469,57 @@ async function checkSystemFields(h, mod) {
   assert.deepStrictEqual(lastWriteJson(h, systemPath), expectedInterfaces, "clearing interface tag changed other metadata");
 }
 
+async function checkAssetSummaries(h, mod) {
+  const systemPath = "03-system-assets/system.json";
+  const original = JSON.parse(h.readText(path.join(projectDir, systemPath)));
+  original.assets[0] = {
+    ...original.assets[0], type: '<asset> & "custom"',
+    objectives: { confidentiality: 0, integrity: 5, availability: 2 },
+    futureMetadata: { tags: ["preserve"] },
+  };
+  original.assets.push({ id: "AST-SUMMARY-TEST", name: "Default summary", components: [] });
+  h.overlay.set(path.join(projectDir, systemPath), JSON.stringify(original));
+  h.close();
+  await mod.openWizard(ctx);
+  h.openDom();
+  await h.settle();
+  h.click('[data-systab="assets"]');
+  const badges = (i) => h.$$(`#asset-summary-${i} .badge`).map((badge) => badge.textContent);
+  assert.deepStrictEqual(badges(0), ['<asset> & "custom"', "C0/I5/A2/S0"], "asset summary must escape type and retain zero/default objectives");
+  assert.deepStrictEqual(badges(original.assets.length - 1), ["function", "C0/I0/A0/S0"], "asset summary defaults differ from the webapp");
+  const typeInput = h.must('[data-as="0"][data-k="type"]');
+  h.setValue(typeInput, "data");
+  assert.strictEqual(h.must('[data-as="0"][data-k="type"]'), typeInput, "summary update must not replace the active editor");
+  assert.strictEqual(badges(0)[0], "data", "type summary did not update immediately");
+  h.key("z", { ctrlKey: true });
+  assert.strictEqual(badges(0)[0], original.assets[0].type, "type summary undo failed");
+  h.key("y", { ctrlKey: true });
+  assert.strictEqual(badges(0)[0], "data", "type summary redo failed");
+  const objectives = { confidentiality: 1, integrity: 0, availability: 5, safety: 3 };
+  for (const [key, value] of Object.entries(objectives)) {
+    const before = badges(0)[1];
+    h.setValue(`[data-as="0"][data-obj="${key}"]`, String(value));
+    const after = badges(0)[1];
+    assert.notStrictEqual(after, before, "objective summary did not update: " + key);
+    h.key("z", { ctrlKey: true });
+    assert.strictEqual(badges(0)[1], before, "objective summary undo failed: " + key);
+    h.key("y", { ctrlKey: true });
+    assert.strictEqual(badges(0)[1], after, "objective summary redo failed: " + key);
+  }
+  assert.deepStrictEqual(badges(0), ["data", "C1/I0/A5/S3"]);
+  await h.settle(1700);
+  const expected = {
+    ...original, assets: original.assets.map((asset, i) => i === 0 ? { ...asset, type: "data", objectives } : asset),
+  };
+  assert.deepStrictEqual(lastWriteJson(h, systemPath), expected, "asset summary edits changed unrelated metadata");
+  h.close();
+  await mod.openWizard(ctx);
+  h.openDom();
+  await h.settle();
+  h.click('[data-systab="assets"]');
+  assert.deepStrictEqual(badges(0), ["data", "C1/I0/A5/S3"], "asset summary not restored on reopen");
+}
+
 async function wizard(h) {
   const mod = await load(h, "wizard.ts");
   await mod.openWizard(ctx);
@@ -760,6 +811,7 @@ async function wizard(h) {
   await h.settle();
   assert.deepStrictEqual(lastWriteJson(h, projectPath), expectedLegacySave, "older save messages must preserve omitted fields");
   await checkSystemFields(h, mod);
+  await checkAssetSummaries(h, mod);
   checkLiveDomHandlers(h);
 }
 

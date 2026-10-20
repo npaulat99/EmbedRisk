@@ -114,7 +114,7 @@ the orchestrator implements them directly (anchors: `renderProject()` and the de
 
 - [x] **EXT-SYS1 Component `trustZone` and `description`.**
 - [x] **EXT-SYS2 Interface `tag` and `hidden` (DFD visibility reset).**
-- [ ] **EXT-SYS3 Asset row summary tags** (type + C/I/A/S).
+- [x] **EXT-SYS3 Asset row summary tags** (type + C/I/A/S).
 - [ ] **EXT-REQ1 Requirement `fromCountermeasure` checkbox + "Realises CM" / "Not derived" badges.**
 
 ## Epic 4 — Threats, countermeasures, defects (06/08/09)
@@ -173,6 +173,7 @@ the orchestrator implements them directly (anchors: `renderProject()` and the de
 
 | Item | Impl | Review | Test | Notes |
 |---|---|---|---|---|
+| EXT-SYS3 | ✅ | ✅ | ✅ PASS (compile, 112 model assertions, parse + runtime smoke tests) | Asset headers show type and C/I/A/S badges with webapp defaults. Summaries update immediately without replacing the active editor; tests cover zero/missing objectives, escaped custom types, every objective edit, undo/redo, save/reopen and metadata preservation. |
 | EXT-SYS2 | ✅ | ✅ | ✅ PASS (compile, 112 model assertions, parse + runtime smoke tests) | Adds interface chip tags and the webapp's hidden-only visibility reset; unhide persists a boolean and supports undo/redo. Native DFD now respects `hidden` and watches system metadata so tag/visibility changes refresh open canvases. Tests cover save/reopen, clearing, metadata preservation, literal chip text, live hide/unhide and watcher disposal. |
 | EXT-SYS1 | ✅ | ✅ | ✅ PASS (compile, 112 model assertions, parse + runtime smoke tests) | Adds trust-zone and multiline description fields using the existing component save/history paths. Tests cover populated/missing values, literal markup, edits, tab switches, undo/redo, save/reopen, clearing and unknown component metadata. Description is in the shared schema but not currently exposed by webapp `SystemPanel.tsx`. |
 | EXT-PRJ6 | ✅ | ✅ | ✅ PASS (compile, 112 model assertions, parse + runtime smoke tests) | Branch/PR and KB Git URLs merge into `repo`, including on legacy projects without it. Tests cover HTTPS queries, SSH Git syntax, undo/redo, save/reopen, clearing, unknown repo keys and invalid text rejection. Also verifies explicit project-save messages normalize scope/CRA lists and preserve omitted new fields. |
