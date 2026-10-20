@@ -542,13 +542,13 @@ function shell(cssUri: vscode.Uri, riskUri: vscode.Uri, logoUri: vscode.Uri, csp
 const vs=acquireVsCodeApi(), R=window.RiskModel||{
   bandClass:function(n){return String(n||'').toLowerCase();},
   residual:function(t,cms){
-    var links=[];(cms||[]).forEach(function(cm){(cm.addresses||[]).forEach(function(a){if(a.threat===t.id)links.push(a);});});
-    if(!links.length)return [t.likelihood||0,t.impact||0];
-    var best=[t.likelihood||0,t.impact||0],bs=Infinity;
-    links.forEach(function(a){var rl=a.residualLikelihood==null?(t.likelihood||0):a.residualLikelihood;var ri=a.residualImpact==null?(t.impact||0):a.residualImpact;var s=(rl||0)*(ri||0);if(s<bs){bs=s;best=[rl,ri];}});
-    return best;
+    if(t.status==='unfeasible')return [0,0];
+    var links=[];(cms||[]).forEach(function(cm){if(cm.selected===false)return;(cm.addresses||[]).forEach(function(a){if(a.threat===t.id)links.push(a);});});
+    var rl=t.likelihood||0,ri=t.impact||0;
+    links.forEach(function(a){rl=Math.min(rl,a.residualLikelihood==null?(t.likelihood||0):a.residualLikelihood);ri=Math.min(ri,a.residualImpact==null?(t.impact||0):a.residualImpact);});
+    return [rl,ri];
   },
-  riskOf:function(t,cms){var i=(t.likelihood||0)*(t.impact||0),r=this.residual(t,cms),rs=(r[0]||0)*(r[1]||0);return {initial:i,initialBand:{name:'Medium'},residual:rs,residualBand:{name:'Medium'},residualLikelihood:r[0],residualImpact:r[1]};},
+  riskOf:function(t,cms){var i=t.status==='unfeasible'?0:(t.likelihood||0)*(t.impact||0),r=this.residual(t,cms),rs=(r[0]||0)*(r[1]||0),b=function(s){return {name:s<=0?'None':'Medium'};};return {initial:i,initialBand:b(i),residual:rs,residualBand:b(rs),residualLikelihood:r[0],residualImpact:r[1]};},
   deriveImpact:function(d){if(!d)return null;var v=[d.confidentiality,d.integrity,d.availability,d.safety].filter(function(x){return typeof x==='number';});return v.length?Math.max.apply(null,v):null;},
   deriveLikelihood:function(f){if(!f)return null;var has=typeof f.exposure==='number'||typeof f.exploitability==='number';if(!has)return null;var e=typeof f.exposure==='number'?f.exposure:3;var x=typeof f.exploitability==='number'?f.exploitability:3;return Math.min(5,Math.max(1,Math.round(Math.sqrt(e*x))));},
   cvssBaseScore:function(){return null;},

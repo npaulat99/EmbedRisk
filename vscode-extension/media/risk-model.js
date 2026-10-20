@@ -12,34 +12,37 @@
   function bandsOf(scheme) {
     return scheme && scheme.matrix && scheme.matrix.bands && scheme.matrix.bands.length ? scheme.matrix.bands : DEFAULT_BANDS;
   }
+  /* A zero likelihood or impact means the threat is not possible — risk 0, its own band. */
+  var NONE_BAND = { name: "None", min: 0, max: 0, color: "#6b7280" };
   function band(score, scheme) {
+    if (score <= 0) return NONE_BAND;
     var bands = bandsOf(scheme);
     return bands.find(function (b) { return score >= b.min && score <= b.max; }) || bands[0];
   }
 
-  /* Residual [likelihood, impact] across all countermeasure links.
-     Pick the SINGLE most-protective control (lowest residual product). Never combine the best
-     likelihood from one control with the best impact from another (Mauw & Oostdijk 2005;
-     ISO/IEC 27005 residual semantics) — that yields a residual no single control achieves. */
+  /* Residual [likelihood, impact] across all selected countermeasure links (selected === false is skipped).
+     All applied controls are in effect simultaneously, so an attacker must overcome the strongest one on
+     each axis: the residual likelihood is the LOWEST residual likelihood any single control achieves (the
+     most protective control dominates), and likewise for impact. Unfeasible threats have no residual. */
   function residual(threat, cms) {
+    if (threat.status === "unfeasible") return [0, 0];
     var links = [];
     (cms || []).forEach(function (c) {
+      if (c.selected === false) return;
       (c.addresses || []).forEach(function (a) { if (a.threat === threat.id) links.push(a); });
     });
     if (!links.length) return [threat.likelihood, threat.impact];
-    var best = [threat.likelihood, threat.impact];
-    var bestScore = Infinity;
+    var rl = threat.likelihood;
+    var ri = threat.impact;
     links.forEach(function (a) {
-      var rl = a.residualLikelihood == null ? threat.likelihood : a.residualLikelihood;
-      var ri = a.residualImpact == null ? threat.impact : a.residualImpact;
-      var s = (rl || 0) * (ri || 0);
-      if (s < bestScore) { bestScore = s; best = [rl, ri]; }
+      rl = Math.min(rl, a.residualLikelihood == null ? threat.likelihood : a.residualLikelihood);
+      ri = Math.min(ri, a.residualImpact == null ? threat.impact : a.residualImpact);
     });
-    return best;
+    return [rl, ri];
   }
 
   function riskOf(threat, cms, scheme) {
-    var initial = (threat.likelihood || 0) * (threat.impact || 0);
+    var initial = threat.status === "unfeasible" ? 0 : (threat.likelihood || 0) * (threat.impact || 0);
     var r = residual(threat, cms);
     var res = (r[0] || 0) * (r[1] || 0);
     return {

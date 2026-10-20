@@ -7,6 +7,7 @@
   --danger: #c62828;
   --warn: #ef6c00;
   --ok: #2e7d32;
+  --band-none: #6b7280;
   --band-low: #2e7d32;
   --band-medium: #f9a825;
   --band-high: #ef6c00;
@@ -29,6 +30,7 @@ body.vscode-dark {
   --danger: #ef5350;
   --warn: #ffa726;
   --ok: #66bb6a;
+  --band-none: #6b7280;
   --band-low: #66bb6a;
   --band-medium: #ffca28;
   --band-high: #ffa726;
@@ -157,6 +159,7 @@ h1, h2, h3 { margin: 0 0 .5rem; }
 
 /* ---- risk pill ---- */
 .pill { display: inline-block; padding: 1px 9px; border-radius: 20px; color: #fff; font-size: 11.5px; font-weight: 600; white-space: nowrap; }
+.pill.none { background: var(--band-none); }
 .pill.low { background: var(--band-low); }
 .pill.medium { background: var(--band-medium); color: #3a2c00; }
 .pill.high { background: var(--band-high); }

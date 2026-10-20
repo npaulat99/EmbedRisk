@@ -238,7 +238,49 @@ const rCms = [
 ];
 const rr = RiskModel.riskOf(rTh, rCms, null);
 ok("initial risk 16 High", rr.initial === 16 && rr.initialBand.name === "High");
-ok("residual is single most-protective control (5), not min×min (4)", rr.residual === 5 && rr.residualLikelihood === 1 && rr.residualImpact === 5);
+ok("residual is per-axis minimum across controls (1×4=4)", rr.residual === 4 && rr.residualLikelihood === 1 && rr.residualImpact === 4 && rr.residualBand.name === "Low");
 ok("no countermeasure ⇒ residual = initial", RiskModel.riskOf(rTh, [], null).residual === 16);
+const rDeselected = RiskModel.riskOf(rTh, [rCms[0], { id: "C", selected: false, addresses: [{ threat: "T1", residualLikelihood: 1, residualImpact: 1 }] }], null);
+ok("selected:false countermeasure is skipped", rDeselected.residualLikelihood === 2 && rDeselected.residualImpact === 4 && rDeselected.residual === 8);
+const rUnfeasible = RiskModel.riskOf({ id: "T1", likelihood: 4, impact: 4, status: "unfeasible" }, rCms, null);
+ok("unfeasible ⇒ initial 0 and residual 0/0", rUnfeasible.initial === 0 && rUnfeasible.residual === 0 && rUnfeasible.residualLikelihood === 0 && rUnfeasible.residualImpact === 0 && rUnfeasible.initialBand.name === "None");
+ok("band(0) is None", RiskModel.band(0, null).name === "None");
 
-console.log("All " + passed + " model assertions passed.");
+/* ---------- Parity with webapp/server/src/risk.js (ESM) ---------- */
+async function checkWebappParity() {
+  const { pathToFileURL } = require("node:url");
+  const webappRisk = await import(pathToFileURL(path.join(root, "webapp/server/src/risk.js")).href);
+  const scheme = JSON.parse(fs.readFileSync(path.join(root, "webapp/.assets/knowledge-base/risk-scheme.json"), "utf8"));
+  const threats = [
+    { id: "P1", likelihood: 4, impact: 4 },
+    { id: "P2", likelihood: 5, impact: 3 },
+    { id: "P3", likelihood: 3, impact: 5, status: "unfeasible" },
+    { id: "P4", likelihood: 2, impact: 2 },
+    { id: "P5", likelihood: 5, impact: 5 },
+  ];
+  const cms = [
+    { id: "CA", addresses: [{ threat: "P1", residualLikelihood: 2, residualImpact: 4 }, { threat: "P2", residualImpact: 2 }] },
+    { id: "CB", addresses: [{ threat: "P1", residualLikelihood: 1, residualImpact: 5 }, { threat: "P3", residualLikelihood: 1, residualImpact: 1 }] },
+    { id: "CC", selected: false, addresses: [{ threat: "P1", residualLikelihood: 1, residualImpact: 1 }, { threat: "P5", residualLikelihood: 1, residualImpact: 1 }] },
+    { id: "CD", addresses: [{ threat: "P5" }] },
+  ];
+  const webapp = webappRisk.computeRisk(scheme, threats, cms);
+  threats.forEach((t, i) => {
+    const ext = RiskModel.riskOf(t, cms, scheme);
+    const web = webapp[i];
+    // webapp/server computeRisk does not zero the initial risk of unfeasible threats (the client's riskOf does),
+    // so initial parity is only checked for feasible threats; RiskModel follows the client.
+    if (t.status !== "unfeasible") {
+      ok("parity initial " + t.id, ext.initial === web.initial && ext.initialBand.name === web.initialBand.name);
+    }
+    ok("parity residual " + t.id, ext.residual === web.residual && ext.residualBand.name === web.residualBand.name);
+    ok("parity residual L/I " + t.id, ext.residualLikelihood === web.residualLikelihood && ext.residualImpact === web.residualImpact);
+  });
+}
+
+checkWebappParity()
+  .then(() => console.log("All " + passed + " model assertions passed."))
+  .catch((err) => {
+    console.error(err && err.message ? err.message : err);
+    process.exit(1);
+  });

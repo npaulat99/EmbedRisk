@@ -32,7 +32,7 @@ Verification baseline for every item:
 
 ## Epic 1 — Data compatibility (round-trip safety)
 
-- [ ] **EXT-R1 Residual risk matches the webapp.** `media/risk-model.js` picks the single control with
+- [x] **EXT-R1 Residual risk matches the webapp.** `media/risk-model.js` picks the single control with
   the lowest L×I product; the webapp (`webapp/client/src/lib/risk.ts`, `webapp/server/src/risk.js`)
   takes the per-axis minimum across all *selected* controls.
   - AC1: `residual()` = min residual likelihood and min residual impact across links, skipping
@@ -43,6 +43,11 @@ Verification baseline for every item:
     test compares results with the webapp's `computeRisk` on shared fixtures.
   - AC5: The wizard's inline fallback `R` (used only if `risk-model.js` fails to load) follows the same rules.
   - Deps: EXT-00.
+- [ ] **EXT-R1b Report generator + DFD heat overlay honour `selected:false` and `unfeasible`.**
+  `runtime/tools/generate-report.mjs` and `src/nativeDfdEditor.ts` duplicate residual logic without these rules.
+  - AC1: Both skip `selected === false` controls and treat unfeasible threats as 0/0, like `media/risk-model.js`.
+  - AC2: Report numbers for `webapp/projects/RL-100` match the webapp report / `computeRisk`.
+  - Deps: EXT-R1.
 - [ ] **EXT-K1 Sync bundled knowledge base.** `runtime/.assets/knowledge-base/risk-scheme.json` is missing
   `likelihood.factors` / `factorScale`; `bug-bar.json` is not bundled.
   - AC1: Both files are byte-identical to `webapp/.assets/knowledge-base/`.
@@ -136,6 +141,7 @@ reopen, undo/redo works. Items touch the same wizard code and run sequentially.
 
 | Item | Impl | Review | Test | Notes |
 |---|---|---|---|---|
+| EXT-R1 | ✅ | ❌→✅ PASS (2nd round: `None` pill had no CSS background) | ✅ PASS (0 mismatches vs webapp `riskOf`, RL-100 + 16 edge cases) | Webapp server `computeRisk` gives L×I initial for unfeasible threats while client gives 0 — webapp-internal inconsistency, reported |
 | EXT-00 | ✅ | ✅ PASS | ✅ PASS | Fixture moved to `tools/fixtures/`; webapp evaluator gives identical metrics for all 4 trees |
 
 ## Architectural decisions
