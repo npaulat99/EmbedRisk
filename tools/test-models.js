@@ -207,7 +207,7 @@ const defenceAssessment = { id: "d", kind: "countermeasure", label: "Defence", a
 const defenceMetrics = AtModel.evaluate(defenceAssessment, {});
 ok("defence residual assessment retains configured access and skill", defenceMetrics.prob === 0.2 && defenceMetrics.accessReq === 4 && defenceMetrics.skillReq === 3);
 
-const aggregationFixture = JSON.parse(fs.readFileSync(path.join(root, "webapp/projects/test/07-attack-trees/attack-trees.json"), "utf8"));
+const aggregationFixture = JSON.parse(fs.readFileSync(path.join(root, "tools/fixtures/attack-tree-aggregation.json"), "utf8"));
 const aggregationById = Object.fromEntries(aggregationFixture.trees.map((fixture) => [fixture.id, fixture]));
 const fixtureOr = AtModel.evaluate(aggregationById["AT-TEST-OR"].root, {});
 ok("fixture OR chooses critical vulnerability vector", fixtureOr.prob === 1 && fixtureOr.accessReq === 1 && fixtureOr.skillReq === 1);

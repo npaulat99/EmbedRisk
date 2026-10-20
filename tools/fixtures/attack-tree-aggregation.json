@@ -1,0 +1,210 @@
+{
+  "trees": [
+    {
+      "id": "AT-TEST-OR",
+      "title": "OR gate selects a critical vulnerability vector",
+      "threatRef": "T-TEST-OR",
+      "root": {
+        "id": "or-goal",
+        "kind": "goal",
+        "label": "Gain write access to Modbus holding registers",
+        "gate": "OR",
+        "children": [
+          {
+            "id": "or-step-mitm",
+            "kind": "step",
+            "label": "Inject Modbus/TCP write frames from the plant network",
+            "access": 3,
+            "skill": 2,
+            "cost": {
+              "time": 2,
+              "exploitability": 2,
+              "window": 2,
+              "detection": 2,
+              "notoriety": 2,
+              "prep": 2,
+              "abort": 2
+            },
+            "children": []
+          },
+          {
+            "id": "or-vuln-auth",
+            "kind": "vulnerability",
+            "label": "Unauthenticated register write via maintenance web API",
+            "access": 1,
+            "skill": 1,
+            "residualCost": {
+              "time": 1,
+              "exploitability": 1,
+              "window": 1,
+              "detection": 1,
+              "notoriety": 1,
+              "prep": 1,
+              "abort": 1
+            },
+            "children": []
+          }
+        ]
+      }
+    },
+    {
+      "id": "AT-TEST-AND",
+      "title": "AND gate multiplies probabilities and takes max requirements",
+      "threatRef": "T-TEST-AND",
+      "root": {
+        "id": "and-goal",
+        "kind": "goal",
+        "label": "Install malicious firmware on the field device",
+        "gate": "AND",
+        "children": [
+          {
+            "id": "and-step-access",
+            "kind": "step",
+            "label": "Obtain physical access to the service port",
+            "access": 4,
+            "skill": 2,
+            "cost": {
+              "time": 2,
+              "exploitability": 2,
+              "window": 2,
+              "detection": 2,
+              "notoriety": 2,
+              "prep": 2,
+              "abort": 2
+            },
+            "children": []
+          },
+          {
+            "id": "and-step-sign",
+            "kind": "step",
+            "label": "Bypass firmware signature check",
+            "access": 3,
+            "skill": 3,
+            "cost": {
+              "time": 4,
+              "exploitability": 4,
+              "window": 4,
+              "detection": 4,
+              "notoriety": 4,
+              "prep": 4,
+              "abort": 4
+            },
+            "children": []
+          }
+        ]
+      }
+    },
+    {
+      "id": "AT-TEST-SAND",
+      "title": "SAND gate multiplies probabilities and takes max requirements",
+      "threatRef": "T-TEST-SAND",
+      "root": {
+        "id": "sand-goal",
+        "kind": "goal",
+        "label": "Extract device identity key from flash",
+        "gate": "SAND",
+        "children": [
+          {
+            "id": "sand-step-open",
+            "kind": "step",
+            "label": "Open enclosure and attach to JTAG header",
+            "access": 5,
+            "skill": 2,
+            "cost": {
+              "time": 4,
+              "exploitability": 4,
+              "window": 4,
+              "detection": 4,
+              "notoriety": 4,
+              "prep": 4,
+              "abort": 4
+            },
+            "children": []
+          },
+          {
+            "id": "sand-step-dump",
+            "kind": "step",
+            "label": "Dump and decrypt the key store",
+            "access": 2,
+            "skill": 5,
+            "cost": {
+              "time": 2,
+              "exploitability": 2,
+              "window": 2,
+              "detection": 2,
+              "notoriety": 2,
+              "prep": 2,
+              "abort": 2
+            },
+            "children": []
+          }
+        ]
+      }
+    },
+    {
+      "id": "AT-TEST-RESIDUAL",
+      "title": "Vulnerability residual overrides defence residual at a leaf step",
+      "threatRef": "T-TEST-RESIDUAL",
+      "root": {
+        "id": "res-goal",
+        "kind": "goal",
+        "label": "Change PLC process setpoints remotely",
+        "gate": "AND",
+        "children": [
+          {
+            "id": "res-step-login",
+            "kind": "step",
+            "label": "Log in to the engineering interface",
+            "access": 3,
+            "skill": 2,
+            "cost": {
+              "time": 2,
+              "exploitability": 2,
+              "window": 2,
+              "detection": 2,
+              "notoriety": 2,
+              "prep": 2,
+              "abort": 2
+            },
+            "children": [
+              {
+                "id": "res-def-auth",
+                "kind": "countermeasure",
+                "label": "Role-based authentication on engineering interface",
+                "access": 3,
+                "skill": 2,
+                "residualCost": {
+                  "time": 5,
+                  "exploitability": 5,
+                  "window": 5,
+                  "detection": 5,
+                  "notoriety": 5,
+                  "prep": 5,
+                  "abort": 5
+                },
+                "children": []
+              },
+              {
+                "id": "res-vuln-bypass",
+                "kind": "vulnerability",
+                "label": "Authentication bypass via debug session token",
+                "access": 5,
+                "skill": 4,
+                "residualCost": {
+                  "time": 1,
+                  "exploitability": 1,
+                  "window": 1,
+                  "detection": 1,
+                  "notoriety": 1,
+                  "prep": 1,
+                  "abort": 1
+                },
+                "children": []
+              }
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}
