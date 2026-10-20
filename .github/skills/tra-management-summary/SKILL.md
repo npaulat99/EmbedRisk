@@ -1,6 +1,7 @@
 ---
+name: tra-management-summary
 description: "Generate a concise, non-technical management summary from a completed or in-progress EmbedRisk TRA project: scope, top risks, treatment status, and open decisions — suitable for a release or milestone gate review."
-agent: tra-reviewer
+disable-model-invocation: true
 argument-hint: "Path to the TRA project folder"
 ---
 Read the project's `01-project-description/project.json` (scope, device, `slTarget`, `status`,

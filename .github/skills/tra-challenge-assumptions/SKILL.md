@@ -1,6 +1,7 @@
 ---
+name: tra-challenge-assumptions
 description: "Challenge the assumptions already recorded in an EmbedRisk TRA project (assumptions.json and confirmed entries in .tra-knowledge.json): question whether they still hold, explore what changes if they don't, and surface downstream impact on threats and ratings."
-agent: tra-sparring-partner
+disable-model-invocation: true
 argument-hint: "Path to the TRA project folder, optionally a specific assumption id"
 ---
 Read `02-assumptions/assumptions.json` (and `.tra-knowledge.json` for anything confirmed but not yet
