@@ -918,7 +918,7 @@ async function checkThreatCostPersistence(h, mod) {
   assert.deepStrictEqual(saved(), { ...assessed, title: "Title only" });
   await reopen();
   assert.strictEqual(h.must(title).value, "Title only");
-  // No cost controls yet: a real title edit records the pre-update snapshot, then the
+  // Factor controls are separate: a real title edit records the pre-update snapshot, then the
   // explicit host response supplies cost changes. Undo/redo persists those full snapshots.
   await save("autoSave", bare); await reopen();
   for (const next of [assessed, { ...assessed, costFactors: {}, costRationales: { time: "" } }]) {
@@ -932,6 +932,114 @@ async function checkThreatCostPersistence(h, mod) {
     await reopen();
   }
   console.log("  Threat cost persistence: both save paths, omission/null/empty/zero, metadata, reopen and history passed.");
+}
+
+async function checkThreatCostControls(h, mod) {
+  const file = path.join(projectDir, "06-threats/threats.json");
+  const projectFile = path.join(projectDir, "01-project-description/project.json");
+  const project = { ...JSON.parse(h.readText(projectFile)), slTarget: "SL2" };
+  for (const key of ["riskScoringMethod", "costFactorWeights", "accessProbabilities", "likelihoodProbabilityThresholds"]) delete project[key];
+  const metadata = { nested: ["preserve", { enabled: false }] };
+  const bare = { id: "T-CONTROLS", title: "Cost controls", stride: ["T"], components: [], assets: [],
+    likelihood: 4, impact: 3, status: "mitigated", futureMetadata: metadata };
+  const saved = () => JSON.parse(h.readText(file)).threats[0];
+  const field = (key) => `[data-i="0"][data-k="${key}"]`;
+  const cost = (key) => `[data-i="0"][data-cost="${key}"]`;
+  const reopen = async () => { h.close(); await mod.openWizard(ctx); h.openDom(); await h.settle(); };
+  const preview = (probability, proposal) => {
+    assert.strictEqual(h.must("[data-cost-probability]").textContent, probability);
+    assert.strictEqual(h.must("[data-cost-proposal]").textContent, proposal);
+  };
+  const persist = async (expected) => { await h.settle(1700); assert.deepStrictEqual(saved(), expected); };
+  h.overlay.set(projectFile, JSON.stringify(project));
+  h.overlay.set(file, JSON.stringify({ threats: [bare] }));
+  await reopen();
+  assert.strictEqual(h.must("#p-risk").value, "cost-based");
+  assert.strictEqual(h.must(cost("requiredSkill")).value, "1");
+  assert.strictEqual(h.must(cost("requiredAccess")).value, "3");
+  for (const [key, labels] of [
+    ["requiredSkill", ["Script kiddie", "Experienced hacker", "Security engineer", "Expert team", "Nation-state"]],
+    ["requiredAccess", ["Remote (unauth.)", "Remote (auth.)", "Adjacent / fieldbus", "Local (on site)", "Physical (open enclosure)"]],
+  ]) assert.deepStrictEqual(Array.from(h.must(cost(key)).options, (o) => o.textContent), labels.map((label, i) => `${i + 1} · ${label}`));
+  preview("30.0%", "L2 · Low");
+  assert.ok(h.must("[data-cost-warning]").textContent.includes("Accepted likelihood L4"));
+  assert.ok(h.must('[data-i="0"][data-dim="safety"]').closest(".bbselect"));
+  h.setValue(field("title"), "Unrelated edit");
+  await persist({ ...bare, title: "Unrelated edit" });
+  h.click("#undoBtn"); await persist(bare); // Defaults must not become saved cost fields.
+  h.setValue(cost("requiredSkill"), "5");
+  await persist({ ...bare, requiredSkill: 5, status: "unfeasible", likelihood: 0, costLikelihood: 0, costLikelihoodProposal: 0 });
+  preview("0.0%", "L0 · None");
+
+  const configured = { ...project, riskScoringMethod: "cost-based",
+    costFactorWeights: { time: 1, exploitability: 0, window: 0, detection: 0, notoriety: 0, prep: 0, abort: 0 },
+    accessProbabilities: { 1: 0.5, 4: 0.625 }, likelihoodProbabilityThresholds: { 2: 0.1, 3: 0.125, 4: 0.3, 5: 0.8 } };
+  let expected = { ...bare, requiredSkill: 2, requiredAccess: 3,
+    costFactors: { time: 5, exploitability: 1, futureMetadata: metadata },
+    costRationales: { time: "Keep rationale", futureMetadata: metadata },
+    costLikelihood: 0.99, costLikelihoodProposal: 5 };
+  h.overlay.set(projectFile, JSON.stringify(configured));
+  h.overlay.set(file, JSON.stringify({ threats: [expected] }));
+  await reopen();
+  preview("10.0%", "L2 · Low");
+  assert.ok(h.must("[data-cost-warning]").textContent.includes("saved proposal L5"));
+  const likelihood = h.must(field("likelihood")); likelihood.focus();
+  h.setValue(likelihood, "5"); expected = { ...expected, likelihood: 5 };
+  assert.strictEqual(h.document.activeElement, likelihood);
+  assert.ok(!h.must("[data-cost-warning]").textContent.includes("saved proposal"));
+  assert.ok(h.must("[data-cost-warning]").textContent.includes("Accepted likelihood L5"));
+  await persist(expected);
+  for (const mode of ["exposure-exploitability-impact", "cost-based"]) {
+    h.setValue("#p-risk", mode);
+    assert.strictEqual(h.document.querySelector(cost("requiredSkill")) !== null, mode === "cost-based");
+    assert.strictEqual(h.document.querySelector('[data-i="0"][data-fac="exposure"]') !== null, mode !== "cost-based");
+    if (mode !== "cost-based") assert.ok(h.must('[data-i="0"][data-cvss="vector"]'));
+    assert.ok(h.must('[data-i="0"][data-dim="safety"]').closest(".bbselect"));
+    await persist(expected);
+    assert.strictEqual(JSON.parse(h.readText(projectFile)).riskScoringMethod, mode);
+    await reopen(); assert.strictEqual(h.must("#p-risk").value, mode);
+    assert.deepStrictEqual(saved(), expected);
+  }
+  const access = h.must(cost("requiredAccess")); access.focus();
+  h.setValue(access, "4");
+  assert.strictEqual(h.document.activeElement, access);
+  expected = { ...expected, requiredAccess: 4, likelihood: 3, costLikelihood: 0.125, costLikelihoodProposal: 3 };
+  preview("12.5%", "L3 · Moderate");
+  assert.strictEqual(h.must("[data-cost-warning]").textContent, "");
+  await persist(expected);
+  const feasible = expected;
+  h.setValue(cost("requiredSkill"), "3");
+  expected = { ...expected, requiredSkill: 3, status: "unfeasible", likelihood: 0, costLikelihood: 0, costLikelihoodProposal: 0 };
+  await persist(expected);
+  assert.strictEqual(h.must(field("status")).value, "unfeasible");
+  assert.strictEqual(h.must(field("status")).closest("td").querySelector(".badge").textContent, "Unfeasible");
+  assert.strictEqual(h.must(field("likelihood")).value, "0");
+  assert.ok(h.must("#tp-0").textContent.includes("0 · None"));
+  h.click("#undoBtn"); await persist(feasible); preview("12.5%", "L3 · Moderate");
+  h.click("#redoBtn"); await persist(expected);
+  await reopen(); preview("0.0%", "L0 · None"); assert.deepStrictEqual(saved(), expected);
+  h.setValue("#p-sl", "SL3"); // Capability change is preview-only until an explicit calculator edit.
+  preview("12.5%", "L3 · Moderate"); await persist(expected);
+  h.setValue(cost("requiredAccess"), "1");
+  expected = { ...expected, requiredAccess: 1, status: "open", likelihood: 2, costLikelihood: 0.1, costLikelihoodProposal: 2 };
+  await persist(expected); preview("10.0%", "L2 · Low");
+  h.setValue("#p-sl", "SL4");
+  h.setValue(cost("requiredSkill"), "5");
+  expected = { ...expected, requiredSkill: 5 };
+  await persist(expected); preview("10.0%", "L2 · Low"); // SL4 capability is 5, not 4.
+  h.setValue(field("likelihood"), "0"); expected = { ...expected, likelihood: 0 };
+  assert.ok(h.must("[data-cost-warning]").textContent.includes("saved proposal L2"));
+  await persist(expected);
+  h.setValue(field("title"), "Manual override retained"); expected = { ...expected, title: "Manual override retained" };
+  await persist(expected);
+  await reopen(); assert.deepStrictEqual(saved(), expected);
+  assert.strictEqual(h.must(field("likelihood")).value, "0");
+  preview("10.0%", "L2 · Low");
+  for (const key of ["costFactorWeights", "accessProbabilities", "likelihoodProbabilityThresholds"]) {
+    assert.deepStrictEqual(JSON.parse(h.readText(projectFile))[key], configured[key]);
+    assert.deepStrictEqual(h.lastToHost((m) => m.cmd === "autoSave").data.project[key], configured[key]);
+  }
+  console.log("  Threat cost controls: defaults, configured proposals, SL-C, modes, overrides, metadata and history passed.");
 }
 
 async function checkBugBar(h, mod) {
@@ -1335,6 +1443,7 @@ async function wizard(h) {
   await checkCountermeasureFields(h, mod);
   await checkDocumentEnvelopes(h, mod);
   await checkThreatCostPersistence(h, mod);
+  await checkThreatCostControls(h, mod);
   await checkBugBar(h, mod);
   checkLiveDomHandlers(h);
 }

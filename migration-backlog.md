@@ -149,7 +149,7 @@ the orchestrator implements them directly (anchors: `renderProject()` and the de
       thresholds. Tests compare actual webapp computations for defaults, edits/clearing, partial,
       zero/negative weights and threshold boundaries; calculations do not mutate accepted likelihood
       merely by reading a threat, or discard unknown metadata. Preserve existing tree behavior.
-  - [ ] **EXT-T1c Threat feasibility wizard controls** (M; Deps: EXT-T1b).
+  - [ ] **EXT-T1c Threat feasibility wizard controls** (L; Deps: EXT-T1b).
     - AC: Integrate seven factor selectors/rationales, required skill/access, probability/proposal
       display and cost-based/default scoring mode, retaining legacy exposure/exploitability mode.
       Match webapp explicit calculator-update behavior while preserving stored manual overrides on
@@ -157,6 +157,24 @@ the orchestrator implements them directly (anchors: `renderProject()` and the de
       configured project weights/access/thresholds and selected SL-C capability. Runtime tests cover
       controls, defaults, clearing, computation, metadata, persistence and undo/redo/reopen.
       Re-size before starting; split further if implementation plus tests exceeds M.
+    - Re-sized L: scoring-mode integration, seven factors/rationales and end-to-end history coverage
+      exceed 200 changed lines. Complete the independently runnable children below; parent stays open.
+    - [x] **EXT-T1c1 Threat feasibility mode, skill/access and proposal controls** (M; Deps: EXT-T1b).
+      - AC: Load the tested browser helpers; show required skill/access with webapp defaults and
+        option labels, calculated probability/proposal and accepted-likelihood differences in
+        cost-based/default mode. Keep Bug Bar impact available and retain the legacy calculator
+        in exposure/exploitability mode. Mode changes and render/reopen do not recalculate saved values.
+      - AC: Explicit skill/access changes use the helper with configured project weights/access/
+        thresholds and selected SL-C capability, accepting the proposal and supporting unfeasible L0.
+        Existing factor/rationale metadata and manual overrides survive unrelated edits.
+      - AC: Real runtime controls cover defaults, configured computations, capability transitions,
+        mode switching, manual overrides, persistence and undo/redo/reopen. Full baseline passes.
+        Factor/rationale editing and clearing remain EXT-T1c2; schema changes remain EXT-T1d.
+    - [ ] **EXT-T1c2 Threat cost-factor and rationale controls** (M; Deps: EXT-T1c1).
+      - AC: Add seven factor selectors and rationales using webapp labels/defaults and explicit-update
+        semantics; edits and clearing preserve unknown metadata and accept the calculated proposal.
+        Runtime tests exercise actual controls, defaults, clearing, configured computations and
+        save/undo/redo/reopen. Full baseline passes; close EXT-T1c only when both children pass.
   - [ ] **EXT-T1d Threat likelihood schema compatibility** (S; Deps: EXT-T1a).
     - AC: Align the bundled threat schema's likelihood range with the shared 0–5 matrix (currently
       `runtime/.assets/schema/threats.schema.json:23` rejects L0); check the corresponding webapp
@@ -209,6 +227,7 @@ the orchestrator implements them directly (anchors: `renderProject()` and the de
 
 | Item | Impl | Review | Test | Notes |
 |---|---|---|---|---|
+| EXT-T1c1 | ✅ | ✅ PASS | ✅ PASS (compile, 122 model assertions, 6 parsed scripts + 6 runtime webviews, diff check) | Re-sized EXT-T1c L and split into two M children. Cost-based/default mode now offers skill/access controls, calculated probability/proposal and accepted-likelihood warnings using the tested browser helpers; Bug Bar remains available and legacy mode is retained. Explicit edits accept proposals with configured weights/access/thresholds and selected SL-C capability, including unfeasible L0 and recovery; render/mode changes and unrelated edits preserve stored manual overrides and metadata. Real-control regressions cover defaults, configured 12.5%→L3 and 10%→L2 calculations, capability transitions, mode switching, autosave and undo/redo/reopen; substituting the base wizard in memory fails on the missing skill control. No fixture/schema edits or manual VS Code validation. Parent EXT-T1/T1c remain open; factor/rationale controls and clearing remain EXT-T1c2, schema compatibility remains EXT-T1d. |
 | EXT-T1b | ✅ | ✅ PASS | ✅ PASS (compile, 122 model assertions, 6 parsed scripts + 6 runtime webviews, diff check) | CommonJS/browser threat model reuses weighted costs and thresholds, defaults missing factors to 3, and matches configured access probabilities, capability gating and explicit-update status transitions. Pure reads preserve accepted likelihood; explicit immutable updates preserve unrelated metadata and support map clearing. Tests execute actual webapp calculator read/update code across defaults, edits, partial/zero/negative weights and threshold boundaries; frozen-input/browser checks pass. Negative controls reject tree-step probability substitution and metadata loss. Tree behavior unchanged; no UI/schema/fixture edits or manual VS Code session. Parent EXT-T1 remains open; controls and L0 schema compatibility remain EXT-T1c/d. |
 | EXT-T1a | ✅ | ✅ Finding fixed and regression verified | ✅ PASS (compile, 116 model assertions, 6 parsed scripts + 6 runtime webviews, diff check) | Split L EXT-T1; persistence child only. Both save paths retain six cost/skill/access fields and independent accepted likelihood, including zero. Explicit omission preserves saved fields; autosave snapshots retain omission; null removes optional fields; empty maps/strings clear assessments. Unknown row/nested metadata and document envelopes preserved. In-memory runtime coverage exercises new/existing rows, absent defaults, edits/clearing, reopen and undo/redo. Verifier found the UI likelihood clamp still forced L0 to L1; fixed in the one allowed round with a real input/autosave/undo/redo/reopen regression and full baseline rerun. Computation, cost controls and schema compatibility remain EXT-T1b/c/d; no fixtures changed or manual VS Code session. |
 | EXT-A2 | ✅ | ✅ PASS | ✅ PASS (compile, 116 model assertions, 6 parsed scripts + 6 runtime webviews, diff check) | Normalizes project cost weights and propagates them through all gates, residual assessments and OR alternatives. Direct webapp parity tests cover defaults, configured/partial/zero/negative weights, clamping, unassessed nodes, ties and legacy modifiers; weighted-OR negative control fails against HEAD before this item. Editor loads `project.costFactorWeights` and refreshes metrics on valid project document edits without tree writes/history resets. CommonJS/browser compatibility and public unassessed `stepProb()` behavior preserved. No fixture edits or EXT-T1 work; no filesystem watcher or manual VS Code session. |

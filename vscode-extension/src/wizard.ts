@@ -98,6 +98,9 @@ async function buildData(proj: vscode.Uri) {
       modelReference: project.device?.modelReference || "",
       sl: project.slTarget || "SL2",
       riskScoringMethod: project.riskScoringMethod || "cost-based",
+      costFactorWeights: project.costFactorWeights,
+      accessProbabilities: project.accessProbabilities,
+      likelihoodProbabilityThresholds: project.likelihoodProbabilityThresholds,
       mode: project.scope?.mode || "graybox",
       boundary: project.scope?.boundary || "",
       inScope: project.scope?.inScope || [],
@@ -191,10 +194,12 @@ export async function openWizard(ctx: vscode.ExtensionContext) {
   const panel = vscode.window.createWebviewPanel("embedriskWizard", "EmbedRisk Wizard", vscode.ViewColumn.One, { enableScripts: true, localResourceRoots: [media] });
   const cssUri = panel.webview.asWebviewUri(vscode.Uri.joinPath(media, "tra-ui.css"));
   const riskUri = panel.webview.asWebviewUri(vscode.Uri.joinPath(media, "risk-model.js"));
+  const attackTreeUri = panel.webview.asWebviewUri(vscode.Uri.joinPath(media, "attacktree-model.js"));
+  const threatUri = panel.webview.asWebviewUri(vscode.Uri.joinPath(media, "threat-model.js"));
   const logoUri = panel.webview.asWebviewUri(vscode.Uri.joinPath(media, "embedrisk-logo.svg"));
   const nonce = String(Math.random()).slice(2);
   const csp = `default-src 'none'; img-src ${panel.webview.cspSource}; style-src ${panel.webview.cspSource} 'unsafe-inline'; script-src 'nonce-${nonce}' ${panel.webview.cspSource};`;
-  panel.webview.html = shell(cssUri, riskUri, logoUri, csp, nonce);
+  panel.webview.html = shell(cssUri, riskUri, attackTreeUri, threatUri, logoUri, csp, nonce);
 
   const sendInit = async () => panel.webview.postMessage({ cmd: "init", data: await buildData(f.proj), bugBar: await rdRaw(ctx.extensionUri, "runtime/.assets/knowledge-base/bug-bar.json", null) });
   const counts = async () => (await buildData(f.proj)).counts;
@@ -550,7 +555,7 @@ export async function openWizard(ctx: vscode.ExtensionContext) {
   }, undefined, ctx.subscriptions);
 }
 
-function shell(cssUri: vscode.Uri, riskUri: vscode.Uri, logoUri: vscode.Uri, csp: string, nonce: string): string {
+function shell(cssUri: vscode.Uri, riskUri: vscode.Uri, attackTreeUri: vscode.Uri, threatUri: vscode.Uri, logoUri: vscode.Uri, csp: string, nonce: string): string {
   return `<!doctype html><html><head><meta charset="utf8"><meta http-equiv="Content-Security-Policy" content="${csp}">
 <link rel="stylesheet" href="${cssUri}">
 <style>
@@ -684,6 +689,8 @@ function shell(cssUri: vscode.Uri, riskUri: vscode.Uri, logoUri: vscode.Uri, csp
   </div>
 </div>
 <script nonce="${nonce}" src="${riskUri}"></script>
+<script nonce="${nonce}" src="${attackTreeUri}"></script>
+<script nonce="${nonce}" src="${threatUri}"></script>
 <script nonce="${nonce}">
 (function(){
 const vs=acquireVsCodeApi(), R=window.RiskModel||{
@@ -703,7 +710,9 @@ const vs=acquireVsCodeApi(), R=window.RiskModel||{
   exposureFromInterface:function(){return null;}
 };
 const STRIDE=[['S','Spoofing'],['T','Tampering'],['R','Repudiation'],['I','Info disclosure'],['D','Denial of service'],['E','Elevation']];
-const T_STATUS=[['open','Open'],['mitigated','Mitigated'],['accepted','Accepted'],['transferred','Transferred']];
+const T_STATUS=[['open','Open'],['mitigated','Mitigated'],['accepted','Accepted'],['transferred','Transferred'],['unfeasible','Unfeasible']];
+const SKILL_OPTS=[[1,'Script kiddie'],[2,'Experienced hacker'],[3,'Security engineer'],[4,'Expert team'],[5,'Nation-state']];
+const COST_ACCESS_OPTS=[[1,'Remote (unauth.)'],[2,'Remote (auth.)'],[3,'Adjacent / fieldbus'],[4,'Local (on site)'],[5,'Physical (open enclosure)']];
 const ACCESS=[['remote','Remote'],['adjacent','Adjacent'],['local','Local'],['physical','Physical']];
 const ASM_CATS=[['device','Device'],['system','System'],['environment','Environment'],['operational','Operational']];
 const COMP_KINDS=['device','hardware','software','interface','external-entity','store'];
@@ -730,7 +739,7 @@ function esc(s){return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'
 function uid(prefix,ids){var used={};(ids||[]).forEach(function(id){if(typeof id!=='string'||id.indexOf(prefix)!==0)return;var rest=id.slice(prefix.length);if(/^[0-9]+$/.test(rest))used[Number(rest)]=true;});var n=1;while(used[n])n++;return prefix+n;}
 var ASM_PREFIX={device:'AD-',system:'SYSA-',environment:'AE-',operational:'AO-'};
 function optTags(list,val){return list.map(function(o){var v=o&&o.length&&typeof o!=='string'?o[0]:o;var l=o&&o.length&&typeof o!=='string'?o[1]:o;return '<option value="'+esc(v)+'"'+(String(val)===String(v)?' selected':'')+'>'+esc(l)+'</option>';}).join('');}
-function statusLabel(s){var m={open:'Open',mitigated:'Mitigated',accepted:'Accepted',transferred:'Transferred'};return m[s||'open']||'Open';}
+function statusLabel(s){var m={open:'Open',mitigated:'Mitigated',accepted:'Accepted',transferred:'Transferred',unfeasible:'Unfeasible'};return m[s||'open']||'Open';}
 // ---- undo / redo history: snapshots of the editable project state (toolbar buttons + Ctrl+Z / Ctrl+Y) ----
 function snapshot(){return JSON.stringify({project:project,threats:threats,cms:cms,assumptions:assumptions,system:system,requirements:requirements});}
 function updUndoBtns(){var u=$('#undoBtn'),r=$('#redoBtn');if(u)u.disabled=!undoStack.length;if(r)r.disabled=!redoStack.length;}
@@ -808,6 +817,7 @@ function renderProjectList(key){
 function renderProject(p){
   p=p||{};
   project={title:p.title||'',name:p.name||'',sl:p.sl||'SL2',riskScoringMethod:p.riskScoringMethod||'cost-based',mode:p.mode||'graybox',boundary:p.boundary||'',sbom:p.sbom||{},includeUseCases:!!p.includeUseCases,useCaseNames:p.useCaseNames||[],useCaseNoticePending:!!p.useCaseNoticePending};
+  ['costFactorWeights','accessProbabilities','likelihoodProbabilityThresholds'].forEach(function(key){project[key]=p[key];});
   project.status=p.status||'draft';$('#p-status').value=project.status;
   project.intendedUse=p.intendedUse||'';$('#p-intendedUse').value=project.intendedUse;
   Object.keys(PROJECT_LIST_LABELS).forEach(function(key){project[key]=p[key]||[];renderProjectList(key);});
@@ -889,6 +899,26 @@ function calcBlock(dims,fac,cv,dAttr,dimAttr,facAttr,cvssAttr,seedAct){
     '</div>'+
   '</details>';
 }
+function selectedAttacker(){return {capability:({SL1:1,SL2:2,SL3:3,SL4:5})[project.sl]||2};}
+function costWarning(t,proposal){
+  var accepted=t.likelihood??3;
+  return (accepted!==proposal?'Accepted likelihood L'+accepted+' differs from calculated proposal L'+proposal+'. ':'')+
+    (typeof t.costLikelihoodProposal==='number'&&accepted!==t.costLikelihoodProposal?'Manual value differs from saved proposal L'+t.costLikelihoodProposal+'.':'');
+}
+function costSummary(t){
+  var result=window.ThreatModel.calculate(t,project,selectedAttacker());
+  return '<div class="grid2"><div>Calculated vector probability: <b data-cost-probability>'+ (result.probability*100).toFixed(1)+'%</b></div>'+
+    '<div>Proposed matrix likelihood: <b data-cost-proposal>L'+result.proposal+' · '+['None','Very low','Low','Moderate','High','Very high'][result.proposal]+'</b></div></div>'+
+    (!result.feasible?'<p class="hint warnmark">Required skill exceeds the selected SL-C attacker capability ('+selectedAttacker().capability+'); proposal is unfeasible (L0). Edit skill/access to accept.</p>':'')+
+    '<p class="hint warnmark" data-cost-warning data-proposal="'+result.proposal+'">'+esc(costWarning(t,result.proposal))+'</p>';
+}
+function costBlock(t,i){
+  return '<div style="margin-top:8px"><b>Bug Bar impact</b><div class="bbselect">'+bugBarSelector(t.impactDimensions||{},'data-i='+i,'data-dim')+'</div></div>'+
+    '<div style="margin-top:8px"><b>Cost-based likelihood</b><div class="grid2">'+
+    [['requiredSkill','Required skill',SKILL_OPTS,t.requiredSkill||1],['requiredAccess','Required access',COST_ACCESS_OPTS,t.requiredAccess||3]].map(function(f){
+      return '<label class="field">'+f[1]+'<select class="inp" data-i='+i+' data-cost="'+f[0]+'">'+optTags(f[2].map(function(o){return [o[0],o[0]+' · '+o[1]];}),f[3])+'</select></label>';
+    }).join('')+'</div><div id="cost-summary-'+i+'">'+costSummary(t)+'</div></div>';
+}
 function renderThreats(){
   $('#threats-body').innerHTML=threats.length?threats.map(function(t,i){
     var st=STRIDE.map(function(s){return chip(s[0],(t.stride||[]).indexOf(s[0])>=0,'data-i='+i+' data-role="stride" data-val="'+s[0]+'"',s[1]);}).join('');
@@ -910,12 +940,13 @@ function renderThreats(){
       return '<li><b>'+esc(aid)+'</b> ('+esc(row.src)+') · '+esc(row.text||'No detail text')+'</li>';
     }).join('')+'</ul>':'';
     var dims=t.impactDimensions||{}, fac=t.likelihoodFactors||{};
-    var hasFac=R.deriveLikelihood(fac)!=null||R.deriveImpact(dims)!=null;
+    var costMode=project.riskScoringMethod==='cost-based';
+    var hasFac=costMode||R.deriveLikelihood(fac)!=null||R.deriveImpact(dims)!=null;
     var primaryIfaceId=(t.interfaceRefs&&t.interfaceRefs[0]);
     var primaryIface=(system.interfaces||[]).find(function(f){return f.id===primaryIfaceId;});
     var seedAct=primaryIface?'data-act="seedExp" data-i='+i+' title="Seed from '+esc(primaryIface.name)+'"':'';
     var moreDetails='<div class="grid3" style="margin-top:8px">'+
-      '<div class="field"><label>SL-C attacker</label><span class="hint">'+esc(((assumptions.attacker||[])[0]||{}).name||'Select SL-C in project settings')+'</span></div>'+
+      '<div class="field"><label>SL-C attacker</label><span class="hint">'+esc(project.sl)+' · capability '+selectedAttacker().capability+'</span></div>'+
       '<div class="field"><label>Interfaces / vectors</label>'+
         '<div class="chips">'+(system.interfaces||[]).map(function(itf){return chip(itf.tag||itf.name,(t.interfaceRefs||[]).indexOf(itf.id)>=0,'data-act="tIface" data-i='+i+' data-val="'+esc(itf.id)+'"',itf.protocol||itf.category||'');}).join('')+
         (!(system.interfaces||[]).length?'<span class="hint">Define in step 03 first.</span>':'')+
@@ -955,7 +986,7 @@ function renderThreats(){
       '<details'+(hasFac?' open':'')+'>'+
       '<summary class="hint" style="cursor:pointer;list-style:none;padding:3px 0">&#9654; More details — attacker · interfaces · assets · guided rating</summary>'+
       moreDetails+
-      calcBlock(dims,fac,t.cvss||{},'data-i='+i,'data-dim','data-fac','data-cvss',seedAct)+
+      (costMode?costBlock(t,i):calcBlock(dims,fac,t.cvss||{},'data-i='+i,'data-dim','data-fac','data-cvss',seedAct))+
       acceptedFields+
       '</details>'+
     '</td></tr>';
@@ -1287,14 +1318,23 @@ document.addEventListener('input',function(e){
   if(t.id==='p-name'){project.name=t.value;$('#devname').textContent=t.value?('· '+t.value):'';return;}
   if(t.id==='p-type'||t.id==='p-version'||t.id==='p-modelReference'){project[t.id.slice(2)]=t.value;return;}
   if(t.id==='p-projectBranchUrl'||t.id==='p-kbUrl'){project[t.id.slice(2)]=t.value;return;}
-  if(t.id==='p-sl'){project.sl=t.value;return;}
-  if(t.id==='p-risk'){project.riskScoringMethod=t.value;return;}
+  if(t.id==='p-sl'){project.sl=t.value;renderThreats();return;}
+  if(t.id==='p-risk'){project.riskScoringMethod=t.value;renderThreats();return;}
   if(t.id==='p-mode'){project.mode=t.value;return;}
   if(t.id==='p-bnd'){project.boundary=t.value;return;}
   if(t.id==='p-uc-inc'){project.includeUseCases=!!t.checked;return;}
   if(t.id==='p-sbom-mode'||t.id==='p-sbom-format'||t.id==='p-sbom-url-inp'){project.sbom=readSbom();showSbomFields(project.sbom.mode);return;}
+  if(t.dataset.i!==undefined&&t.dataset.cost){
+    var i=+t.dataset.i,patch={};patch[t.dataset.cost]=+t.value;
+    threats[i]=window.ThreatModel.applyUpdate(threats[i],patch,project,selectedAttacker());
+    $('#cost-summary-'+i).innerHTML=costSummary(threats[i]);
+    $('[data-i="'+i+'"][data-k="likelihood"]').value=threats[i].likelihood;
+    var status=$('[data-i="'+i+'"][data-k="status"]'),badge=status.closest('td').querySelector('.badge');
+    status.value=threats[i].status||'open';badge.className='badge st-'+status.value;badge.textContent=statusLabel(status.value);
+    updatePills();return;
+  }
   if(t.dataset.i!==undefined&&t.dataset.k){var i=+t.dataset.i,k=t.dataset.k;
-    if(k==='likelihood'||k==='impact'){var min=k==='likelihood'?0:1;threats[i][k]=Math.max(min,Math.min(5,+t.value||min));var el=document.getElementById('tp-'+i);if(el)el.innerHTML=riskCell(threats[i]);}
+    if(k==='likelihood'||k==='impact'){var min=k==='likelihood'?0:1;threats[i][k]=Math.max(min,Math.min(5,+t.value||min));var el=document.getElementById('tp-'+i);if(el)el.innerHTML=riskCell(threats[i]);var warning=$('#cost-summary-'+i+' [data-cost-warning]');if(warning)warning.textContent=costWarning(threats[i],+warning.dataset.proposal);}
     else if(k==='status'){threats[i].status=t.value;var cell=t.closest('td');var bd=cell&&cell.querySelector('.badge');if(bd){bd.className='badge st-'+t.value;bd.textContent=statusLabel(t.value);}}
     else threats[i][k]=t.value;return;}
   if(t.dataset.ci!==undefined&&t.dataset.k){
