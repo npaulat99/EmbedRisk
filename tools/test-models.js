@@ -306,6 +306,144 @@ ok("weight helpers match webapp defaults, normalization, zero/negative/nullish w
 ok("public stepProb retains unassessed=1 while weightedCost uses default cost=3",
   AtModel.stepProb() === 1 && AtModel.stepProb({}) === 1 && Math.abs(AtModel.weightedCost() - 3) < 1e-9);
 
+// Execute the actual calculator's pre-effect body and update callback, not copied formulas.
+// Loud anchors deliberately fail if the source moves: the React auto-effect is NOT our read API.
+const ThreatModel = require(path.join(root, "vscode-extension/media/threat-model.js"));
+const vm = require("node:vm");
+const calculatorSource = fs.readFileSync(path.join(root, "webapp/client/src/components/panels/RiskCalculator.tsx"), "utf8");
+const calculatorStart = calculatorSource.indexOf("function CostRiskCalculator(");
+const calculatorEnd = calculatorSource.indexOf("    useEffect(() => {", calculatorStart);
+assert(calculatorStart >= 0 && calculatorEnd > calculatorStart, "CostRiskCalculator pre-effect anchors changed");
+const calculatorBody = calculatorSource.slice(calculatorStart, calculatorEnd);
+assert(calculatorBody.includes("const update = (patch: Partial<Threat>) => {") &&
+  calculatorBody.includes("upd({ ...patch, status, costLikelihood:"), "CostRiskCalculator update anchor changed");
+const calculatorModule = { exports: {} };
+let calculatorState;
+vm.runInNewContext(esbuild.transformSync(
+  calculatorBody + "\nreturn { feasible, costProbability, probability, proposal, update };\n}\nexport { CostRiskCalculator };",
+  { loader: "ts", format: "cjs" },
+).code, {
+  module: calculatorModule, useStore: (selector) => selector(calculatorState),
+  stepProb: reference.stepProb, accessProbability: reference.accessProbability, likelihoodFromProb: reference.likelihoodFromProb,
+});
+function compareThreat(threat, patch, project, attacker, model = ThreatModel) {
+  calculatorState = { data: { project: project || {}, assumptions: { attacker: attacker ? [attacker] : [] } } };
+  let referencePatch;
+  const expected = calculatorModule.exports.CostRiskCalculator({ t: threat, upd: (value) => { referencePatch = value; } });
+  assert.deepStrictEqual({ ...model.calculate(threat, project, attacker) }, {
+    feasible: expected.feasible, costProbability: expected.costProbability, probability: expected.probability, proposal: expected.proposal,
+  });
+  expected.update(patch);
+  const updated = model.applyUpdate(threat, patch, project, attacker);
+  assert.deepStrictEqual({ ...updated }, { ...threat, ...referencePatch });
+  return updated;
+}
+for (const weights of weightCases) {
+  for (const costFactors of costCases) {
+    compareThreat({ costFactors }, {}, { costFactorWeights: weights });
+    compareThreat({ costFactors }, { costFactors: {} }, { costFactorWeights: weights });
+    compareThreat({}, { costFactors }, { costFactorWeights: weights });
+  }
+}
+compareThreat({}, {});
+ok("threat defaults, partial costs, edits/clears and zero/negative weights match actual webapp calculator", true);
+
+const accessCases = [undefined, null, 0, -2, 1, 2.49, 2.5, 3, 4, 5, 6, NaN];
+for (const accessProbabilities of [undefined, null, {}, { 1: 0, 2: -1, 3: 2, 4: null, 5: 0.275 }]) {
+  for (const requiredAccess of accessCases) {
+    assert.strictEqual(ThreatModel.accessProbability(requiredAccess, accessProbabilities),
+      reference.accessProbability(requiredAccess, accessProbabilities));
+    compareThreat({ requiredAccess }, {}, { accessProbabilities });
+    compareThreat({ requiredAccess: 4 }, { requiredAccess }, { accessProbabilities });
+  }
+}
+ok("access defaults, rounding, missing levels, nullish overrides and probability clamps match webapp", true);
+
+for (const attacker of [undefined, null, { capability: 0 }, { capability: 1 }, { capability: 3 }, { capability: 5 }, {}]) {
+  for (const status of [undefined, "open", "unfeasible", "mitigated", "accepted", "custom"]) {
+    for (const requiredSkill of [undefined, null, 0, 1, 3, 4, 5]) {
+      compareThreat({ status, requiredSkill }, {}, undefined, attacker);
+      compareThreat({ status, requiredSkill: 4 }, { requiredSkill, status: "ignored-by-calculator" }, {}, attacker);
+    }
+  }
+}
+ok("capability equality/missing attacker, skill defaults, gating and all status transitions match webapp", true);
+
+for (const thresholds of [undefined, {}, { 3: 0.45 }, { 2: 0.2, 3: 0.4, 4: 0.6, 5: 0.8 }]) {
+  const boundaries = { ...reference.DEFAULT_LIKELIHOOD_PROBABILITY_THRESHOLDS, ...thresholds };
+  for (const probability of [0, Number.EPSILON, ...Object.values(boundaries).flatMap((p) => [p - 1e-8, p, p + 1e-8])]) {
+    assert.strictEqual(AtModel.likelihoodFromProb(probability, thresholds), reference.likelihoodFromProb(probability, thresholds));
+    compareThreat({ costFactors: all(1), requiredAccess: 1 }, {}, {
+      accessProbabilities: { 1: probability }, likelihoodProbabilityThresholds: thresholds,
+    });
+  }
+  compareThreat({ requiredSkill: 5 }, {}, { likelihoodProbabilityThresholds: thresholds }, { capability: 1 });
+}
+ok("default, partial and configured thresholds match webapp below/at/above boundaries, including L0", true);
+
+function freezeThreatInput(value) {
+  if (value && typeof value === "object") {
+    Object.values(value).forEach(freezeThreatInput);
+    Object.freeze(value);
+  }
+  return value;
+}
+const savedThreat = freezeThreatInput({
+  id: "T-model", likelihood: 5, costLikelihood: 0.123, costLikelihoodProposal: 1, status: "unfeasible",
+  requiredSkill: 4, requiredAccess: 2, costFactors: { time: 5, vendor: { confidence: 0.8 } },
+  costRationales: { time: "Slow", vendor: { review: "retained" } }, vendor: { tags: ["keep"] },
+});
+const savedSnapshot = JSON.stringify(savedThreat);
+const savedProject = freezeThreatInput({ costFactorWeights: { time: 2 }, accessProbabilities: { 2: 0.8 } });
+const savedAttacker = freezeThreatInput({ capability: 4 });
+const emptyThreat = Object.freeze({});
+ThreatModel.calculate(emptyThreat);
+assert.deepStrictEqual(emptyThreat, {});
+for (const likelihood of [0, 5]) {
+  const manual = Object.freeze({ ...savedThreat, likelihood });
+  ThreatModel.calculate(manual, savedProject, savedAttacker);
+  assert.strictEqual(manual.likelihood, likelihood);
+  assert.strictEqual(manual.costLikelihood, 0.123);
+  assert.strictEqual(manual.costLikelihoodProposal, 1);
+  assert.strictEqual(manual.status, "unfeasible");
+}
+const patches = [
+  {}, { requiredAccess: 5 }, { requiredSkill: 5 }, { costFactors: { time: 1 } },
+  { costFactors: {}, costRationales: {} }, { costRationales: { time: "" } },
+  { costFactors: null, requiredSkill: null, requiredAccess: null },
+  { costFactors: undefined, requiredSkill: undefined, requiredAccess: undefined },
+  { requiredSkill: 0, requiredAccess: 0 }, { likelihood: 5, costLikelihood: 1, costLikelihoodProposal: 5 },
+];
+for (const patch of patches) {
+  freezeThreatInput(patch);
+  const updated = compareThreat(savedThreat, patch, savedProject, savedAttacker);
+  assert.notStrictEqual(updated, savedThreat);
+  assert.strictEqual(updated.vendor, savedThreat.vendor);
+  if (!Object.hasOwn(patch, "costFactors")) assert.strictEqual(updated.costFactors, savedThreat.costFactors);
+  if (!Object.hasOwn(patch, "costRationales")) assert.strictEqual(updated.costRationales, savedThreat.costRationales);
+}
+const cleared = ThreatModel.applyUpdate(savedThreat, { costFactors: {}, costRationales: {} });
+assert.deepStrictEqual(cleared.costFactors, {});
+assert.deepStrictEqual(cleared.costRationales, {});
+assert.strictEqual(JSON.stringify(savedThreat), savedSnapshot);
+const accepted = ThreatModel.applyUpdate(savedThreat, {}, savedProject, savedAttacker);
+assert.strictEqual(accepted.likelihood, ThreatModel.calculate(savedThreat, savedProject, savedAttacker).proposal);
+assert.notStrictEqual(accepted.likelihood, savedThreat.likelihood);
+ok("reads preserve accepted likelihood/absent fields; explicit immutable updates retain metadata and honor clears/nullish patches", true);
+
+const threatBrowser = { window: {} };
+for (const filename of ["attacktree-model.js", "threat-model.js"]) {
+  vm.runInNewContext(fs.readFileSync(path.join(root, "vscode-extension/media", filename), "utf8"), threatBrowser);
+}
+for (const patch of patches) compareThreat(savedThreat, patch, savedProject, savedAttacker, threatBrowser.window.ThreatModel);
+for (const weights of weightCases) {
+  for (const costFactors of costCases) compareThreat({ costFactors }, {}, { costFactorWeights: weights }, undefined, threatBrowser.window.ThreatModel);
+}
+for (const access of accessCases) {
+  assert.strictEqual(threatBrowser.window.ThreatModel.accessProbability(access), ThreatModel.accessProbability(access));
+}
+ok("browser script-order API and CommonJS threat model both match the actual webapp", true);
+
 const weightedA = { id: "a", kind: "step", cost: { time: 1, exploitability: 5 }, skill: 5, access: 1 };
 const weightedB = { id: "b", kind: "substep", cost: { time: 5, exploitability: 1 }, skill: 1, access: 5 };
 const weightedDefs = [weightedA, weightedB].map((n) => ({ ...n, kind: "countermeasure", residualCost: n.cost }));
