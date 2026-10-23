@@ -536,6 +536,29 @@ const rUnfeasible = RiskModel.riskOf({ id: "T1", likelihood: 4, impact: 4, statu
 ok("unfeasible ⇒ initial 0 and residual 0/0", rUnfeasible.initial === 0 && rUnfeasible.residual === 0 && rUnfeasible.residualLikelihood === 0 && rUnfeasible.residualImpact === 0 && rUnfeasible.initialBand.name === "None");
 ok("band(0) is None", RiskModel.band(0, null).name === "None");
 
+/* ---------- Threat schema: cost-based feasibility includes unfeasible L0 ---------- */
+const Ajv2020 = require(path.join(root, "vscode-extension/node_modules/ajv/dist/2020"));
+const threatSchema = JSON.parse(fs.readFileSync(path.join(root, "vscode-extension/runtime/.assets/schema/threats.schema.json"), "utf8"));
+const validateThreats = new Ajv2020().compile(threatSchema);
+const schemaThreat = { id: "T-SCHEMA", title: "Schema boundary", stride: ["S"], components: ["C1"], likelihood: 1, impact: 3 };
+for (const likelihood of [0, 1, 2, 3, 4, 5]) {
+  ok("threat schema accepts likelihood " + likelihood,
+    validateThreats({ threats: [{ ...schemaThreat, likelihood }] }));
+}
+for (const likelihood of [-1, 6, 1.5, "0", null]) {
+  ok("threat schema rejects likelihood " + JSON.stringify(likelihood),
+    !validateThreats({ threats: [{ ...schemaThreat, likelihood }] }));
+  assert.ok(validateThreats.errors.some((error) => error.instancePath === "/threats/0/likelihood"));
+}
+for (const status of ["open", "mitigated", "accepted", "transferred", "unfeasible"]) {
+  ok("threat schema accepts status " + status,
+    validateThreats({ threats: [{ ...schemaThreat, status, likelihood: status === "unfeasible" ? 0 : 3 }] }));
+}
+ok("threat schema still rejects unknown status",
+  !validateThreats({ threats: [{ ...schemaThreat, status: "unknown" }] }));
+ok("threat schema still requires likelihood",
+  !validateThreats({ threats: [{ ...schemaThreat, likelihood: undefined }] }));
+
 /* ---------- Bundled knowledge-base drift (extension runtime vs webapp) ---------- */
 ["risk-scheme.json", "bug-bar.json", "field-device-library.json"].forEach((file) => {
   const webappFile = path.join(root, "webapp/.assets/knowledge-base", file);

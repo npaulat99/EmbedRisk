@@ -127,7 +127,7 @@ the orchestrator implements them directly (anchors: `renderProject()` and the de
   `ticketUrls[]`, per-link `ratedBy`/`ratedAt`.
 - [x] **EXT-B1 Bug Bar impact selector** driven by bundled `bug-bar.json` (Deps: EXT-K1).
 - [x] **EXT-A2 Attack-tree cost weights** in `evaluate()` matching `webapp/client/src/lib/attackTree.ts`.
-- [ ] **EXT-T1 Cost-based feasibility fields on threats** (`costFactors`, `costRationales`,
+- [x] **EXT-T1 Cost-based feasibility fields on threats** (`costFactors`, `costRationales`,
   `costLikelihood`, `costLikelihoodProposal`) (Deps: EXT-A2).
   - Sized L after inspecting `RiskCalculator.tsx:20-65`, `attackTree.ts:6-55,200-204`,
     and wizard rendering/save handlers: split below; parent stays open until all children pass.
@@ -175,10 +175,13 @@ the orchestrator implements them directly (anchors: `renderProject()` and the de
         semantics; edits and clearing preserve unknown metadata and accept the calculated proposal.
         Runtime tests exercise actual controls, defaults, clearing, configured computations and
         save/undo/redo/reopen. Full baseline passes; close EXT-T1c only when both children pass.
-  - [ ] **EXT-T1d Threat likelihood schema compatibility** (S; Deps: EXT-T1a).
+  - [x] **EXT-T1d Threat likelihood schema compatibility** (S; Deps: EXT-T1a).
     - AC: Align the bundled threat schema's likelihood range with the shared 0–5 matrix (currently
       `runtime/.assets/schema/threats.schema.json:23` rejects L0); check the corresponding webapp
       schema and add focused validation coverage for L0 and out-of-range values. No fixture edits.
+    - The webapp has no corresponding threat JSON schema in this checkout; its threat type includes
+      `unfeasible`. The bundled schema now accepts that status as well as integer likelihood 0–5,
+      so a complete cost-calculator L0 assessment validates.
 - [ ] **EXT-M1 5×5 risk matrix heat map** (initial vs residual) (Deps: EXT-R1).
 - [ ] **EXT-D1 Defects (09) editor** writing `09-defects/defects.json` in webapp format.
 - [ ] **EXT-X1 Threat/countermeasure JSON import/export** compatible with `ThreatCmImportExport.tsx`.
@@ -227,6 +230,7 @@ the orchestrator implements them directly (anchors: `renderProject()` and the de
 
 | Item | Impl | Review | Test | Notes |
 |---|---|---|---|---|
+| EXT-T1d | ✅ | ✅ PASS | ✅ PASS (compile, 140 model assertions, 6 parsed scripts + 6 runtime webviews, diff check) | Bundled threat schema accepts integer L0 and the webapp's unfeasible status. Full-document Ajv 2020-12 regressions cover L0–L5, existing statuses, unfeasible L0, missing likelihood, negative/above-range/fractional/string/null likelihoods and unknown status; the L0 regression failed before the fix. Declared the already-installed Ajv as a direct test dependency. No corresponding webapp threat schema exists in this checkout; checked its threat type and existing calculator parity coverage. No fixture changes or live VS Code validation. All EXT-T1 children are verified, closing EXT-T1. |
 | EXT-T1c2 | ✅ | ✅ PASS | ✅ PASS (compile, 122 model assertions, 6 parsed scripts + 6 runtime webviews, diff check) | Seven factor selectors and rationales match webapp labels/options and defaults. Explicit edits and rationale clearing accept the calculated proposal while preserving unknown nested metadata and input focus; unrelated edits/reopen retain manual overrides. Real-control regressions cover every factor/rationale, absent defaults, escaped text, configured computations, autosave, explicit-save handler, undo/redo and reopen; retained cost/legacy/Bug Bar and capability tests pass. No fixture/schema edits or live VS Code validation; explicit save uses the UI payload through the host handler (no save button). EXT-T1c closes with both children verified; EXT-T1 remains open for EXT-T1d schema compatibility. |
 | EXT-T1c1 | ✅ | ✅ PASS | ✅ PASS (compile, 122 model assertions, 6 parsed scripts + 6 runtime webviews, diff check) | Re-sized EXT-T1c L and split into two M children. Cost-based/default mode now offers skill/access controls, calculated probability/proposal and accepted-likelihood warnings using the tested browser helpers; Bug Bar remains available and legacy mode is retained. Explicit edits accept proposals with configured weights/access/thresholds and selected SL-C capability, including unfeasible L0 and recovery; render/mode changes and unrelated edits preserve stored manual overrides and metadata. Real-control regressions cover defaults, configured 12.5%→L3 and 10%→L2 calculations, capability transitions, mode switching, autosave and undo/redo/reopen; substituting the base wizard in memory fails on the missing skill control. No fixture/schema edits or manual VS Code validation. Parent EXT-T1/T1c remain open; factor/rationale controls and clearing remain EXT-T1c2, schema compatibility remains EXT-T1d. |
 | EXT-T1b | ✅ | ✅ PASS | ✅ PASS (compile, 122 model assertions, 6 parsed scripts + 6 runtime webviews, diff check) | CommonJS/browser threat model reuses weighted costs and thresholds, defaults missing factors to 3, and matches configured access probabilities, capability gating and explicit-update status transitions. Pure reads preserve accepted likelihood; explicit immutable updates preserve unrelated metadata and support map clearing. Tests execute actual webapp calculator read/update code across defaults, edits, partial/zero/negative weights and threshold boundaries; frozen-input/browser checks pass. Negative controls reject tree-step probability substitution and metadata loss. Tree behavior unchanged; no UI/schema/fixture edits or manual VS Code session. Parent EXT-T1 remains open; controls and L0 schema compatibility remain EXT-T1c/d. |
