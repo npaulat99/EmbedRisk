@@ -1696,6 +1696,29 @@ async function nativeDfdEditor(h) {
     { id: "I-TEST-VISIBLE", name: "Visible interface", component: anchor.componentRef, exposure: "local", tag: "VISIBLE" },
   );
   h.overlay.set(path.join(projectDir, systemPath), JSON.stringify(system));
+  const threatPath = "06-threats/threats.json", cmPath = "08-countermeasures/countermeasures.json";
+  const projectPath = "01-project-description/project.json";
+  const threats = [
+    { id: "ROOT", likelihood: 5, impact: 5, components: ["DEV"] },
+    { id: "CHILD", likelihood: 2, impact: 3, components: ["C-2"] },
+    { id: "GRANDCHILD", likelihood: 1, impact: 4, components: ["C-3"] },
+    { id: "OTHER", likelihood: 5, impact: 4, components: ["OUTSIDE"] },
+    { id: "ZERO", likelihood: 0, impact: 4, components: ["C-3"] },
+    { id: "OFFGRID", likelihood: 6, impact: 2, components: ["C-3"] },
+    { id: "UNFEASIBLE", likelihood: 5, impact: 5, status: "unfeasible", components: ["C-3"] },
+  ];
+  const cms = [
+    { id: "IGNORED", selected: false, addresses: [{ threat: "ROOT", residualLikelihood: 1, residualImpact: 1 }] },
+    { id: "APPLIED", addresses: [{ threat: "GRANDCHILD", residualLikelihood: 1, residualImpact: 2 }] },
+  ];
+  const project = { ...readProjectJson(projectPath), acceptableRisk: 6 };
+  const schemePath = path.join(extDir, "runtime/.assets/knowledge-base/risk-scheme.json");
+  const scheme = JSON.parse(h.readText(schemePath));
+  scheme.matrix.bands = [{ name: "Custom", min: 1, max: 25, color: "#123456" }];
+  h.overlay.set(path.join(projectDir, threatPath), JSON.stringify({ threats }));
+  h.overlay.set(path.join(projectDir, cmPath), JSON.stringify({ countermeasures: cms }));
+  h.overlay.set(path.join(projectDir, projectPath), JSON.stringify(project));
+  h.overlay.set(schemePath, JSON.stringify(scheme));
   const mod = await load(h, "nativeDfdEditor.ts");
   const provider = new mod.NativeDfdEditor(ctx.extensionUri);
   const panel = h.createPanel();
@@ -1703,6 +1726,42 @@ async function nativeDfdEditor(h) {
   h.openDom();
   await h.settle();
   assert.ok(h.toWebview.some((m) => m.type === "load"), "host did not answer 'ready' with 'load'");
+  const matrixCell = (l, i) => h.must(`#dfd-risk-matrix td[data-l="${l}"][data-i="${i}"]`);
+  const matrixCount = (l, i) => matrixCell(l, i).querySelector(".n").textContent;
+  h.setValue("#sel", "N-EXT-CTRL");
+  assert.ok(h.must("#dfd-risk-matrix").textContent.includes("all project"), "node without componentRef did not show all-project scope");
+  assert.strictEqual(h.must("#dfd-risk-matrix [aria-pressed='true']").textContent, "Residual");
+  assert.strictEqual(matrixCount(5, 5), "1");
+  assert.strictEqual(matrixCell(5, 5).title, "L5 × I5 = 25 (Custom) — ROOT", "selected:false control incorrectly changed residual risk");
+  assert.strictEqual(matrixCount(5, 4), "1", "all-project scope omitted unrelated components");
+  assert.strictEqual(matrixCount(1, 2), "1", "residual coordinates did not use shared risk model");
+  assert.strictEqual(matrixCount(1, 4), "", "off-grid or unfeasible threat was clamped into a cell");
+  assert.strictEqual(h.$$("#dfd-risk-matrix td[data-l]").reduce((sum, cell) => sum + Number(cell.querySelector(".n").textContent || 0), 0), 4,
+    "zero-risk, unfeasible, or off-grid threats appeared in matrix cells");
+  assert.ok(h.must("#dfd-risk-matrix").textContent.includes("acceptable risk: 6"));
+  assert.ok(h.must("#dfd-risk-matrix .matrix-legend").textContent.includes("Custom"));
+  assert.strictEqual(matrixCell(2, 3).querySelector(".matrix-colour").style.backgroundColor, "rgb(18, 52, 86)");
+  assert.ok(matrixCell(3, 2).classList.contains("boundary-top"), "configured acceptable-risk boundary was not rendered");
+  const matrixWrites = h.writes.length;
+  h.click("#dfd-risk-matrix [data-matrix-mode='initial']");
+  assert.strictEqual(matrixCount(5, 5), "1");
+  assert.strictEqual(matrixCount(1, 4), "1", "initial mode did not use initial threat coordinates");
+  assert.strictEqual(matrixCount(1, 2), "");
+  h.click("#dfd-risk-matrix [data-matrix-mode='residual']");
+  h.setValue("#sel", "N-DEV");
+  assert.ok(h.must("#dfd-risk-matrix").textContent.includes("selected component + descendants"));
+  assert.strictEqual(matrixCount(5, 4), "", "selected component scope included unrelated threat");
+  assert.strictEqual(matrixCount(5, 5), "1", "selected component omitted directly linked threat");
+  assert.strictEqual(matrixCount(2, 3), "1", "selected component omitted child threat");
+  assert.strictEqual(matrixCount(1, 2), "1", "selected component omitted transitive grandchild threat");
+  assert.strictEqual(h.writes.length, matrixWrites, "matrix interactions wrote DFD data");
+  assert.ok(h.must("#undo").disabled && h.must("#redo").disabled, "matrix interactions entered DFD history");
+  delete project.acceptableRisk;
+  h.overlay.set(path.join(projectDir, projectPath), JSON.stringify(project));
+  h.deliverToHost({ type: "ready" });
+  await h.settle();
+  assert.ok(h.must("#dfd-risk-matrix").textContent.includes("acceptable risk: 12"), "missing acceptableRisk did not default to 12");
+  assert.ok(matrixCell(3, 4).classList.contains("boundary-right"), "default acceptable-risk boundary was not rendered");
   assert.strictEqual(h.$('[data-iface="I-TEST-HIDDEN"]'), null, "DFD rendered a hidden interface");
   assert.strictEqual(h.must('[data-iface="I-TEST-VISIBLE"] text').textContent, "VISIBLE", "DFD did not use the interface tag");
   const watcher = h.fileWatchers.find((w) => w.pattern.pattern === systemPath && w.pattern.baseUri.fsPath === projectDir);

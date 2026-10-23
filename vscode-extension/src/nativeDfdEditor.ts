@@ -11,6 +11,7 @@ export class NativeDfdEditor implements vscode.CustomTextEditorProvider {
     const media = vscode.Uri.joinPath(this.extUri, "media");
     panel.webview.options = { enableScripts: true, localResourceRoots: [media] };
     const modelUri = panel.webview.asWebviewUri(vscode.Uri.joinPath(media, "dfd-model.js"));
+    const riskUri = panel.webview.asWebviewUri(vscode.Uri.joinPath(media, "risk-model.js"));
     const cssUri = panel.webview.asWebviewUri(vscode.Uri.joinPath(media, "tra-ui.css"));
     const logoUri = panel.webview.asWebviewUri(vscode.Uri.joinPath(media, "embedrisk-logo.svg"));
     const nonce = String(Math.random()).slice(2);
@@ -21,7 +22,7 @@ export class NativeDfdEditor implements vscode.CustomTextEditorProvider {
       try {
         const sys = JSON.parse(Buffer.from(await vscode.workspace.fs.readFile(vscode.Uri.joinPath(projRoot, "03-system-assets/system.json"))).toString());
         return {
-          components: (sys.components || []).map((c: any) => ({ id: c.id, name: c.name })),
+          components: (sys.components || []).map((c: any) => ({ id: c.id, name: c.name, parent: c.parent })),
           interfaces: (sys.interfaces || []).map((itf: any) => ({
             id: itf.id, name: itf.name, tag: itf.tag || '',
             component: itf.component || '', exposure: itf.exposure || '',
@@ -34,6 +35,15 @@ export class NativeDfdEditor implements vscode.CustomTextEditorProvider {
     };
 
     let lastText = "";
+    const readMatrixData = async () => {
+      try {
+        const threatsDoc = JSON.parse(Buffer.from(await vscode.workspace.fs.readFile(vscode.Uri.joinPath(projRoot, "06-threats/threats.json"))).toString());
+        const cmsDoc = JSON.parse(Buffer.from(await vscode.workspace.fs.readFile(vscode.Uri.joinPath(projRoot, "08-countermeasures/countermeasures.json"))).toString());
+        const project = JSON.parse(Buffer.from(await vscode.workspace.fs.readFile(vscode.Uri.joinPath(projRoot, "01-project-description/project.json"))).toString());
+        const scheme = JSON.parse(Buffer.from(await vscode.workspace.fs.readFile(vscode.Uri.joinPath(this.extUri, "runtime/.assets/knowledge-base/risk-scheme.json"))).toString());
+        return { threats: threatsDoc.threats || [], cms: cmsDoc.countermeasures || [], acceptableRisk: project.acceptableRisk, scheme };
+      } catch { return { threats: [], cms: [], acceptableRisk: undefined, scheme: null }; }
+    };
     const readRiskData = async (): Promise<Record<string, string>> => {
       try {
         const threats = (JSON.parse(Buffer.from(await vscode.workspace.fs.readFile(vscode.Uri.joinPath(projRoot, "06-threats/threats.json"))).toString())).threats || [];
@@ -68,7 +78,8 @@ export class NativeDfdEditor implements vscode.CustomTextEditorProvider {
     const post = async () => {
       const sys = await readSystemData();
       const riskData = await readRiskData();
-      panel.webview.postMessage({ type: "load", dfd: doc.getText() || '{"nodes":[],"flows":[]}', components: sys.components, interfaces: sys.interfaces, trustBoundaryIds: sys.trustBoundaryIds, riskData });
+      const matrixData = await readMatrixData();
+      panel.webview.postMessage({ type: "load", dfd: doc.getText() || '{"nodes":[],"flows":[]}', components: sys.components, interfaces: sys.interfaces, trustBoundaryIds: sys.trustBoundaryIds, riskData, ...matrixData });
     };
     const save = async (text: string) => {
       lastText = text;
@@ -77,7 +88,7 @@ export class NativeDfdEditor implements vscode.CustomTextEditorProvider {
       await vscode.workspace.applyEdit(ed);
     };
 
-    panel.webview.html = this.html(modelUri, cssUri, logoUri, csp, nonce);
+    panel.webview.html = this.html(modelUri, riskUri, cssUri, logoUri, csp, nonce);
 
     const sub = vscode.workspace.onDidChangeTextDocument((e) => {
       if (e.document.uri.toString() === doc.uri.toString() && e.document.getText() !== lastText) post();
@@ -94,7 +105,7 @@ export class NativeDfdEditor implements vscode.CustomTextEditorProvider {
     });
   }
 
-  private html(modelUri: vscode.Uri, cssUri: vscode.Uri, logoUri: vscode.Uri, csp: string, nonce: string): string {
+  private html(modelUri: vscode.Uri, riskUri: vscode.Uri, cssUri: vscode.Uri, logoUri: vscode.Uri, csp: string, nonce: string): string {
     return `<!doctype html><html><head><meta charset="utf8"><meta http-equiv="Content-Security-Policy" content="${csp}">
 <link rel="stylesheet" href="${cssUri}">
 <style>
@@ -117,6 +128,24 @@ body{display:flex;flex-direction:column}
 #wrap{flex:1 1 auto;min-height:0;overflow:auto;position:relative;color:var(--text)}
 #insp{flex:0 0 300px;border-left:1px solid var(--border);background:var(--surface);overflow:auto;padding:12px}
 #insp h3{font-size:13px;margin:0 0 8px}
+.risk-matrix{margin:14px 0 6px;max-width:none}
+.risk-matrix table{width:100%;border-spacing:2px;table-layout:fixed;margin-top:6px}
+.risk-matrix th{font-weight:normal;color:var(--text-dim)}
+.risk-matrix td[data-l]{position:relative;height:30px;text-align:center;border:2px solid transparent;font-size:10px}
+.risk-matrix td>.matrix-colour{position:absolute;inset:0;opacity:.42;border-radius:3px}
+.risk-matrix td.hit{color:#fff;text-shadow:0 1px 2px #000}
+.risk-matrix td.hit>.matrix-colour{opacity:1}
+.risk-matrix td>.matrix-colour+span,.risk-matrix small,.risk-matrix b{position:relative}
+.risk-matrix .bandmark{margin-left:1px;font-size:8px}
+.risk-matrix .n{display:block;font-size:10px;min-height:11px}
+.risk-matrix td.boundary-top{border-top-color:var(--text)}
+.risk-matrix td.boundary-right{border-right-color:var(--text)}
+.risk-matrix .matrix-legend{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px;font-size:10px}
+.risk-matrix .matrix-legend i{display:inline-block;width:9px;height:9px;border-radius:2px}
+.risk-matrix .matrix-legend .threshold-key{border-top:2px solid var(--text);height:0;vertical-align:middle}
+#insp .matrix-modes{display:flex;gap:4px}
+#insp .matrix-modes button{font:11px system-ui;padding:3px 7px;border:1px solid var(--border-strong);background:var(--surface);color:var(--text);border-radius:6px}
+#insp .matrix-modes button[aria-pressed="true"]{border-color:var(--accent);background:var(--surface-2)}
 svg{display:block}
 #ov{position:fixed;inset:0;background:rgba(0,0,0,.4);display:none;align-items:center;justify-content:center;z-index:10}
 #ovbox{background:var(--surface);color:var(--text);padding:14px;border-radius:8px;min-width:280px;border:1px solid var(--border)}
@@ -151,10 +180,11 @@ svg{display:block}
 </div>
 <div id="ov"><div id="ovbox"><div id="ovlabel"></div><input id="ovinput"><div class="r"><button class="btn" id="ovcancel">Cancel</button><button class="btn primary" id="ovok">OK</button></div></div></div>
 <script nonce="${nonce}" src="${modelUri}"></script>
+<script nonce="${nonce}" src="${riskUri}"></script>
 <script nonce="${nonce}">
-const M=DfdModel, vs=acquireVsCodeApi();
+const M=DfdModel, R=window.RiskModel, vs=acquireVsCodeApi();
 const TYPES=['external-entity','process','multiprocess','store','trust-boundary'];
-let dfd={nodes:[],flows:[]}, components=[], interfaces=[], trustBoundaryIds=[], riskData={}, stack=[], focus=null, connect=false, connectFrom=null;
+let dfd={nodes:[],flows:[]}, components=[], interfaces=[], trustBoundaryIds=[], riskData={}, threats=[], cms=[], riskScheme=null, acceptableRisk, matrixMode='residual', stack=[], focus=null, connect=false, connectFrom=null;
 let drag=null, chipDrag=null, dragMoved=false, dragging=false;
 const $=id=>document.getElementById(id);
 function esc(s){return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
@@ -237,6 +267,36 @@ function drawCanvas(){
   $('status').textContent=connect?(connectFrom?('Connect: click the target for '+label(connectFrom)):'Connect: click the source node'):'';
 }
 function chip(text,on,attrs,title){return '<span class="chip'+(on?' on':'')+'" role="button" tabindex="0" '+attrs+(title?' title="'+esc(title)+'"':'')+'>'+esc(text)+'</span>';}
+function renderRiskMatrix(componentRef){
+  if(!R||!R.matrix)return '<div class="risk-matrix">Risk matrix not available.</div>';
+  var ids=null, rolledUp=false, scopedThreats=threats||[];
+  if(componentRef){
+    ids=new Set([componentRef]);
+    var pending=[componentRef];
+    while(pending.length){
+      var parent=pending.pop();
+      components.forEach(function(c){if(c.parent===parent&&!ids.has(c.id)){ids.add(c.id);pending.push(c.id);}});
+    }
+    rolledUp=ids.size>1;
+    scopedThreats=scopedThreats.filter(function(t){return (t.components||[]).some(function(id){return ids.has(id);});});
+  }
+  var m=R.matrix(scopedThreats,cms,riskScheme,acceptableRisk,matrixMode);
+  var html='<section class="risk-matrix" id="dfd-risk-matrix" aria-label="DFD risk matrix">'+
+    '<h3>Risk matrix</h3><div class="matrix-modes" role="group" aria-label="Risk matrix mode">'+
+    ['initial','residual'].map(function(mode){return '<button type="button" data-matrix-mode="'+mode+'" aria-pressed="'+(matrixMode===mode)+'">'+(mode==='initial'?'Initial':'Residual')+'</button>';}).join('')+
+    '</div><table aria-label="'+matrixMode+' risk"><tbody>';
+  m.cells.forEach(function(c){
+    if(c.likelihood===1)html+='<tr><th scope="row">'+c.impact+'</th>';
+    html+='<td data-l="'+c.likelihood+'" data-i="'+c.impact+'" class="'+(c.ids.length?'hit ':'')+(c.boundaryTop?'boundary-top ':'')+(c.boundaryRight?'boundary-right':'')+'" title="'+esc('L'+c.likelihood+' × I'+c.impact+' = '+c.score+' ('+c.band.name+')'+(c.ids.length?' — '+c.ids.join(', '):''))+'">'+
+      '<span class="matrix-colour" style="background-color:'+esc(c.band.color)+'"></span><span>'+c.score+'</span><small class="bandmark" aria-hidden="true">'+esc(c.band.name[0])+'</small><b class="n">'+(c.ids.length||'')+'</b></td>';
+    if(c.likelihood===5)html+='</tr>';
+  });
+  html+='</tbody><tfoot><tr><td></td>'+[1,2,3,4,5].map(function(l){return '<th scope="col">'+l+'</th>';}).join('')+'</tr></tfoot></table>'+
+    '<div class="hint">Likelihood → · Impact ↑ · '+matrixMode+' risk · '+(componentRef?'selected component'+(rolledUp?' + descendants':''):'all project')+'</div><div class="matrix-legend">'+
+    m.bands.map(function(b){return '<span><i style="background-color:'+esc(b.color)+'"></i> '+esc(b.name)+'</span>';}).join('')+
+    '<span><i class="threshold-key"></i> acceptable risk: '+esc(m.threshold)+'</span></div></section>';
+  return html;
+}
 function renderInspector(){
   var n=focus?node(focus):null;
   if(!n){
@@ -251,10 +311,11 @@ function renderInspector(){
         '<div class="field"><label>Category</label><div style="padding:4px 0">'+esc(selIface.category||'—')+'</div></div>'+
         '<div class="field"><label>Exposure</label><div style="padding:4px 0">'+esc(selIface.exposure||'—')+'</div></div>'+
         (selIface.protocol?'<div class="field"><label>Protocol</label><div style="padding:4px 0">'+esc(selIface.protocol)+'</div></div>':'')+
-        '<p class="hint" style="margin-top:8px">Interface chips are defined in step 03 (System &amp; Assets) and automatically appear here when their component is on this layer.</p>';
+        '<p class="hint" style="margin-top:8px">Interface chips are defined in step 03 (System &amp; Assets) and automatically appear here when their component is on this layer.</p>'+
+        renderRiskMatrix(null);
       return;
     }
-    $('insp').innerHTML='<h3>Inspector</h3><p class="hint">Select a node (click it, or use the arrow keys). Click a boundary label to edit its members.</p>';return;
+    $('insp').innerHTML='<h3>Inspector</h3><p class="hint">Select a node (click it, or use the arrow keys). Click a boundary label to edit its members.</p>'+renderRiskMatrix(null);return;
   }
   var isTb=n.type==='trust-boundary';
   var html='<h3>Selected '+(isTb?'trust boundary':'node')+'</h3>';
@@ -288,7 +349,7 @@ function renderInspector(){
       '<select class="inp" id="ins-target" style="flex:1"><option value="">Node&hellip;</option>'+others.map(function(s){return '<option value="'+esc(s.id)+'">'+esc(s.label)+'</option>';}).join('')+'</select>'+
       '<button class="btn sm" id="ins-addflow">+ Add</button></div>';
   }
-  $('insp').innerHTML=html;
+  $('insp').innerHTML=html+renderRiskMatrix(!isTb?n.componentRef:null);
 }
 function renderSel(){
   var sel=$('sel');if(!sel)return;
@@ -385,7 +446,10 @@ $('insp').addEventListener('change',function(e){var t=e.target,n=focus?node(focu
   else if(t.id==='ins-comp'){if(t.value)n.componentRef=t.value;else delete n.componentRef;persist();}
   else if(t.dataset.flow){persist();}
 });
-$('insp').addEventListener('click',function(e){var b=e.target.closest('[data-mem],[data-delflow],#ins-addflow');if(!b)return;var n=focus?node(focus):null;if(!n)return;
+$('insp').addEventListener('click',function(e){
+  var modeButton=e.target.closest('[data-matrix-mode]');
+  if(modeButton){matrixMode=modeButton.dataset.matrixMode;renderInspector();return;}
+  var b=e.target.closest('[data-mem],[data-delflow],#ins-addflow');if(!b)return;var n=focus?node(focus):null;if(!n)return;
   if(b.dataset.mem){var arr=n.members||(n.members=[]);var k=arr.indexOf(b.dataset.mem);if(k>=0)arr.splice(k,1);else arr.push(b.dataset.mem);persist();draw();}
   else if(b.dataset.delflow){dfd.flows=dfd.flows.filter(function(f){return f.id!==b.dataset.delflow;});persist();draw();}
   else if(b.id==='ins-addflow'){var dir=$('ins-dir').value,tgt=$('ins-target').value;if(!tgt)return;var from=dir==='out'?n.id:tgt,to=dir==='out'?tgt:n.id;M.addFlow(dfd,from,to);persist();draw();}
@@ -411,7 +475,7 @@ window.addEventListener('keydown',function(e){
 });
 
 window.addEventListener('message',function(ev){var m=ev.data;
-  if(m.type==='load'){try{dfd=JSON.parse(m.dfd);}catch(_){dfd={nodes:[],flows:[]};}if(!dfd.nodes)dfd.nodes=[];if(!dfd.flows)dfd.flows=[];if(m.components)components=m.components;if(m.interfaces)interfaces=m.interfaces;if(m.trustBoundaryIds)trustBoundaryIds=m.trustBoundaryIds;if(m.riskData)riskData=m.riskData;baseState=snap();updUndo();if(dragging)return;draw();}
+  if(m.type==='load'){try{dfd=JSON.parse(m.dfd);}catch(_){dfd={nodes:[],flows:[]};}if(!dfd.nodes)dfd.nodes=[];if(!dfd.flows)dfd.flows=[];if(m.components)components=m.components;if(m.interfaces)interfaces=m.interfaces;if(m.trustBoundaryIds)trustBoundaryIds=m.trustBoundaryIds;if(m.riskData)riskData=m.riskData;threats=m.threats||[];cms=m.cms||[];riskScheme=m.scheme||null;acceptableRisk=m.acceptableRisk;baseState=snap();updUndo();if(dragging)return;draw();}
 });
 vs.postMessage({type:'ready'});
 </script></body></html>`;
