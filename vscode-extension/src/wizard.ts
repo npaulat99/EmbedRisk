@@ -713,6 +713,15 @@ const STRIDE=[['S','Spoofing'],['T','Tampering'],['R','Repudiation'],['I','Info 
 const T_STATUS=[['open','Open'],['mitigated','Mitigated'],['accepted','Accepted'],['transferred','Transferred'],['unfeasible','Unfeasible']];
 const SKILL_OPTS=[[1,'Script kiddie'],[2,'Experienced hacker'],[3,'Security engineer'],[4,'Expert team'],[5,'Nation-state']];
 const COST_ACCESS_OPTS=[[1,'Remote (unauth.)'],[2,'Remote (auth.)'],[3,'Adjacent / fieldbus'],[4,'Local (on site)'],[5,'Physical (open enclosure)']];
+const COST_FACTORS=[
+  ['time','Time effort',['Minutes','Hours','Days','Weeks','Months+']],
+  ['exploitability','Exploitability',['Trivial','Easy','Moderate','Difficult','Very Difficult']],
+  ['window','Window of opportunity',['Permanent','Regular','Occasional','Brief','One-Time']],
+  ['detection','Detection probability',['None','Low','Moderate','High','Very High']],
+  ['notoriety','Prior knowledge',['Public','Known','Limited','Internal','Unknown']],
+  ['prep','Preparation effort',['None','Software setup','Test environment','Procure','Infrastructure']],
+  ['abort','Abort risk',['Robust','Rare','Moderate','Frequent','Very Likely']]
+];
 const ACCESS=[['remote','Remote'],['adjacent','Adjacent'],['local','Local'],['physical','Physical']];
 const ASM_CATS=[['device','Device'],['system','System'],['environment','Environment'],['operational','Operational']];
 const COMP_KINDS=['device','hardware','software','interface','external-entity','store'];
@@ -917,6 +926,11 @@ function costBlock(t,i){
     '<div style="margin-top:8px"><b>Cost-based likelihood</b><div class="grid2">'+
     [['requiredSkill','Required skill',SKILL_OPTS,t.requiredSkill||1],['requiredAccess','Required access',COST_ACCESS_OPTS,t.requiredAccess||3]].map(function(f){
       return '<label class="field">'+f[1]+'<select class="inp" data-i='+i+' data-cost="'+f[0]+'">'+optTags(f[2].map(function(o){return [o[0],o[0]+' · '+o[1]];}),f[3])+'</select></label>';
+    }).join('')+'</div><div class="grid2">'+COST_FACTORS.map(function(f){
+      return '<div class="field"><label>'+f[1]+'<select class="inp" data-i='+i+' data-cost="costFactors" data-cost-key="'+f[0]+'">'+
+        optTags(f[2].map(function(label,n){return [n+1,(n+1)+' · '+label];}),(t.costFactors||{})[f[0]]??3)+'</select></label>'+
+        '<textarea class="inp" rows="2" data-i='+i+' data-cost="costRationales" data-cost-key="'+f[0]+'" aria-label="'+f[1]+' rationale" placeholder="Assessment reason">'+
+        esc((t.costRationales||{})[f[0]]||'')+'</textarea></div>';
     }).join('')+'</div><div id="cost-summary-'+i+'">'+costSummary(t)+'</div></div>';
 }
 function renderThreats(){
@@ -1325,7 +1339,9 @@ document.addEventListener('input',function(e){
   if(t.id==='p-uc-inc'){project.includeUseCases=!!t.checked;return;}
   if(t.id==='p-sbom-mode'||t.id==='p-sbom-format'||t.id==='p-sbom-url-inp'){project.sbom=readSbom();showSbomFields(project.sbom.mode);return;}
   if(t.dataset.i!==undefined&&t.dataset.cost){
-    var i=+t.dataset.i,patch={};patch[t.dataset.cost]=+t.value;
+    var i=+t.dataset.i,patch={},cost=t.dataset.cost;
+    if(t.dataset.costKey){patch[cost]=Object.assign({},threats[i][cost]);patch[cost][t.dataset.costKey]=cost==='costRationales'?t.value:+t.value;}
+    else patch[cost]=+t.value;
     threats[i]=window.ThreatModel.applyUpdate(threats[i],patch,project,selectedAttacker());
     $('#cost-summary-'+i).innerHTML=costSummary(threats[i]);
     $('[data-i="'+i+'"][data-k="likelihood"]').value=threats[i].likelihood;

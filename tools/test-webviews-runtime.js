@@ -937,14 +937,25 @@ async function checkThreatCostPersistence(h, mod) {
 async function checkThreatCostControls(h, mod) {
   const file = path.join(projectDir, "06-threats/threats.json");
   const projectFile = path.join(projectDir, "01-project-description/project.json");
+  const compIds = JSON.parse(h.readText(path.join(projectDir, "03-system-assets/system.json"))).components.map((c) => c.id);
   const project = { ...JSON.parse(h.readText(projectFile)), slTarget: "SL2" };
   for (const key of ["riskScoringMethod", "costFactorWeights", "accessProbabilities", "likelihoodProbabilityThresholds"]) delete project[key];
   const metadata = { nested: ["preserve", { enabled: false }] };
-  const bare = { id: "T-CONTROLS", title: "Cost controls", stride: ["T"], components: [], assets: [],
+  const bare = { id: "T-CONTROLS", title: "Cost controls", stride: ["T"], components: [compIds[0]], assets: [],
     likelihood: 4, impact: 3, status: "mitigated", futureMetadata: metadata };
   const saved = () => JSON.parse(h.readText(file)).threats[0];
   const field = (key) => `[data-i="0"][data-k="${key}"]`;
   const cost = (key) => `[data-i="0"][data-cost="${key}"]`;
+  const factor = (key, rationale = false) => `${cost(rationale ? "costRationales" : "costFactors")}[data-cost-key="${key}"]`;
+  const factors = [
+    ["time", "Time effort", ["Minutes", "Hours", "Days", "Weeks", "Months+"]],
+    ["exploitability", "Exploitability", ["Trivial", "Easy", "Moderate", "Difficult", "Very Difficult"]],
+    ["window", "Window of opportunity", ["Permanent", "Regular", "Occasional", "Brief", "One-Time"]],
+    ["detection", "Detection probability", ["None", "Low", "Moderate", "High", "Very High"]],
+    ["notoriety", "Prior knowledge", ["Public", "Known", "Limited", "Internal", "Unknown"]],
+    ["prep", "Preparation effort", ["None", "Software setup", "Test environment", "Procure", "Infrastructure"]],
+    ["abort", "Abort risk", ["Robust", "Rare", "Moderate", "Frequent", "Very Likely"]],
+  ];
   const reopen = async () => { h.close(); await mod.openWizard(ctx); h.openDom(); await h.settle(); };
   const preview = (probability, proposal) => {
     assert.strictEqual(h.must("[data-cost-probability]").textContent, probability);
@@ -957,6 +968,17 @@ async function checkThreatCostControls(h, mod) {
   assert.strictEqual(h.must("#p-risk").value, "cost-based");
   assert.strictEqual(h.must(cost("requiredSkill")).value, "1");
   assert.strictEqual(h.must(cost("requiredAccess")).value, "3");
+  assert.deepStrictEqual(Array.from(h.document.querySelectorAll(cost("costFactors")), (el) => el.dataset.costKey), factors.map(([key]) => key));
+  for (const [key, label, options] of factors) {
+    const select = h.must(factor(key)), rationale = h.must(factor(key, true));
+    assert.strictEqual(select.closest("label").firstChild.textContent, label);
+    assert.strictEqual(select.value, "3");
+    assert.deepStrictEqual(Array.from(select.options, (o) => [o.value, o.textContent]),
+      options.map((text, i) => [String(i + 1), `${i + 1} · ${text}`]));
+    assert.strictEqual(rationale.tagName, "TEXTAREA");
+    assert.strictEqual(rationale.placeholder, "Assessment reason");
+    assert.strictEqual(rationale.value, "");
+  }
   for (const [key, labels] of [
     ["requiredSkill", ["Script kiddie", "Experienced hacker", "Security engineer", "Expert team", "Nation-state"]],
     ["requiredAccess", ["Remote (unauth.)", "Remote (auth.)", "Adjacent / fieldbus", "Local (on site)", "Physical (open enclosure)"]],
@@ -1039,7 +1061,58 @@ async function checkThreatCostControls(h, mod) {
     assert.deepStrictEqual(JSON.parse(h.readText(projectFile))[key], configured[key]);
     assert.deepStrictEqual(h.lastToHost((m) => m.cmd === "autoSave").data.project[key], configured[key]);
   }
-  console.log("  Threat cost controls: defaults, configured proposals, SL-C, modes, overrides, metadata and history passed.");
+  // Every real factor/rationale control uses explicit-update semantics, including clearing.
+  // Only time is weighted here: time=2 and configured access=0.5 yield 0.4 => configured L4.
+  const edit = async (selector, value, patch) => {
+    h.setValue(field("likelihood"), "0"); expected = { ...expected, likelihood: 0 };
+    const previous = expected, control = h.must(selector);
+    control.focus(); h.setValue(control, value);
+    assert.strictEqual(h.document.activeElement, control, "cost edit replaced the focused control");
+    expected = { ...expected, ...patch, likelihood: 4, costLikelihood: 0.4, costLikelihoodProposal: 4 };
+    assert.strictEqual(h.must(field("likelihood")).value, "4");
+    assert.strictEqual(h.must("[data-cost-warning]").textContent, "");
+    preview("40.0%", "L4 · High");
+    await persist(expected);
+    h.click("#undoBtn"); await persist(previous);
+    h.click("#redoBtn"); await persist(expected);
+    await reopen();
+    assert.deepStrictEqual(saved(), expected);
+    assert.strictEqual(h.must(selector).value, value, "cost edit did not survive reopen");
+    preview("40.0%", "L4 · High");
+  };
+  for (const [index, [key]] of factors.entries()) {
+    const level = index % 4 + 2;
+    await edit(factor(key), String(level), { costFactors: { ...expected.costFactors, [key]: level } });
+    const reason = `${key}: </textarea><b>not markup</b> & "quoted"\nAssessment`;
+    await edit(factor(key, true), reason, { costRationales: { ...expected.costRationales, [key]: reason } });
+  }
+  const explicitSave = async () => {
+    const start = h.writes.length;
+    // The wizard autosaves; exercise the explicit host save path with its real UI payload.
+    const rows = h.lastToHost((m) => m.cmd === "autoSave").data.threats;
+    h.deliverToHost({ cmd: "threats", threats: rows, compIds });
+    await h.settle();
+    assert.ok(h.writes.length > start, "explicit save did not write");
+    assert.deepStrictEqual(saved(), expected);
+    await reopen(); assert.deepStrictEqual(saved(), expected);
+    for (const [key] of factors) {
+      assert.strictEqual(h.must(factor(key)).value, String(expected.costFactors[key]));
+      assert.strictEqual(h.must(factor(key, true)).value, expected.costRationales[key]);
+    }
+  };
+  await explicitSave();
+  for (const [key] of factors) {
+    await edit(factor(key, true), "", { costRationales: { ...expected.costRationales, [key]: "" } });
+  }
+  await explicitSave();
+  h.setValue(field("likelihood"), "1"); expected = { ...expected, likelihood: 1 };
+  h.setValue(field("title"), "Factor assessments retained"); expected = { ...expected, title: "Factor assessments retained" };
+  await persist(expected); await reopen();
+  assert.deepStrictEqual(saved(), expected);
+  assert.strictEqual(h.must(field("likelihood")).value, "1");
+  preview("40.0%", "L4 · High");
+  assert.ok(h.must("[data-cost-warning]").textContent.includes("Accepted likelihood L1"));
+  console.log("  Threat cost controls: seven factors/rationales, clearing, defaults, configured proposals, SL-C, modes, overrides, saves and history passed.");
 }
 
 async function checkBugBar(h, mod) {
