@@ -1220,6 +1220,78 @@ async function checkBugBar(h, mod) {
   h.overlay.delete(kbPath);
 }
 
+async function checkRiskMatrices(h, mod) {
+  await h.settle(1700);
+  const tp = "06-threats/threats.json", cp = "08-countermeasures/countermeasures.json", pp = "01-project-description/project.json";
+  const kb = path.join(extDir, "runtime/.assets/knowledge-base/risk-scheme.json");
+  const futureMetadata = { nested: ["preserve matrix metadata"] };
+  const threats = [
+    { id: "M1", title: "Matrix", likelihood: 5, impact: 5, futureMetadata },
+    { id: "M2", likelihood: 2, impact: 3 },
+    { id: "L0", likelihood: 0, impact: 5 },
+    { id: "I0", likelihood: 5, impact: 0 },
+    { id: "U", likelihood: 5, impact: 5, status: "unfeasible" },
+  ];
+  const cms = [
+    { id: "C1", futureMetadata, addresses: [{ threat: "M1", residualLikelihood: 2, futureMetadata }] },
+    { id: "C2", addresses: [{ threat: "M1", residualImpact: 3 }] },
+    { id: "C3", selected: false, addresses: [{ threat: "M1", residualLikelihood: 0, residualImpact: 0 }] },
+  ];
+  const project = { ...JSON.parse(h.readText(path.join(projectDir, pp))), acceptableRisk: 6, futureMetadata };
+  const name = '<img src=x onerror="alert(1)"> & "band"';
+  for (const [rel, data] of [[tp, { threats }], [cp, { countermeasures: cms }], [pp, project]]) h.overlay.set(path.join(projectDir, rel), JSON.stringify(data));
+  h.overlay.set(kb, JSON.stringify({ matrix: { bands: [{ name, min: 1, max: 25, color: "#123456" }] } }));
+  const reopen = async () => { h.close(); await mod.openWizard(ctx); h.openDom(); await h.settle(); };
+  const cell = (mount, l, i) => h.must(`#${mount}-matrix td[data-l="${l}"][data-i="${i}"]`);
+  const count = (l, i, n) => { for (const mount of ["threats", "cms"]) assert.strictEqual(cell(mount, l, i).querySelector(".n").textContent, n ? String(n) : ""); };
+  const mode = (value, mount = "threats") => h.click(`#${mount}-matrix [data-mode="${value}"]`);
+  const saves = () => h.toHost.filter((m) => m.cmd === "autoSave").length;
+  await reopen();
+  const before = saves(), diskBefore = [tp, cp, pp].map((p) => h.readText(path.join(projectDir, p)));
+  for (const mount of ["threats", "cms"]) {
+    const cells = h.$$(`#${mount}-matrix td[data-l]`);
+    assert.deepStrictEqual(cells.map((c) => [Number(c.dataset.l), Number(c.dataset.i)]),
+      Array.from({ length: 25 }, (_, n) => [n % 5 + 1, 5 - Math.floor(n / 5)]));
+    assert.strictEqual(h.must(`#${mount}-matrix [aria-pressed="true"]`).textContent, "Residual");
+    assert.strictEqual(cells.reduce((sum, c) => sum + Number(c.querySelector(".n").textContent), 0), 2);
+    assert.strictEqual(cells[0].querySelector(".matrix-colour").style.backgroundColor, "rgb(18, 52, 86)");
+    assert.ok(cell(mount, 2, 3).classList.contains("boundary-top") && cell(mount, 2, 3).classList.contains("boundary-right"));
+    assert.ok(cell(mount, 2, 3).title.includes("= 6 (" + name + ") — M1, M2"));
+    assert.ok(h.must(`#${mount}-matrix .matrix-legend`).textContent.includes(name));
+    assert.strictEqual(h.$(`#${mount}-matrix img`), null);
+  }
+  count(2, 3, 2); mode("initial"); count(5, 5, 1); count(2, 3, 1); mode("residual", "cms"); count(2, 3, 2);
+  await h.settle(1700);
+  assert.strictEqual(saves(), before, "render/mode switch saved");
+  assert.ok(h.must("#undoBtn").disabled && h.must("#redoBtn").disabled, "view-only mode entered history");
+  assert.deepStrictEqual([tp, cp, pp].map((p) => h.readText(path.join(projectDir, p))), diskBefore);
+  h.setValue('[data-i="0"][data-k="likelihood"]', "1"); count(1, 3, 1); count(2, 3, 1);
+  mode("initial", "cms"); count(1, 5, 1);
+  h.key("z", { ctrlKey: true }); count(5, 5, 1); assert.ok(h.must("#undoBtn").disabled, "mode added undo entry");
+  h.key("y", { ctrlKey: true }); count(1, 5, 1); mode("residual");
+  h.setValue('[data-c="1"][data-j="0"][data-k="residualImpact"]', "2"); count(1, 2, 1); count(1, 3, 0);
+  h.key("z", { ctrlKey: true }); count(1, 3, 1);
+  h.key("y", { ctrlKey: true }); count(1, 2, 1);
+  await h.settle(1700);
+  assert.deepStrictEqual(lastWriteJson(h, tp).threats, threats.map((t, i) => i ? t : { ...t, likelihood: 1 }));
+  assert.deepStrictEqual(lastWriteJson(h, cp).countermeasures, cms.map((c, i) => i === 1 ? { ...c, addresses: [{ threat: "M1", residualImpact: 2 }] } : c));
+  assert.strictEqual(lastWriteJson(h, pp).acceptableRisk, 6);
+  assert.deepStrictEqual(lastWriteJson(h, pp).futureMetadata, futureMetadata);
+  h.deliverToHost({ cmd: "ready" }); await h.settle(); count(1, 2, 1);
+  assert.ok(h.must("#cms-matrix").textContent.includes("acceptable risk: 6"));
+  const savedProject = JSON.parse(h.readText(path.join(projectDir, pp))); delete savedProject.acceptableRisk;
+  h.overlay.set(path.join(projectDir, pp), JSON.stringify(savedProject)); h.overlay.set(kb, "");
+  await reopen(); count(1, 2, 1);
+  assert.ok(h.must("#threats-matrix").textContent.includes("acceptable risk: 12"));
+  assert.ok(h.must("#cms-matrix .matrix-legend").textContent.includes("Critical"));
+  assert.ok(cell("threats", 3, 4).classList.contains("boundary-top") && cell("threats", 3, 4).classList.contains("boundary-right"));
+  h.dom.window.RiskModel.matrix = undefined;
+  mode("initial");
+  assert.ok(h.$$(".risk-matrix").every((el) => el.textContent === "Risk matrix not available."));
+  h.overlay.delete(kb);
+  console.log("  Risk matrices: orientation, counts, modes, bands, thresholds, edges, edits, history, reload and read-only metadata passed.");
+}
+
 async function wizard(h) {
   const mod = await load(h, "wizard.ts");
   await mod.openWizard(ctx);
@@ -1518,6 +1590,7 @@ async function wizard(h) {
   await checkThreatCostPersistence(h, mod);
   await checkThreatCostControls(h, mod);
   await checkBugBar(h, mod);
+  await checkRiskMatrices(h, mod);
   checkLiveDomHandlers(h);
 }
 

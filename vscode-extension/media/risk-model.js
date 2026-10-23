@@ -55,6 +55,30 @@
     };
   }
 
+  /* Read-only matrix, ordered like the webapp: impact descending, likelihood ascending.
+     Off-grid values are deliberately omitted, never clamped or written back. */
+  function matrix(threats, cms, scheme, acceptableRisk, mode) {
+    var threshold = typeof acceptableRisk === "number" ? acceptableRisk : 12;
+    var ids = {}, cells = [];
+    (threats || []).forEach(function (t) {
+      if (t.status === "unfeasible") return;
+      var r = riskOf(t, cms, scheme);
+      var l = mode === "initial" ? t.likelihood : r.residualLikelihood;
+      var i = mode === "initial" ? t.impact : r.residualImpact;
+      (ids[l + "-" + i] = ids[l + "-" + i] || []).push(t.id);
+    });
+    for (var i = 5; i >= 1; i--) {
+      for (var l = 1; l <= 5; l++) {
+        var score = l * i, acceptable = score <= threshold;
+        cells.push({ likelihood: l, impact: i, score: score, band: band(score, scheme),
+          ids: ids[l + "-" + i] || [],
+          boundaryTop: i < 5 && acceptable !== (l * (i + 1) <= threshold),
+          boundaryRight: l < 5 && acceptable !== ((l + 1) * i <= threshold) });
+      }
+    }
+    return { cells: cells, bands: bandsOf(scheme), threshold: threshold };
+  }
+
   /* Bug Bar: impact is the worst plausible dimension (max of C/I/A/Safety). */
   function deriveImpact(d) {
     if (!d) return null;
@@ -233,7 +257,7 @@
     return cvss3BaseScore(vector);
   }
 
-  var api = { DEFAULT_BANDS: DEFAULT_BANDS, bandsOf: bandsOf, band: band, residual: residual, riskOf: riskOf, deriveImpact: deriveImpact, deriveLikelihood: deriveLikelihood, bandClass: bandClass, cvss3BaseScore: cvss3BaseScore, cvss4BaseScore: cvss4BaseScore, cvssBaseScore: cvssBaseScore, cvssExploitability: cvssExploitability, exposureFromInterface: exposureFromInterface };
+  var api = { matrix: matrix, DEFAULT_BANDS: DEFAULT_BANDS, bandsOf: bandsOf, band: band, residual: residual, riskOf: riskOf, deriveImpact: deriveImpact, deriveLikelihood: deriveLikelihood, bandClass: bandClass, cvss3BaseScore: cvss3BaseScore, cvss4BaseScore: cvss4BaseScore, cvssBaseScore: cvssBaseScore, cvssExploitability: cvssExploitability, exposureFromInterface: exposureFromInterface };
   g.RiskModel = api;
   if (typeof module !== "undefined" && module.exports) module.exports = api;
 })(typeof window !== "undefined" ? window : globalThis);

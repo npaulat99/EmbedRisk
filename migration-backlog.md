@@ -183,6 +183,29 @@ the orchestrator implements them directly (anchors: `renderProject()` and the de
       `unfeasible`. The bundled schema now accepts that status as well as integer likelihood 0–5,
       so a complete cost-calculator L0 assessment validates.
 - [ ] **EXT-M1 5×5 risk matrix heat map** (initial vs residual) (Deps: EXT-R1).
+  - Sized L after inspecting `RiskMatrix.tsx:12-167`, `Inspector.tsx:545-562` and `risk.ts:34-93`:
+    wizard display, DFD subtree filtering and cell navigation span multiple editors. Split into
+    independently runnable children; parent closes only when all children are verified.
+  - [x] **EXT-M1a Wizard initial/residual heat map** (M; Deps: EXT-R1).
+    - AC: Threat and countermeasure cards show a real 5×5 matrix with likelihood 1→5 left-to-right,
+      impact 5→1 top-to-bottom, scores, threat counts, configured band colours/legend and the webapp's
+      acceptable-risk boundary (project threshold, default 12). Default residual; initial/residual
+      switching is view-only, with no save, undo entry or project-data mutation.
+    - AC: Reuse RiskModel and a shared pure matrix helper; honour selected:false, independent per-axis
+      residual minima, unfeasible exclusion and L0/zero-impact omission from the 1–5 cells without
+      clamping or changing stored values. Refresh both surfaces after edits, host reload and undo/redo.
+    - AC: Model/reference and real-control jsdom tests cover 25-cell shape, orientation/count placement,
+      modes, configured/default bands and threshold, edge cases and read-only rendering with unknown
+      metadata preserved. Full baseline passes; no TRA fixture changes.
+  - [ ] **EXT-M1b DFD component heat map** (M; Deps: EXT-M1a).
+    - AC: Native DFD inspector uses the shared matrix with all-project/selected-component scope,
+      including transitive descendants, and initial/residual selection; selected:false, zero-risk,
+      configured scheme and threshold behaviour match the wizard/webapp. Runtime tests cover
+      selection, subtree rollup and read-only rendering; full baseline passes.
+  - [ ] **EXT-M1c Matrix cell threat navigation** (M; Deps: EXT-M1b).
+    - AC: Occupied cells support mouse/Enter/Space navigation to a single threat or an accessible
+      chooser for multiple threats, in wizard and DFD surfaces, matching RiskMatrix.tsx.
+      Empty cells do not navigate; interaction does not edit data. Runtime tests and full baseline pass.
 - [ ] **EXT-D1 Defects (09) editor** writing `09-defects/defects.json` in webapp format.
 - [ ] **EXT-X1 Threat/countermeasure JSON import/export** compatible with `ThreatCmImportExport.tsx`.
 
@@ -208,6 +231,10 @@ the orchestrator implements them directly (anchors: `renderProject()` and the de
   single-best-control, ignore `selected`/`unfeasible`; they also crash on projects without `steps` and with
   `KeyError: 'access'` on attackers lacking that field, e.g. RNI01). AC: same numbers as the `.mjs` generator on RL-100.
 
+- [ ] **EXT-C2 Preserve zero residual assessments on explicit CM save** (Deps: EXT-R1).
+  - AC: Explicit CM save preserves zero residual likelihood/impact like RiskModel and autosave;
+    regression tests cover both save paths and reopen without changing unknown link metadata.
+    Pre-existing clamp found during EXT-M1a review (`src/wizard.ts:362-363`); not changed by the matrix.
 - [ ] **EXT-V1 Validation diagnostics** in the Problems panel (port of `webapp/server/src/validate.js`).
 - [ ] **EXT-E1 Traceability CSV/JSON + SBOM export commands** (parity with server endpoints).
 - [ ] **EXT-KB1 Remove imported KB catalogue command.**
@@ -230,6 +257,7 @@ the orchestrator implements them directly (anchors: `renderProject()` and the de
 
 | Item | Impl | Review | Test | Notes |
 |---|---|---|---|---|
+| EXT-M1a | ✅ | ✅ PASS | ✅ PASS (compile, 142 reported model assertions, 6 parsed scripts + 6 runtime webviews, diff check) | Split L EXT-M1 into three M children; only wizard child complete. Threat/CM cards share a read-only initial/residual matrix, configured KB bands and project acceptable-risk boundary (default 12). Actual client risk-engine parity and real-control tests cover all 25 cells, orientation/counts, selected:false, per-axis minima, unfeasible/zero/off-grid exclusion, modes, edits, undo/redo/reload and unknown metadata; verifier's negative controls reject missing helper, wrong residual axis and broken mode selection. Rendering/mode changes produce no saves/history. Full baseline independently passed implementation and verification. No fixture edits or live VS Code/browser validation; jsdom does not validate painted layout/colours. EXT-M1 remains open for DFD integration (M1b) and cell navigation (M1c). Pre-existing explicit CM-save zero clamp recorded as EXT-C2, not changed. |
 | EXT-T1d | ✅ | ✅ PASS | ✅ PASS (compile, 140 model assertions, 6 parsed scripts + 6 runtime webviews, diff check) | Bundled threat schema accepts integer L0 and the webapp's unfeasible status. Full-document Ajv 2020-12 regressions cover L0–L5, existing statuses, unfeasible L0, missing likelihood, negative/above-range/fractional/string/null likelihoods and unknown status; the L0 regression failed before the fix. Declared the already-installed Ajv as a direct test dependency. No corresponding webapp threat schema exists in this checkout; checked its threat type and existing calculator parity coverage. No fixture changes or live VS Code validation. All EXT-T1 children are verified, closing EXT-T1. |
 | EXT-T1c2 | ✅ | ✅ PASS | ✅ PASS (compile, 122 model assertions, 6 parsed scripts + 6 runtime webviews, diff check) | Seven factor selectors and rationales match webapp labels/options and defaults. Explicit edits and rationale clearing accept the calculated proposal while preserving unknown nested metadata and input focus; unrelated edits/reopen retain manual overrides. Real-control regressions cover every factor/rationale, absent defaults, escaped text, configured computations, autosave, explicit-save handler, undo/redo and reopen; retained cost/legacy/Bug Bar and capability tests pass. No fixture/schema edits or live VS Code validation; explicit save uses the UI payload through the host handler (no save button). EXT-T1c closes with both children verified; EXT-T1 remains open for EXT-T1d schema compatibility. |
 | EXT-T1c1 | ✅ | ✅ PASS | ✅ PASS (compile, 122 model assertions, 6 parsed scripts + 6 runtime webviews, diff check) | Re-sized EXT-T1c L and split into two M children. Cost-based/default mode now offers skill/access controls, calculated probability/proposal and accepted-likelihood warnings using the tested browser helpers; Bug Bar remains available and legacy mode is retained. Explicit edits accept proposals with configured weights/access/thresholds and selected SL-C capability, including unfeasible L0 and recovery; render/mode changes and unrelated edits preserve stored manual overrides and metadata. Real-control regressions cover defaults, configured 12.5%→L3 and 10%→L2 calculations, capability transitions, mode switching, autosave and undo/redo/reopen; substituting the base wizard in memory fails on the missing skill control. No fixture/schema edits or manual VS Code validation. Parent EXT-T1/T1c remain open; factor/rationale controls and clearing remain EXT-T1c2, schema compatibility remains EXT-T1d. |

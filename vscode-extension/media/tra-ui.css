@@ -216,3 +216,21 @@ table.grid td.stat .statwrap { display: flex; flex-direction: column; gap: 4px; 
 .tabs .tab .badge { background: rgba(255,255,255,.25); border: 0; color: inherit; }
 .tabpane { display: none; }
 .tabpane.active { display: block; }
+
+/* ---- read-only risk matrices ---- */
+.risk-matrix { max-width: 430px; margin: 12px 0 20px; }
+.risk-matrix table { width: 100%; border-spacing: 3px; table-layout: fixed; margin-top: 6px; }
+.risk-matrix th { font-weight: normal; color: var(--text-dim); }
+.risk-matrix td[data-l] { position: relative; height: 42px; text-align: center; border: 2px solid transparent; }
+.risk-matrix td > span:not(.matrix-colour), .risk-matrix small, .risk-matrix b { position: relative; }
+.risk-matrix .matrix-colour { position: absolute; inset: 0; opacity: .42; border-radius: 3px; }
+.risk-matrix .hit .matrix-colour { opacity: 1; }
+.risk-matrix .hit { color: #fff; text-shadow: 0 1px 2px #000; }
+.risk-matrix .bandmark { margin-left: 3px; font-size: 9px; }
+.risk-matrix .n { display: block; font-size: 11px; min-height: 13px; }
+.risk-matrix td.boundary-top { border-top-color: var(--text); }
+.risk-matrix td.boundary-right { border-right-color: var(--text); }
+.risk-matrix .matrix-legend { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 6px; font-size: 11px; }
+.risk-matrix .matrix-legend i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; }
+.risk-matrix .matrix-legend .threshold-key { border-top: 2px solid var(--text); height: 0; vertical-align: middle; }
+.risk-matrix [aria-pressed="true"] { border-color: var(--accent); background: var(--surface-2); }

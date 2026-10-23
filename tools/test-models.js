@@ -536,6 +536,46 @@ const rUnfeasible = RiskModel.riskOf({ id: "T1", likelihood: 4, impact: 4, statu
 ok("unfeasible ⇒ initial 0 and residual 0/0", rUnfeasible.initial === 0 && rUnfeasible.residual === 0 && rUnfeasible.residualLikelihood === 0 && rUnfeasible.residualImpact === 0 && rUnfeasible.initialBand.name === "None");
 ok("band(0) is None", RiskModel.band(0, null).name === "None");
 
+/* ---------- Read-only matrix against the actual webapp client risk engine ---------- */
+const clientRiskModule = { exports: {} };
+require("node:vm").runInNewContext(esbuild.transformSync(
+  fs.readFileSync(path.join(root, "webapp/client/src/lib/risk.ts"), "utf8"),
+  { loader: "ts", format: "cjs" },
+).code, { module: clientRiskModule });
+const clientRisk = clientRiskModule.exports;
+const matrixThreats = freezeThreatInput([
+  { id: "M", likelihood: 5, impact: 5, future: { keep: ["metadata"] } },
+  ...[[0, 4], [4, 0], [6, 4], [1.5, 4], [3, 2]].map(([likelihood, impact], n) => ({ id: "E" + n, likelihood, impact })),
+  { id: "U", likelihood: 5, impact: 5, status: "unfeasible" },
+]);
+const matrixCms = freezeThreatInput([
+  { addresses: [{ threat: "M", residualLikelihood: 2 }] },
+  { addresses: [{ threat: "M", residualImpact: 3 }] },
+  { selected: false, addresses: [{ threat: "M", residualLikelihood: 0, residualImpact: 0 }] },
+]);
+const matrixBefore = JSON.stringify([matrixThreats, matrixCms]);
+for (const scheme of [null, { matrix: { bands: [] } }, freezeThreatInput({ matrix: { bands: [{ name: '<Custom & "band">', min: 1, max: 25, color: "#123456" }] } })]) {
+  for (const threshold of [undefined, 0, 6, 12, 25]) for (const mode of [undefined, "initial", "residual"]) {
+    const m = RiskModel.matrix(matrixThreats, matrixCms, scheme, threshold, mode), limit = threshold ?? 12;
+    assert.strictEqual(m.cells.length, 25);
+    assert.strictEqual(m.threshold, limit);
+    assert.strictEqual(JSON.stringify(m.bands), JSON.stringify(clientRisk.bandsOf(scheme)));
+    m.cells.forEach((c, n) => {
+      const l = n % 5 + 1, i = 5 - Math.floor(n / 5);
+      assert.deepStrictEqual([c.likelihood, c.impact, c.score], [l, i, l * i]);
+      assert.strictEqual(JSON.stringify(c.band), JSON.stringify(clientRisk.band(l * i, scheme)));
+      assert.deepStrictEqual(c.ids, matrixThreats.filter((t) => {
+        const r = clientRisk.riskOf(t, matrixCms, scheme);
+        return t.status !== "unfeasible" && (mode === "initial" ? t.likelihood === l && t.impact === i : r.residualLikelihood === l && r.residualImpact === i);
+      }).map((t) => t.id));
+      assert.strictEqual(c.boundaryTop, i < 5 && (l * i <= limit) !== (l * (i + 1) <= limit));
+      assert.strictEqual(c.boundaryRight, l < 5 && (l * i <= limit) !== ((l + 1) * i <= limit));
+    });
+  }
+}
+ok("matrix: 25 oriented cells, client parity, modes, bands, thresholds and off-grid exclusions", true);
+ok("matrix: frozen threats/controls and unknown metadata remain unchanged", JSON.stringify([matrixThreats, matrixCms]) === matrixBefore);
+
 /* ---------- Threat schema: cost-based feasibility includes unfeasible L0 ---------- */
 const Ajv2020 = require(path.join(root, "vscode-extension/node_modules/ajv/dist/2020"));
 const threatSchema = JSON.parse(fs.readFileSync(path.join(root, "vscode-extension/runtime/.assets/schema/threats.schema.json"), "utf8"));
