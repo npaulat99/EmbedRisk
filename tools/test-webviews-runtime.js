@@ -48,6 +48,7 @@ class Harness {
     this.toWebview = [];        // messages posted by the host
     this.toHost = [];           // messages posted by the webview
     this.commands = [];         // vscode.commands.executeCommand ids
+    this.commandCalls = [];     // vscode.commands.executeCommand ids and arguments
     this.pending = new Set();
     this.outbox = [];           // host messages posted before the DOM exists
     this.fileWatchers = [];
@@ -86,7 +87,7 @@ class Harness {
       },
       EventEmitter: class EventEmitter { constructor() { this.event = disposable; } fire() { } dispose() { } },
       commands: {
-        executeCommand: async (id) => { h.commands.push(id); return undefined; },
+        executeCommand: async (id, ...args) => { h.commands.push(id); h.commandCalls.push({ id, args }); return undefined; },
         registerCommand: disposable,
       },
       window: {
@@ -1241,7 +1242,7 @@ async function checkRiskMatrices(h, mod) {
   const name = '<img src=x onerror="alert(1)"> & "band"';
   for (const [rel, data] of [[tp, { threats }], [cp, { countermeasures: cms }], [pp, project]]) h.overlay.set(path.join(projectDir, rel), JSON.stringify(data));
   h.overlay.set(kb, JSON.stringify({ matrix: { bands: [{ name, min: 1, max: 25, color: "#123456" }] } }));
-  const reopen = async () => { h.close(); await mod.openWizard(ctx); h.openDom(); await h.settle(); };
+  const reopen = async (focusThreatId) => { h.close(); await mod.openWizard(ctx, focusThreatId); h.openDom(); await h.settle(); };
   const cell = (mount, l, i) => h.must(`#${mount}-matrix td[data-l="${l}"][data-i="${i}"]`);
   const count = (l, i, n) => { for (const mount of ["threats", "cms"]) assert.strictEqual(cell(mount, l, i).querySelector(".n").textContent, n ? String(n) : ""); };
   const mode = (value, mount = "threats") => h.click(`#${mount}-matrix [data-mode="${value}"]`);
@@ -1261,6 +1262,40 @@ async function checkRiskMatrices(h, mod) {
     assert.strictEqual(h.$(`#${mount}-matrix img`), null);
   }
   count(2, 3, 2); mode("initial"); count(5, 5, 1); count(2, 3, 1); mode("residual", "cms"); count(2, 3, 2);
+  const navigateRow = (id) => h.must(`#threats-body tr[data-threat-row="${id}"]`);
+  for (const mount of ["threats", "cms"]) {
+    mode("initial", mount);
+    const single = cell(mount, 5, 5);
+    assert.strictEqual(single.getAttribute("role"), "button");
+    assert.strictEqual(single.tabIndex, 0);
+    assert.ok(single.getAttribute("aria-label").includes("M1"));
+    h.click(single);
+    assert.strictEqual(h.dom.window.document.activeElement, navigateRow("M1"), `${mount} single click did not focus its threat row`);
+    h.key("Enter", { target: single });
+    assert.strictEqual(h.dom.window.document.activeElement, navigateRow("M1"), `${mount} Enter did not focus its threat row`);
+    h.key(" ", { target: single });
+    assert.strictEqual(h.dom.window.document.activeElement, navigateRow("M1"), `${mount} Space did not focus its threat row`);
+    const empty = cell(mount, 4, 4);
+    assert.strictEqual(empty.hasAttribute("role"), false, "empty wizard cell was actionable");
+    h.click(empty); h.key("Enter", { target: empty }); h.key(" ", { target: empty });
+    assert.strictEqual(h.$(".matrix-threat-overlay"), null, "empty wizard cell opened a chooser");
+    mode("residual", mount);
+    const multiple = cell(mount, 2, 3);
+    h.click(multiple);
+    assert.strictEqual(h.must('[role="dialog"][aria-modal="true"]').querySelectorAll(".matrix-threat-choice").length, 2);
+    assert.ok(h.must('[role="dialog"]').textContent.includes("M1 — Matrix"));
+    assert.ok(h.must('[role="dialog"]').textContent.includes("M2 — Untitled threat"));
+    h.click('[aria-label="Close threat chooser"]');
+    assert.strictEqual(h.$(".matrix-threat-overlay"), null, "wizard chooser close did not dismiss");
+    h.key("Enter", { target: multiple });
+    h.click('.matrix-threat-choice');
+    assert.strictEqual(h.dom.window.document.activeElement, navigateRow("M1"), `${mount} chooser selection did not focus selected threat`);
+  }
+  assert.strictEqual(saves(), before, "matrix navigation saved wizard data");
+  assert.deepStrictEqual([tp, cp, pp].map((p) => h.readText(path.join(projectDir, p))), diskBefore, "matrix navigation wrote project data");
+  await reopen("M2");
+  assert.strictEqual(h.dom.window.document.activeElement, navigateRow("M2"), "wizard threat navigation did not focus requested row");
+  assert.strictEqual(saves(), before, "initial threat navigation saved wizard data");
   await h.settle(1700);
   assert.strictEqual(saves(), before, "render/mode switch saved");
   assert.ok(h.must("#undoBtn").disabled && h.must("#redoBtn").disabled, "view-only mode entered history");
@@ -1701,6 +1736,7 @@ async function nativeDfdEditor(h) {
   const threats = [
     { id: "ROOT", likelihood: 5, impact: 5, components: ["DEV"] },
     { id: "CHILD", likelihood: 2, impact: 3, components: ["C-2"] },
+    { id: "CHILD2", title: "Second child", likelihood: 2, impact: 3, components: ["C-2"] },
     { id: "GRANDCHILD", likelihood: 1, impact: 4, components: ["C-3"] },
     { id: "OTHER", likelihood: 5, impact: 4, components: ["OUTSIDE"] },
     { id: "ZERO", likelihood: 0, impact: 4, components: ["C-3"] },
@@ -1736,7 +1772,7 @@ async function nativeDfdEditor(h) {
   assert.strictEqual(matrixCount(5, 4), "1", "all-project scope omitted unrelated components");
   assert.strictEqual(matrixCount(1, 2), "1", "residual coordinates did not use shared risk model");
   assert.strictEqual(matrixCount(1, 4), "", "off-grid or unfeasible threat was clamped into a cell");
-  assert.strictEqual(h.$$("#dfd-risk-matrix td[data-l]").reduce((sum, cell) => sum + Number(cell.querySelector(".n").textContent || 0), 0), 4,
+  assert.strictEqual(h.$$("#dfd-risk-matrix td[data-l]").reduce((sum, cell) => sum + Number(cell.querySelector(".n").textContent || 0), 0), 5,
     "zero-risk, unfeasible, or off-grid threats appeared in matrix cells");
   assert.ok(h.must("#dfd-risk-matrix").textContent.includes("acceptable risk: 6"));
   assert.ok(h.must("#dfd-risk-matrix .matrix-legend").textContent.includes("Custom"));
@@ -1752,8 +1788,36 @@ async function nativeDfdEditor(h) {
   assert.ok(h.must("#dfd-risk-matrix").textContent.includes("selected component + descendants"));
   assert.strictEqual(matrixCount(5, 4), "", "selected component scope included unrelated threat");
   assert.strictEqual(matrixCount(5, 5), "1", "selected component omitted directly linked threat");
-  assert.strictEqual(matrixCount(2, 3), "1", "selected component omitted child threat");
+  assert.strictEqual(matrixCount(2, 3), "2", "selected component omitted child threats");
   assert.strictEqual(matrixCount(1, 2), "1", "selected component omitted transitive grandchild threat");
+  assert.strictEqual(matrixCell(5, 5).getAttribute("role"), "button");
+  const navigationMessages = () => h.toHost.filter((m) => m.type === "navigateThreat");
+  const navigationBefore = navigationMessages().length;
+  const rootCell = matrixCell(5, 5);
+  h.click(rootCell);
+  h.key("Enter", { target: rootCell });
+  h.key(" ", { target: rootCell });
+  assert.deepStrictEqual(navigationMessages().slice(navigationBefore).map((m) => m.threatId), ["ROOT", "ROOT", "ROOT"],
+    "DFD click/Enter/Space did not navigate to the sole threat");
+  const empty = matrixCell(4, 4);
+  assert.strictEqual(empty.hasAttribute("role"), false, "empty DFD cell was actionable");
+  h.click(empty); h.key("Enter", { target: empty }); h.key(" ", { target: empty });
+  assert.strictEqual(navigationMessages().length, navigationBefore + 3, "empty DFD cell navigated");
+  const multiple = matrixCell(2, 3);
+  assert.deepStrictEqual(JSON.parse(multiple.dataset.matrixThreats), ["CHILD", "CHILD2"]);
+  h.click(multiple);
+  assert.strictEqual(h.must('[role="dialog"][aria-modal="true"]').querySelectorAll(".matrix-threat-choice").length, 2,
+    "DFD chooser did not respect component-scoped cell threats");
+  assert.ok(h.must('[role="dialog"]').textContent.includes("CHILD — Untitled threat"));
+  assert.ok(h.must('[role="dialog"]').textContent.includes("CHILD2 — Second child"));
+  h.key("Escape", { target: h.must('[role="dialog"]') });
+  assert.strictEqual(h.$(".matrix-threat-overlay"), null, "DFD chooser Escape did not dismiss");
+  h.click(multiple);
+  h.click([...h.$$(".matrix-threat-choice")].find((button) => button.textContent.includes("CHILD2")));
+  assert.strictEqual(navigationMessages().at(-1).threatId, "CHILD2", "DFD chooser did not navigate selected threat");
+  await h.settle();
+  assert.ok(h.commandCalls.some((call) => call.id === "embedrisk.wizard" && call.args[0] === "CHILD2"),
+    "DFD navigation did not open the wizard focused on the selected threat");
   assert.strictEqual(h.writes.length, matrixWrites, "matrix interactions wrote DFD data");
   assert.ok(h.must("#undo").disabled && h.must("#redo").disabled, "matrix interactions entered DFD history");
   delete project.acceptableRisk;

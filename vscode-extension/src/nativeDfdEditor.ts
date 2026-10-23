@@ -102,6 +102,9 @@ export class NativeDfdEditor implements vscode.CustomTextEditorProvider {
     panel.webview.onDidReceiveMessage(async (m) => {
       if (m.type === "ready") { await post(); }
       else if (m.type === "save") { await save(m.dfd); }
+      else if (m.type === "navigateThreat" && typeof m.threatId === "string") {
+        await vscode.commands.executeCommand("embedrisk.wizard", m.threatId);
+      }
     });
   }
 
@@ -267,6 +270,32 @@ function drawCanvas(){
   $('status').textContent=connect?(connectFrom?('Connect: click the target for '+label(connectFrom)):'Connect: click the source node'):'';
 }
 function chip(text,on,attrs,title){return '<span class="chip'+(on?' on':'')+'" role="button" tabindex="0" '+attrs+(title?' title="'+esc(title)+'"':'')+'>'+esc(text)+'</span>';}
+function navigateThreat(id){vs.postMessage({type:'navigateThreat',threatId:id});}
+function matrixThreatChooser(ids,opener){
+  if(ids.length===1){navigateThreat(ids[0]);return;}
+  if(ids.length<2)return;
+  var overlay=document.createElement('div');overlay.className='matrix-threat-overlay';
+  var dialog=document.createElement('div');dialog.className='matrix-threat-dialog';dialog.setAttribute('role','dialog');dialog.setAttribute('aria-modal','true');dialog.setAttribute('aria-labelledby','matrix-threat-title');
+  var title=document.createElement('h2');title.id='matrix-threat-title';title.textContent='Threats at selected risk';
+  var close=document.createElement('button');close.type='button';close.className='btn sm';close.setAttribute('aria-label','Close threat chooser');close.textContent='Close';
+  var head=document.createElement('div');head.className='matrix-threat-head';head.appendChild(title);head.appendChild(close);dialog.appendChild(head);
+  var finish=function(){overlay.remove();if(opener&&opener.focus)opener.focus();};
+  close.addEventListener('click',finish);
+  overlay.addEventListener('click',function(e){if(e.target===overlay)finish();});
+  ids.forEach(function(id){
+    var threat=threats.find(function(t){return t.id===id;});if(!threat)return;
+    var button=document.createElement('button');button.type='button';button.className='matrix-threat-choice';
+    button.textContent=String(id)+' — '+String(threat.title||'Untitled threat');
+    button.addEventListener('click',function(){finish();navigateThreat(id);});
+    dialog.appendChild(button);
+  });
+  overlay.appendChild(dialog);document.body.appendChild(overlay);close.focus();
+}
+function activateMatrixCell(cell){
+  if(!cell||!cell.dataset.matrixThreats)return;
+  var ids;try{ids=JSON.parse(cell.dataset.matrixThreats);}catch(_){return;}
+  if(Array.isArray(ids))matrixThreatChooser(ids,cell);
+}
 function renderRiskMatrix(componentRef){
   if(!R||!R.matrix)return '<div class="risk-matrix">Risk matrix not available.</div>';
   var ids=null, rolledUp=false, scopedThreats=threats||[];
@@ -287,7 +316,7 @@ function renderRiskMatrix(componentRef){
     '</div><table aria-label="'+matrixMode+' risk"><tbody>';
   m.cells.forEach(function(c){
     if(c.likelihood===1)html+='<tr><th scope="row">'+c.impact+'</th>';
-    html+='<td data-l="'+c.likelihood+'" data-i="'+c.impact+'" class="'+(c.ids.length?'hit ':'')+(c.boundaryTop?'boundary-top ':'')+(c.boundaryRight?'boundary-right':'')+'" title="'+esc('L'+c.likelihood+' × I'+c.impact+' = '+c.score+' ('+c.band.name+')'+(c.ids.length?' — '+c.ids.join(', '):''))+'">'+
+    html+='<td data-l="'+c.likelihood+'" data-i="'+c.impact+'" '+(c.ids.length?'role="button" tabindex="0" data-matrix-threats="'+esc(JSON.stringify(c.ids))+'" aria-label="'+esc('Likelihood '+c.likelihood+' by impact '+c.impact+', '+c.band.name+', '+c.ids.length+' threat(s): '+c.ids.join(', ')+'. Activate to open.')+'" ':'')+'class="'+(c.ids.length?'hit ':'')+(c.boundaryTop?'boundary-top ':'')+(c.boundaryRight?'boundary-right':'')+'" title="'+esc('L'+c.likelihood+' × I'+c.impact+' = '+c.score+' ('+c.band.name+')'+(c.ids.length?' — '+c.ids.join(', '):''))+'">'+
       '<span class="matrix-colour" style="background-color:'+esc(c.band.color)+'"></span><span>'+c.score+'</span><small class="bandmark" aria-hidden="true">'+esc(c.band.name[0])+'</small><b class="n">'+(c.ids.length||'')+'</b></td>';
     if(c.likelihood===5)html+='</tr>';
   });
@@ -447,6 +476,8 @@ $('insp').addEventListener('change',function(e){var t=e.target,n=focus?node(focu
   else if(t.dataset.flow){persist();}
 });
 $('insp').addEventListener('click',function(e){
+  var matrixCell=e.target.closest&&e.target.closest('[data-matrix-threats]');
+  if(matrixCell){activateMatrixCell(matrixCell);return;}
   var modeButton=e.target.closest('[data-matrix-mode]');
   if(modeButton){matrixMode=modeButton.dataset.matrixMode;renderInspector();return;}
   var b=e.target.closest('[data-mem],[data-delflow],#ins-addflow');if(!b)return;var n=focus?node(focus):null;if(!n)return;
@@ -457,6 +488,13 @@ $('insp').addEventListener('click',function(e){
 
 $('ovok').addEventListener('click',ovOk);$('ovcancel').addEventListener('click',ovCancel);
 window.addEventListener('keydown',function(e){
+  if(e.key==='Escape'){
+    var dialog=document.querySelector('.matrix-threat-overlay');if(dialog){var close=dialog.querySelector('[aria-label="Close threat chooser"]');if(close)close.click();e.preventDefault();return;}
+  }
+  if(e.key==='Enter'||e.key===' '){
+    var cell=e.target.closest&&e.target.closest('#dfd-risk-matrix td[data-l]');
+    if(cell){e.preventDefault();e.stopPropagation();if(cell.hasAttribute('data-matrix-threats'))activateMatrixCell(cell);return;}
+  }
   if($('ov').style.display==='flex'){if(e.key==='Enter'){ovOk();e.preventDefault();}if(e.key==='Escape'){ovCancel();e.preventDefault();}return;}
   var tag=(e.target&&e.target.tagName)||'';if(tag==='INPUT'||tag==='SELECT'||tag==='TEXTAREA')return;
   if((e.ctrlKey||e.metaKey)&&!e.altKey){var k=e.key.toLowerCase();if(k==='z'&&!e.shiftKey){undo();e.preventDefault();return;}if(k==='y'||(k==='z'&&e.shiftKey)){redo();e.preventDefault();return;}}

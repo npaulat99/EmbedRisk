@@ -188,7 +188,7 @@ function countermeasureFieldError(rows: unknown): string | undefined {
   }
 }
 
-export async function openWizard(ctx: vscode.ExtensionContext) {
+export async function openWizard(ctx: vscode.ExtensionContext, focusThreatId?: string) {
   const f = await locate();
   if (!f) { vscode.window.showWarningMessage("No EmbedRisk project found. Use 'EmbedRisk: New Project' to create one."); return; }
   const media = vscode.Uri.joinPath(ctx.extensionUri, "media");
@@ -202,7 +202,7 @@ export async function openWizard(ctx: vscode.ExtensionContext) {
   const csp = `default-src 'none'; img-src ${panel.webview.cspSource}; style-src ${panel.webview.cspSource} 'unsafe-inline'; script-src 'nonce-${nonce}' ${panel.webview.cspSource};`;
   panel.webview.html = shell(cssUri, riskUri, attackTreeUri, threatUri, logoUri, csp, nonce);
 
-  const sendInit = async () => panel.webview.postMessage({ cmd: "init", data: await buildData(f.proj), bugBar: await rdRaw(ctx.extensionUri, "runtime/.assets/knowledge-base/bug-bar.json", null), scheme: await rdRaw(ctx.extensionUri, "runtime/.assets/knowledge-base/risk-scheme.json", null) });
+  const sendInit = async () => panel.webview.postMessage({ cmd: "init", data: await buildData(f.proj), focusThreatId, bugBar: await rdRaw(ctx.extensionUri, "runtime/.assets/knowledge-base/bug-bar.json", null), scheme: await rdRaw(ctx.extensionUri, "runtime/.assets/knowledge-base/risk-scheme.json", null) });
   const counts = async () => (await buildData(f.proj)).counts;
 
   panel.webview.onDidReceiveMessage(async (m) => {
@@ -783,6 +783,38 @@ function doAutoSave(){
 function pill(score,band){return '<span class="pill '+R.bandClass(band.name)+'">'+score+' · '+band.name+'</span>';}
 function riskCell(t){var r=R.riskOf(t,cms);return pill(r.initial,r.initialBand)+'<span class="arrow">&rarr;</span>'+pill(r.residual,r.residualBand);}
 function chip(text,on,attrs,title){return '<span class="chip'+(on?' on':'')+'" role="button" tabindex="0" '+attrs+(title?' title="'+esc(title)+'"':'')+'>'+esc(text)+'</span>';}
+function navigateThreat(id){
+  if(!threats.some(function(t){return t.id===id;}))return;
+  var card=$('#card-threats');
+  if(card&&card.scrollIntoView)card.scrollIntoView({behavior:'smooth',block:'start'});
+  var row=Array.prototype.find.call(document.querySelectorAll('#threats-body tr[data-threat-row]'),function(el){return el.dataset.threatRow===id;});
+  if(row){if(row.scrollIntoView)row.scrollIntoView({behavior:'smooth',block:'center'});row.focus();}
+}
+function matrixThreatChooser(ids,opener){
+  if(ids.length===1){navigateThreat(ids[0]);return;}
+  if(ids.length<2)return;
+  var overlay=document.createElement('div');overlay.className='matrix-threat-overlay';
+  var dialog=document.createElement('div');dialog.className='matrix-threat-dialog';dialog.setAttribute('role','dialog');dialog.setAttribute('aria-modal','true');dialog.setAttribute('aria-labelledby','matrix-threat-title');
+  var title=document.createElement('h2');title.id='matrix-threat-title';title.textContent='Threats at selected risk';
+  var close=document.createElement('button');close.type='button';close.className='btn sm';close.setAttribute('aria-label','Close threat chooser');close.textContent='Close';
+  var head=document.createElement('div');head.className='matrix-threat-head';head.appendChild(title);head.appendChild(close);dialog.appendChild(head);
+  var finish=function(){overlay.remove();if(opener&&opener.focus)opener.focus();};
+  close.addEventListener('click',finish);
+  overlay.addEventListener('click',function(e){if(e.target===overlay)finish();});
+  ids.forEach(function(id){
+    var threat=threats.find(function(t){return t.id===id;});if(!threat)return;
+    var button=document.createElement('button');button.type='button';button.className='matrix-threat-choice';
+    button.textContent=String(id)+' — '+String(threat.title||'Untitled threat');
+    button.addEventListener('click',function(){finish();navigateThreat(id);});
+    dialog.appendChild(button);
+  });
+  overlay.appendChild(dialog);document.body.appendChild(overlay);close.focus();
+}
+function activateMatrixCell(cell){
+  if(!cell||!cell.dataset.matrixThreats)return;
+  var ids;try{ids=JSON.parse(cell.dataset.matrixThreats);}catch(_){return;}
+  if(Array.isArray(ids))matrixThreatChooser(ids,cell);
+}
 
 const STEPS=[
   ['01','Project','Scope, device, SL-C','scroll','#card-project','project'],
@@ -946,7 +978,7 @@ function renderMatrices(){
   }).join('')+'</div><table aria-label="'+matrixMode+' risk"><tbody>';
   m.cells.forEach(function(c){
     if(c.likelihood===1)html+='<tr><th scope="row">'+c.impact+'</th>';
-    html+='<td data-l="'+c.likelihood+'" data-i="'+c.impact+'" class="'+(c.ids.length?'hit ':'')+(c.boundaryTop?'boundary-top ':'')+(c.boundaryRight?'boundary-right':'')+'" title="'+esc('L'+c.likelihood+' × I'+c.impact+' = '+c.score+' ('+c.band.name+')'+(c.ids.length?' — '+c.ids.join(', '):''))+'">'+
+    html+='<td data-l="'+c.likelihood+'" data-i="'+c.impact+'" '+(c.ids.length?'role="button" tabindex="0" data-matrix-threats="'+esc(JSON.stringify(c.ids))+'" aria-label="'+esc('Likelihood '+c.likelihood+' by impact '+c.impact+', '+c.band.name+', '+c.ids.length+' threat(s): '+c.ids.join(', ')+'. Activate to open.')+'" ':'')+'class="'+(c.ids.length?'hit ':'')+(c.boundaryTop?'boundary-top ':'')+(c.boundaryRight?'boundary-right':'')+'" title="'+esc('L'+c.likelihood+' × I'+c.impact+' = '+c.score+' ('+c.band.name+')'+(c.ids.length?' — '+c.ids.join(', '):''))+'">'+
       '<span class="matrix-colour"></span><span>'+c.score+'</span><small class="bandmark" aria-hidden="true">'+esc(c.band.name[0])+'</small><b class="n" aria-label="'+c.ids.length+' threats">'+(c.ids.length||'')+'</b></td>';
     if(c.likelihood===5)html+='</tr>';
   });
@@ -1011,7 +1043,7 @@ function renderThreats(){
         '<div class="field"><label>Next review date</label><input class="inp" type="date" data-i='+i+' data-k="reviewDate" value="'+esc(t.reviewDate||'')+'"></div>'+
       '</div>':
       '';
-    var mainRow='<tr>'+
+    var mainRow='<tr id="threat-row-'+i+'" data-threat-row="'+esc(t.id)+'" tabindex="-1">'+
       '<td class="narrow"><input class="inp" data-i='+i+' data-k="id" value="'+esc(t.id)+'"></td>'+
       '<td><input class="inp" data-i='+i+' data-k="title" value="'+esc(t.title)+'"></td>'+
       '<td><div class="chips">'+st+'</div></td>'+
@@ -1246,6 +1278,8 @@ function renderRequirements(){
 function toast(kind,text){var e=$('#'+kind);e.textContent=text;e.style.display='block';var o=$(kind==='err'?'#ok':'#err');o.style.display='none';if(kind==='ok')setTimeout(function(){e.style.display='none';},2500);}
 
 document.addEventListener('click',function(e){
+  var matrixCell=e.target.closest('[data-matrix-threats]');
+  if(matrixCell){activateMatrixCell(matrixCell);return;}
   var tabEl=e.target.closest('[data-asmtab],[data-systab]');
   if(tabEl){if(tabEl.dataset.asmtab){asmTab=tabEl.dataset.asmtab;renderAssumptions();}else{sysTab=tabEl.dataset.systab;renderSystem();}return;}
   var el=e.target.closest('[data-act],[data-kind],[data-cmd],[data-role]');
@@ -1452,7 +1486,7 @@ document.addEventListener('input',function(e){
 window.addEventListener('message',function(ev){
   var m=ev.data;
   if(m.cmd==='init'){bugBar=m.bugBar||null;riskScheme=m.scheme||null;}
-  if(m.cmd==='init'){threats=m.data.threats||[];cms=m.data.cms||[];comps=m.data.comps||[];counts=m.data.counts||{};changeTracker=m.data.changeTracker||changeTracker;assumptions=m.data.assumptions||assumptions;system=m.data.system||system;requirements=m.data.requirements||[];try{renderProject(m.data.project);}catch(e){console.error('project',e);}try{renderRail();}catch(e){console.error('rail',e);}try{renderThreats();}catch(e){console.error('threats',e);}try{renderCms();}catch(e){console.error('cms',e);}try{renderAssumptions();}catch(e){console.error('assumptions',e);}try{renderSystem();}catch(e){console.error('system',e);}try{renderRequirements();}catch(e){console.error('requirements',e);}try{renderVersions();}catch(e){console.error('versions',e);}clearHistory();}
+  if(m.cmd==='init'){threats=m.data.threats||[];cms=m.data.cms||[];comps=m.data.comps||[];counts=m.data.counts||{};changeTracker=m.data.changeTracker||changeTracker;assumptions=m.data.assumptions||assumptions;system=m.data.system||system;requirements=m.data.requirements||[];try{renderProject(m.data.project);}catch(e){console.error('project',e);}try{renderRail();}catch(e){console.error('rail',e);}try{renderThreats();}catch(e){console.error('threats',e);}try{renderCms();}catch(e){console.error('cms',e);}try{renderAssumptions();}catch(e){console.error('assumptions',e);}try{renderSystem();}catch(e){console.error('system',e);}try{renderRequirements();}catch(e){console.error('requirements',e);}try{renderVersions();}catch(e){console.error('versions',e);}clearHistory();if(m.focusThreatId)navigateThreat(m.focusThreatId);}
   else if(m.cmd==='threats'){threats=m.threats||[];counts=m.counts||counts;renderThreats();renderCms();renderRequirements();renderRail();toast('ok',m.text);}
   else if(m.cmd==='cms'){cms=m.cms||[];counts=m.counts||counts;renderCms();updatePills();renderRequirements();renderRail();toast('ok',m.text);}
   else if(m.cmd==='assumptions'){assumptions=m.assumptions||assumptions;counts=m.counts||counts;renderAssumptions();renderRail();toast('ok',m.text);}
@@ -1464,6 +1498,13 @@ window.addEventListener('message',function(ev){
   else if(m.cmd==='err'){toast('err',m.text);}
 });
 document.addEventListener('keydown',function(e){
+  if(e.key==='Escape'){
+    var dialog=document.querySelector('.matrix-threat-overlay');if(dialog){var close=dialog.querySelector('[aria-label="Close threat chooser"]');if(close)close.click();e.preventDefault();return;}
+  }
+  if(e.key==='Enter'||e.key===' '){
+    var cell=e.target.closest&&e.target.closest('[data-matrix-threats]');
+    if(cell){e.preventDefault();activateMatrixCell(cell);return;}
+  }
   if(!(e.ctrlKey||e.metaKey)||e.altKey)return;
   var k=e.key.toLowerCase();
   if(k==='z'&&!e.shiftKey){e.preventDefault();undo();}

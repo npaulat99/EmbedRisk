@@ -222,6 +222,8 @@ table.grid td.stat .statwrap { display: flex; flex-direction: column; gap: 4px; 
 .risk-matrix table { width: 100%; border-spacing: 3px; table-layout: fixed; margin-top: 6px; }
 .risk-matrix th { font-weight: normal; color: var(--text-dim); }
 .risk-matrix td[data-l] { position: relative; height: 42px; text-align: center; border: 2px solid transparent; }
+.risk-matrix td[data-matrix-threats] { cursor: pointer; }
+.risk-matrix td[data-matrix-threats]:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 .risk-matrix td > span:not(.matrix-colour), .risk-matrix small, .risk-matrix b { position: relative; }
 .risk-matrix .matrix-colour { position: absolute; inset: 0; opacity: .42; border-radius: 3px; }
 .risk-matrix .hit .matrix-colour { opacity: 1; }
@@ -234,3 +236,9 @@ table.grid td.stat .statwrap { display: flex; flex-direction: column; gap: 4px; 
 .risk-matrix .matrix-legend i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; }
 .risk-matrix .matrix-legend .threshold-key { border-top: 2px solid var(--text); height: 0; vertical-align: middle; }
 .risk-matrix [aria-pressed="true"] { border-color: var(--accent); background: var(--surface-2); }
+.matrix-threat-overlay { position: fixed; inset: 0; z-index: 1000; display: flex; align-items: center; justify-content: center; padding: 16px; background: rgba(0,0,0,.45); }
+.matrix-threat-dialog { width: min(460px, 100%); max-height: 80vh; overflow: auto; padding: 14px; border: 1px solid var(--border-strong); border-radius: var(--radius); background: var(--surface); color: var(--text); box-shadow: 0 8px 32px rgba(0,0,0,.3); }
+.matrix-threat-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 8px; }
+.matrix-threat-head h2 { margin: 0; font-size: 16px; }
+.matrix-threat-choice { display: block; width: 100%; margin: 4px 0; padding: 8px 10px; border: 1px solid var(--border); border-radius: 6px; background: var(--surface-2); color: var(--text); text-align: left; cursor: pointer; }
+.matrix-threat-choice:hover { border-color: var(--accent); }

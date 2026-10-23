@@ -232,7 +232,7 @@ export function activate(ctx: vscode.ExtensionContext) {
     }),
     vscode.commands.registerCommand("embedrisk.newProject", createProjectCommand),
     vscode.commands.registerCommand("embedrisk.openWebapp", openWebappCommand),
-    vscode.commands.registerCommand("embedrisk.wizard", () => openWizard(ctx)),
+    vscode.commands.registerCommand("embedrisk.wizard", (focusThreatId?: string) => openWizard(ctx, focusThreatId)),
     vscode.commands.registerCommand("embedrisk.kbBrowse", () => openKbBrowser(ctx)),
     vscode.commands.registerCommand("embedrisk.dfdNative", async () => {
       const u = await find();
