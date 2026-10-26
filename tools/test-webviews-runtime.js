@@ -1438,6 +1438,43 @@ async function wizard(h) {
   h.click("#redoBtn");
   await h.settle(1700);
   assert.strictEqual(lastWriteJson(h, projectPath).title, title, "redo was not saved");
+  h.click('[data-act="addDefect"]');
+  const defectInit = h.toWebview.find((m) => m.cmd === "init").data;
+  const defectComponent = defectInit.system.components[0].id;
+  const defectThreat = defectInit.threats[0].id;
+  const defectField = (key) => `#defects-list [data-di="0"][data-k="${key}"]`;
+  assert.strictEqual(h.must(defectField("id")).value, "D1", "new defect id");
+  assert.strictEqual(h.must(defectField("severity")).value, "medium", "new defect severity default");
+  assert.strictEqual(h.must(defectField("status")).value, "open", "new defect status default");
+  assert.match(h.must(defectField("discovered")).value, /^\d{4}-\d{2}-\d{2}$/, "new defect discovered date default");
+  h.setValue(defectField("title"), "Runtime defect");
+  h.setValue(defectField("cve"), "CVE-2026-1234");
+  h.setValue(defectField("component"), defectComponent);
+  h.setValue(defectField("severity"), "critical");
+  h.setValue(defectField("status"), "triaged");
+  h.setValue(defectField("discovered"), "2026-10-23");
+  h.setValue(defectField("fixedIn"), "FW 2.5");
+  h.setValue(defectField("threatRef"), defectThreat);
+  h.setValue(defectField("note"), "Reassess after applying the fix.");
+  await h.settle(1700);
+  const defectSave = h.lastToHost((m) => m.cmd === "autoSave");
+  assert.deepStrictEqual(defectSave.data.defects, [{
+    id: "D1", title: "Runtime defect", severity: "critical", status: "triaged",
+    discovered: "2026-10-23", cve: "CVE-2026-1234", component: defectComponent,
+    fixedIn: "FW 2.5", threatRef: defectThreat, note: "Reassess after applying the fix.",
+  }], "defect fields or component/threat references were not retained");
+  const defectsPath = "09-defects/defects.json";
+  assert.deepStrictEqual(lastWriteJson(h, defectsPath), { defects: defectSave.data.defects }, "host did not write the webapp defects envelope");
+  h.close();
+  await mod.openWizard(ctx);
+  h.openDom();
+  await h.settle();
+  for (const [key, value] of Object.entries(defectSave.data.defects[0])) {
+    assert.strictEqual(h.must(`#defects-list [data-di="0"][data-k="${key}"]`).value, value, `saved defect field was not restored: ${key}`);
+  }
+  h.click('#defects-list [data-act="delDefect"]');
+  await h.settle(1700);
+  assert.deepStrictEqual(lastWriteJson(h, defectsPath), { defects: [] }, "deleted defect was not persisted");
   h.close();
   await mod.openWizard(ctx);
   h.openDom();

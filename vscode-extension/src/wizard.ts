@@ -77,6 +77,7 @@ async function buildData(proj: vscode.Uri) {
   const project = await rdRaw(proj, "01-project-description/project.json", {});
   const threats = (await rdRaw(proj, "06-threats/threats.json", { threats: [] })).threats || [];
   const cms = (await rdRaw(proj, "08-countermeasures/countermeasures.json", { countermeasures: [] })).countermeasures || [];
+  const defects = (await rdRaw(proj, "09-defects/defects.json", { defects: [] })).defects || [];
   const system = await rdRaw(proj, "03-system-assets/system.json", { components: [], assets: [] });
   const assumptions = await rdRaw(proj, "02-assumptions/assumptions.json", {});
   const dfd = await rdRaw(proj, "04-dfd/dfd.json", { nodes: [] });
@@ -115,7 +116,7 @@ async function buildData(proj: vscode.Uri) {
       useCaseNames: (useCases.diagrams || []).map((d: any) => d.name || d.id),
       useCaseNoticePending,
     },
-    threats, cms, comps,
+    threats, cms, defects, comps,
     requirements: reqs,
     assumptions: {
       attacker: assumptions.attacker || [],
@@ -141,6 +142,7 @@ async function buildData(proj: vscode.Uri) {
       threats: threats.length,
       attackTrees: await countTrees(proj),
       countermeasures: cms.length,
+      defects: defects.length,
       versions: tracker.entries.length,
     },
   };
@@ -533,6 +535,10 @@ export async function openWizard(ctx: vscode.ExtensionContext, focusThreatId?: s
           const cmDoc = await rdRaw(f.proj, "08-countermeasures/countermeasures.json", { countermeasures: [] });
           await write(f.proj, "08-countermeasures/countermeasures.json", { ...cmDoc, countermeasures: d.cms.map((c: any) => ({ ...c, ...countermeasureSaveFields(c) })) });
         }
+        if (Array.isArray(d.defects)) {
+          const defectDoc = await rdRaw(f.proj, "09-defects/defects.json", { defects: [] });
+          await write(f.proj, "09-defects/defects.json", { ...defectDoc, defects: d.defects });
+        }
         if (d.assumptions) await write(f.proj, "02-assumptions/assumptions.json", d.assumptions);
         if (d.system) {
           const prev = await rdRaw(f.proj, "03-system-assets/system.json", {});
@@ -683,8 +689,15 @@ function shell(cssUri: vscode.Uri, riskUri: vscode.Uri, attackTreeUri: vscode.Ur
         <div style="margin-top:10px"><button class="btn" data-act="addC">+ Countermeasure</button></div>
       </div>
 
+      <div class="card" id="card-defects">
+        <h2>09 · Defects &amp; vulnerabilities</h2>
+        <div class="desc">Track known defects and CVEs per component, and link threats for reassessment.</div>
+        <div id="defects-list"></div>
+        <div style="margin-top:10px"><button class="btn" data-act="addDefect">+ Defect</button></div>
+      </div>
+
       <div class="card" id="card-versions">
-        <h2>10 · TRA versions</h2>
+        <h2>11 · TRA versions</h2>
         <div class="desc">Tag assessment baselines so you can track changes across reassessments.</div>
         <div id="versions-body"></div>
       </div>
@@ -739,6 +752,7 @@ const DIM_KEYS=['confidentiality','integrity','availability','safety'];
 let bugBar=null;
 let riskScheme=null, matrixMode='residual';
 let threats=[], cms=[], comps=[], counts={};
+let defects=[];
 let changeTracker={currentVersion:null,entries:[]};
 let assumptions={attacker:[],device:[],system:[],environment:[],operational:[]};
 let system={components:[],interfaces:[],trustBoundaries:[],assets:[]};
@@ -754,13 +768,13 @@ var ASM_PREFIX={device:'AD-',system:'SYSA-',environment:'AE-',operational:'AO-'}
 function optTags(list,val){return list.map(function(o){var v=o&&o.length&&typeof o!=='string'?o[0]:o;var l=o&&o.length&&typeof o!=='string'?o[1]:o;return '<option value="'+esc(v)+'"'+(String(val)===String(v)?' selected':'')+'>'+esc(l)+'</option>';}).join('');}
 function statusLabel(s){var m={open:'Open',mitigated:'Mitigated',accepted:'Accepted',transferred:'Transferred',unfeasible:'Unfeasible'};return m[s||'open']||'Open';}
 // ---- undo / redo history: snapshots of the editable project state (toolbar buttons + Ctrl+Z / Ctrl+Y) ----
-function snapshot(){return JSON.stringify({project:project,threats:threats,cms:cms,assumptions:assumptions,system:system,requirements:requirements});}
+function snapshot(){return JSON.stringify({project:project,threats:threats,cms:cms,defects:defects,assumptions:assumptions,system:system,requirements:requirements});}
 function updUndoBtns(){var u=$('#undoBtn'),r=$('#redoBtn');if(u)u.disabled=!undoStack.length;if(r)r.disabled=!redoStack.length;}
 function pushUndo(state){undoStack.push(state);if(undoStack.length>150)undoStack.shift();redoStack=[];updUndoBtns();}
 function recordBefore(key){var now=Date.now();if(undoStack.length&&key===histKey&&(now-histTime<800)){histTime=now;return;}pushUndo(snapshot());histKey=key;histTime=now;}
 function recordChanged(before){if(before===snapshot())return;pushUndo(before);histKey='';histTime=Date.now();}
 function keyOf(t){var d=t.dataset,k=(t.id||t.tagName);for(var p in d)k+='|'+p+'='+d[p];return k;}
-function applyState(s){var d=JSON.parse(s);project=d.project||project;threats=d.threats||[];cms=d.cms||[];assumptions=d.assumptions||assumptions;system=d.system||system;requirements=d.requirements||[];comps=(system.components||[]).map(function(c){return {id:c.id,name:c.name};});try{renderProject(project);}catch(e){console.error('project',e);}try{renderRail();}catch(e){console.error('rail',e);}try{renderThreats();}catch(e){console.error('threats',e);}try{renderCms();}catch(e){console.error('cms',e);}try{renderAssumptions();}catch(e){console.error('assumptions',e);}try{renderSystem();}catch(e){console.error('system',e);}try{renderRequirements();}catch(e){console.error('requirements',e);}}
+function applyState(s){var d=JSON.parse(s);project=d.project||project;threats=d.threats||[];cms=d.cms||[];defects=d.defects||[];assumptions=d.assumptions||assumptions;system=d.system||system;requirements=d.requirements||[];comps=(system.components||[]).map(function(c){return {id:c.id,name:c.name};});try{renderProject(project);}catch(e){console.error('project',e);}try{renderRail();}catch(e){console.error('rail',e);}try{renderThreats();}catch(e){console.error('threats',e);}try{renderCms();}catch(e){console.error('cms',e);}try{renderDefects();}catch(e){console.error('defects',e);}try{renderAssumptions();}catch(e){console.error('assumptions',e);}try{renderSystem();}catch(e){console.error('system',e);}try{renderRequirements();}catch(e){console.error('requirements',e);}}
 function undo(){if(!undoStack.length)return;redoStack.push(snapshot());applyState(undoStack.pop());histKey='';updUndoBtns();scheduleAutoSave();}
 function redo(){if(!redoStack.length)return;undoStack.push(snapshot());applyState(redoStack.pop());histKey='';updUndoBtns();scheduleAutoSave();}
 function clearHistory(){undoStack=[];redoStack=[];histKey='';histTime=0;updUndoBtns();}
@@ -778,7 +792,7 @@ function showSbomFields(sbomMode){
 }
 function doAutoSave(){
   var proj=Object.assign({},project,{sbom:readSbom()});
-  vs.postMessage({cmd:'autoSave',data:{project:proj,threats:threats,cms:cms,assumptions:assumptions,system:system,requirements:requirements}});
+  vs.postMessage({cmd:'autoSave',data:{project:proj,threats:threats,cms:cms,defects:defects,assumptions:assumptions,system:system,requirements:requirements}});
 }
 function pill(score,band){return '<span class="pill '+R.bandClass(band.name)+'">'+score+' · '+band.name+'</span>';}
 function riskCell(t){var r=R.riskOf(t,cms);return pill(r.initial,r.initialBand)+'<span class="arrow">&rarr;</span>'+pill(r.residual,r.residualBand);}
@@ -825,8 +839,9 @@ const STEPS=[
   ['06','Threats','STRIDE + risk rating','scroll','#card-threats','threats'],
   ['07','Attack trees','Optional · AND/OR','cmd','atree','attackTrees'],
   ['08','Countermeasures','Residual risk','scroll','#card-cms','countermeasures'],
-  ['09','Review & Report','Plausibility check','cmd','report','review'],
-  ['10','TRA versions','Assessment history','scroll','#card-versions','versions']
+  ['09','Defects','Vulnerabilities and reassessment','scroll','#card-defects','defects'],
+  ['10','Review & Report','Plausibility check','cmd','report','review'],
+  ['11','TRA versions','Assessment history','scroll','#card-versions','versions']
 ];
 function clientIssues(){
   var out=[],seen={};
@@ -1121,6 +1136,50 @@ function renderCms(){
       '</div>';
   }).join(''):'<span class="hint">No countermeasures yet.</span>';
 }
+function renderDefects(){
+  var severityOrder={critical:0,high:1,medium:2,low:3};
+  var statusOptions=['open','triaged','fixed','wont-fix'];
+  var severityOptions=['low','medium','high','critical'];
+  var compOpts=(system.components||[]).map(function(c){return [c.id,c.name+' ('+c.id+')'];});
+  var threatOpts=threats.map(function(t){return [t.id,t.id+' · '+t.title];});
+  var ordered=defects.map(function(d,i){return {d:d,i:i};}).sort(function(a,b){
+    var ao=a.d.status==='fixed'||a.d.status==='wont-fix'?1:0,bo=b.d.status==='fixed'||b.d.status==='wont-fix'?1:0;
+    return ao-bo||(severityOrder[a.d.severity]??9)-(severityOrder[b.d.severity]??9);
+  });
+  var select=function(key,value,options,i,extra){
+    var optionValue=function(o){return Array.isArray(o)?o[0]:o;};
+    var optionLabel=function(o){return Array.isArray(o)?o[1]:o;};
+    var known=options.some(function(o){return String(optionValue(o))===String(value||'');});
+    return '<select class="inp" data-di='+i+' data-k="'+key+'"'+(extra||'')+'>'+
+      (key==='component'||key==='threatRef'?'<option value="">-- none --</option>':'')+
+      (!known&&value?'<option value="'+esc(value)+'" selected>'+esc(value)+' (existing)</option>':'')+
+      options.map(function(o){return '<option value="'+esc(optionValue(o))+'"'+(String(value||'')===String(optionValue(o))?' selected':'')+'>'+esc(optionLabel(o))+'</option>';}).join('')+
+      '</select>';
+  };
+  $('#defects-list').innerHTML='<div class="toolbar"><span class="tag">'+defects.length+' total</span><span class="tag'+(defects.some(function(d){return d.status!=='fixed'&&d.status!=='wont-fix';})?' warnmark':'')+'">'+defects.filter(function(d){return d.status!=='fixed'&&d.status!=='wont-fix';}).length+' open</span></div>'+
+    (ordered.length?ordered.map(function(row){
+      var d=row.d,i=row.i;
+      return '<div class="card" style="margin:10px 0;background:var(--surface-2)" id="defect-'+esc(d.id)+'">'+
+        '<div class="grid3">'+
+          '<div class="field"><label>ID</label><input class="inp" data-di='+i+' data-k="id" value="'+esc(d.id)+'"></div>'+
+          '<div class="field" style="grid-column:span 2"><label>Title</label><input class="inp" data-di='+i+' data-k="title" value="'+esc(d.title||'')+'"></div>'+
+        '</div>'+
+        '<div class="grid4">'+
+          '<div class="field"><label>CVE / advisory</label><input class="inp" data-di='+i+' data-k="cve" value="'+esc(d.cve||'')+'" placeholder="CVE-2024-…"></div>'+
+          '<div class="field"><label>Affected component</label>'+select('component',d.component,compOpts,i)+'</div>'+
+          '<div class="field"><label>Severity</label>'+select('severity',d.severity||'',severityOptions,i)+'</div>'+
+          '<div class="field"><label>Status</label>'+select('status',d.status||'open',statusOptions,i)+'</div>'+
+        '</div>'+
+        '<div class="grid3">'+
+          '<div class="field"><label>Discovered</label><input class="inp" type="date" data-di='+i+' data-k="discovered" value="'+esc(d.discovered||'')+'"></div>'+
+          '<div class="field"><label>Fixed in (version)</label><input class="inp" data-di='+i+' data-k="fixedIn" value="'+esc(d.fixedIn||'')+'" placeholder="FW 2.5"></div>'+
+          '<div class="field"><label>Re-assess threat</label>'+select('threatRef',d.threatRef,threatOpts,i)+'</div>'+
+        '</div>'+
+        '<div class="field"><label>Note</label><textarea class="inp" data-di='+i+' data-k="note">'+esc(d.note||'')+'</textarea></div>'+
+        '<div style="text-align:right"><button class="btn sm danger" data-act="delDefect" data-i='+i+' aria-label="Delete defect '+esc(d.id)+'">Delete</button></div>'+
+      '</div>';
+    }).join(''):'<p class="hint">No defects yet.</p>');
+}
 function renderVersions(){
   var el=$('#versions-body');
   if(!el)return;
@@ -1319,6 +1378,8 @@ document.addEventListener('click',function(e){
   else if(act==='delT'){threats.splice(+el.dataset.i,1);renderThreats();renderRail();}
   else if(act==='addC'){cms.push({id:uid('CM',cms.map(function(x){return x.id;})),title:'New countermeasure',type:'preventive',status:'proposed',addresses:[]});renderCms();renderRail();}
   else if(act==='delC'){cms.splice(+el.dataset.i,1);renderCms();updatePills();renderRail();}
+  else if(act==='addDefect'){defects.push({id:uid('D',defects.map(function(x){return x.id;})),title:'New defect',severity:'medium',status:'open',discovered:new Date().toISOString().slice(0,10)});renderDefects();renderRail();}
+  else if(act==='delDefect'){defects.splice(+el.dataset.i,1);renderDefects();renderRail();}
   else if(act==='delAddr'){cms[+el.dataset.c].addresses.splice(+el.dataset.j,1);renderCms();updatePills();}
   else if(act==='addAddr'){var sourceThreat=threats.find(function(t){return t.id===el.dataset.val;})||{};cms[+el.dataset.c].addresses.push({threat:el.dataset.val,residualLikelihood:2,residualImpact:2,ratedBy:sourceThreat.ratedBy,ratedAt:sourceThreat.ratedAt});renderCms();updatePills();}
   else if(act==='addTicket'){var cm2=cms[+el.dataset.ci],urls2=ticketRows(cm2).slice();urls2.push('');setTicketRows(cm2,urls2);renderCms();}
@@ -1423,6 +1484,11 @@ document.addEventListener('input',function(e){
     else {cms[+t.dataset.ci][t.dataset.k]=t.value; if(t.dataset.k==='status')renderCms();}
     return;
   }
+  if(t.dataset.di!==undefined&&t.dataset.k){
+    var di=+t.dataset.di,dk=t.dataset.k;
+    if(defects[di]){defects[di][dk]=t.value||((dk==='component'||dk==='threatRef')?undefined:t.value);if(dk==='status'||dk==='severity')renderDefects();}
+    return;
+  }
   if(t.dataset.c!==undefined&&t.dataset.j!==undefined&&t.dataset.k){var ci=+t.dataset.c,cj=+t.dataset.j;if(t.dataset.k==='ratedBy'){cms[ci].addresses[cj].ratedBy=t.value;markResidualRated(ci,cj);}else{cms[ci].addresses[cj][t.dataset.k]=Math.max(1,Math.min(5,+t.value||1));updatePills();}return;}
   if(t.dataset.asm!==undefined&&t.dataset.ai!==undefined&&t.dataset.k){var arr=assumptions[t.dataset.asm];if(arr&&arr[+t.dataset.ai])arr[+t.dataset.ai][t.dataset.k]=t.value;return;}
   if(t.dataset.comp!==undefined&&t.dataset.k){var c=system.components[+t.dataset.comp];if(c)c[t.dataset.k]=(t.dataset.k==='layer')?(+t.value||1):(t.dataset.k==='parent'?(t.value||null):t.value);return;}
@@ -1486,7 +1552,7 @@ document.addEventListener('input',function(e){
 window.addEventListener('message',function(ev){
   var m=ev.data;
   if(m.cmd==='init'){bugBar=m.bugBar||null;riskScheme=m.scheme||null;}
-  if(m.cmd==='init'){threats=m.data.threats||[];cms=m.data.cms||[];comps=m.data.comps||[];counts=m.data.counts||{};changeTracker=m.data.changeTracker||changeTracker;assumptions=m.data.assumptions||assumptions;system=m.data.system||system;requirements=m.data.requirements||[];try{renderProject(m.data.project);}catch(e){console.error('project',e);}try{renderRail();}catch(e){console.error('rail',e);}try{renderThreats();}catch(e){console.error('threats',e);}try{renderCms();}catch(e){console.error('cms',e);}try{renderAssumptions();}catch(e){console.error('assumptions',e);}try{renderSystem();}catch(e){console.error('system',e);}try{renderRequirements();}catch(e){console.error('requirements',e);}try{renderVersions();}catch(e){console.error('versions',e);}clearHistory();if(m.focusThreatId)navigateThreat(m.focusThreatId);}
+  if(m.cmd==='init'){threats=m.data.threats||[];cms=m.data.cms||[];defects=m.data.defects||[];comps=m.data.comps||[];counts=m.data.counts||{};changeTracker=m.data.changeTracker||changeTracker;assumptions=m.data.assumptions||assumptions;system=m.data.system||system;requirements=m.data.requirements||[];try{renderProject(m.data.project);}catch(e){console.error('project',e);}try{renderRail();}catch(e){console.error('rail',e);}try{renderThreats();}catch(e){console.error('threats',e);}try{renderCms();}catch(e){console.error('cms',e);}try{renderDefects();}catch(e){console.error('defects',e);}try{renderAssumptions();}catch(e){console.error('assumptions',e);}try{renderSystem();}catch(e){console.error('system',e);}try{renderRequirements();}catch(e){console.error('requirements',e);}try{renderVersions();}catch(e){console.error('versions',e);}clearHistory();if(m.focusThreatId)navigateThreat(m.focusThreatId);}
   else if(m.cmd==='threats'){threats=m.threats||[];counts=m.counts||counts;renderThreats();renderCms();renderRequirements();renderRail();toast('ok',m.text);}
   else if(m.cmd==='cms'){cms=m.cms||[];counts=m.counts||counts;renderCms();updatePills();renderRequirements();renderRail();toast('ok',m.text);}
   else if(m.cmd==='assumptions'){assumptions=m.assumptions||assumptions;counts=m.counts||counts;renderAssumptions();renderRail();toast('ok',m.text);}
