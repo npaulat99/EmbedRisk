@@ -218,7 +218,15 @@ the orchestrator implements them directly (anchors: `renderProject()` and the de
   - AC: Native DFD nodes without saved `x`/`y` remain draggable from their rendered auto-layout
     position, while rendering alone does not mutate DFD data. Runtime coverage exercises a legacy
     node without coordinates through drag/save/reopen; full verification baseline passes.
-- [ ] **EXT-DFD5 Interface chips + flows to interface endpoints** (Deps: EXT-DFD3).
+- [x] **EXT-DFD5 Interface chips + flows to interface endpoints** (Deps: EXT-DFD3).
+  - AC: Keep the existing layer-filtered interface-chip and saved-flow rendering. In Connect mode,
+    visible interface chips can be selected as either flow endpoint alongside real DFD nodes; saved
+    flows retain the underlying interface ID (not a UI-prefixed ID), render with their labels, and
+    can be edited/deleted from the inspector. On a nested layer, render connectable context ports for
+    external sibling-node/interface endpoints exchanged with that layer's parent component, as in
+    webapp `DfdView.tsx`; connecting through a port must persist the original endpoint ID. Preserve
+    layer visibility and round-trip behavior. Runtime regressions cover interface-to-node and
+    interface-to-interface connection creation, nested external endpoint ports, and save/reopen.
 - [ ] **EXT-DFD6 STRIDE boundary-pair model** `media/stride-model.js` (port of `lib/stride.ts`).
 - [ ] **EXT-DFD7 STRIDE-per-boundary editor** writing `system.strideAnalyses` (Deps: EXT-DFD6).
 - [ ] **EXT-DFD8 Edge routing engine** `media/dfd-engine.js` (port of `webapp/shared/dfdEngine.js`).
@@ -261,6 +269,7 @@ the orchestrator implements them directly (anchors: `renderProject()` and the de
 
 | Item | Impl | Review | Test | Notes |
 |---|---|---|---|---|
+| EXT-DFD5 | ✅ | ✅ PASS (combined verifier identified one parent-normalization regression; fixed in one bounded round and rechecked) | ✅ PASS (compile, 142 model assertions, 6 parsed scripts + 6 runtime webviews, diff check) | Preserved the EXT-DFD4 visibility rendering and added connectable interface chips plus nested external sibling/interface context ports. Connect mode stores original endpoint IDs; flows render with labels and can be selected, edited, and deleted. Per-layer `ifacePos`/`portPos` placement and reopen persistence are covered. Runtime regressions cover interface↔node/interface flows, sibling and interface ports, inspector operations, save/reopen, hidden-interface visibility, and legacy nodes without `parent` keys. The verifier found strict null-vs-undefined parent comparisons; normalized them to the shared DFD model semantics and added a regression for root selection and nested sibling ports. Baseline passed after the fix. No fixture edits or live VS Code/browser validation. |
 | EXT-DFD4a | ✅ | ✅ PASS (direct bounded diff review) | ✅ PASS (compile, 142 model assertions, 6 parsed scripts + 6 runtime webviews, diff check) | Native DFD drag starts from the rendered auto-layout coordinates for legacy nodes lacking saved positions; render remains copy-only. Runtime regression removes coordinates in-memory, confirms rendering does not mutate DFD data, drags and saves the node, then reopens the editor and checks the saved position is restored. Full verification baseline passed; no fixture edits or live VS Code/browser validation. |
 | EXT-DFD4 | ✅ | ✅ PASS (follow-up review after one fix round) | ✅ PASS (compile, 142 model assertions, 6 parsed scripts + 6 runtime webviews, diff check) | Integrated `LayerVisibilityModel` into native DFD rendering for current-layer interface chips and interface-endpoint flows; render uses a copy to avoid mutating project DFD data. Runtime coverage checks root/sub-layer visibility, hidden interfaces, device-boundary exception, visible interface-to-interface flows and read-only rendering. Initial verifier findings (component `kind` missing from host payload and interface-to-interface flows not rendered) were fixed and covered by runtime regressions; follow-up verifier independently passed. Full required baseline passed. The verifier noted a possible consequence of copy-only layout: dragging a legacy node without saved coordinates may start from the wrong position; added EXT-DFD4a to verify/fix separately. |
 | EXT-DFD3 | ✅ | ✅ PASS (direct bounded diff review) | ✅ PASS (compile, 142 model assertions including all shared webapp layer-visibility cases, 6 parsed scripts + 6 runtime webviews, diff check) | Ported the webapp layer-visibility rules to an isomorphic CommonJS/browser-global model. Parameterized the existing webapp test cases so the model baseline executes the exact same cases against both the webapp reference and extension model. No DFD render integration or fixture edits. Implemented directly because this bounded, mechanical port and shared-case test required no separate implementation context; no subagents. |

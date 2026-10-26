@@ -1863,8 +1863,10 @@ async function nativeDfdEditor(h) {
   const fixtureDfd = readProjectJson("04-dfd/dfd.json");
   const anchor = fixtureDfd.nodes.find((n) => n.parent == null && n.componentRef && n.type !== "trust-boundary");
   assert.ok(anchor, "fixture needs a root component for interface visibility checks");
+  delete anchor.parent;
   delete anchor.x;
   delete anchor.y;
+  delete fixtureDfd.nodes.find((n) => n.id === "N-EXT-CTRL").parent;
   system.components.find((component) => component.id === anchor.componentRef).kind = "device";
   system.interfaces.push(
     { id: "I-TEST-HIDDEN", name: "Hidden interface", component: anchor.componentRef, exposure: "local", hidden: true, tag: "HIDDEN" },
@@ -1874,11 +1876,14 @@ async function nativeDfdEditor(h) {
     { id: "I-TEST-BOUNDARY", name: "Device boundary", component: "C-3", exposure: "adjacent", tag: "BOUNDARY" },
   );
   fixtureDfd.flows.push(
+    { id: "F-TEST-ROOT-CONTEXT", from: anchor.id, to: "N-EXT-CTRL", label: "ROOT CONTEXT" },
     { id: "F-TEST-ROOT-IFACE", from: "I-TEST-VISIBLE", to: "N-EXT-CTRL", label: "ROOT IFACE" },
     { id: "F-TEST-CHILD-IFACE", from: "I-TEST-CHILD", to: "N-C3", label: "CHILD IFACE" },
     { id: "F-TEST-CHILD-IFACE-2", from: "I-TEST-CHILD-2", to: "N-C3", label: "CHILD IFACE 2" },
     { id: "F-TEST-IFACE-IFACE", from: "I-TEST-CHILD", to: "I-TEST-CHILD-2", label: "INTERFACE FLOW" },
     { id: "F-TEST-BOUNDARY", from: "I-TEST-BOUNDARY", to: "N-EXT-CTRL", label: "DEVICE BOUNDARY" },
+    { id: "F-TEST-CONTEXT-PORT", from: "N-C1", to: "N-C3", label: "CONTEXT PORT" },
+    { id: "F-TEST-IFACE-CONTEXT-PORT", from: "N-C3", to: "I-TEST-VISIBLE", label: "CONTEXT INTERFACE PORT" },
   );
   const fixtureDfdJson = JSON.stringify(fixtureDfd);
   h.overlay.set(path.join(projectDir, "04-dfd/dfd.json"), fixtureDfdJson);
@@ -1937,10 +1942,14 @@ async function nativeDfdEditor(h) {
   assert.deepStrictEqual(reopenedDfd.nodes.find((n) => n.id === anchor.id), draggedNode, "saved legacy node position was not restored on reopen");
   assert.ok(h.must('[data-iface="I-TEST-VISIBLE"]'), "root layer omitted a visible interface");
   assert.ok(h.must('[data-flow="F-TEST-ROOT-IFACE"]'), "root layer omitted an interface-endpoint flow");
+  h.mouse("mousedown", h.must(`[data-id="${anchor.id}"]`));
+  h.mouse("mouseup", h.dom.window);
+  assert.ok(h.$("#ins-comp"), "root node without a parent key was treated as a context port");
   assert.strictEqual(h.$('[data-flow="F-TEST-CHILD-IFACE"]'), null, "root layer rendered a flow to a hidden node");
   h.setValue("#sel", "N-DEV");
   h.key("Enter");
   assert.notStrictEqual(h.must("#crumb").textContent, "root", "device layer navigation did not enter the selected node");
+  assert.ok(h.must('[data-port="N-EXT-CTRL"]'), "nested layer omitted a sibling context port whose parent key is absent");
   assert.ok(h.must('[data-iface="I-TEST-BOUNDARY"]'), "device boundary exception omitted a descendant interface");
   assert.strictEqual(h.$('[data-iface="I-TEST-HIDDEN"]'), null, "device layer rendered a hidden interface");
   assert.strictEqual(h.$('[data-flow="F-TEST-CHILD-IFACE"]'), null, "device layer rendered a flow whose node endpoint is hidden");
@@ -1950,6 +1959,61 @@ async function nativeDfdEditor(h) {
   assert.ok(h.must('[data-iface="I-TEST-CHILD-2"]'), "sub-layer omitted a second visible interface");
   assert.ok(h.must('[data-flow="F-TEST-CHILD-IFACE"]'), "sub-layer omitted an interface-endpoint flow");
   assert.ok(h.must('[data-flow="F-TEST-IFACE-IFACE"]'), "sub-layer omitted a flow between visible interfaces");
+  assert.ok(h.must('[data-port="N-C1"]'), "sub-layer omitted the external sibling context port");
+  assert.ok(h.must('[data-port="I-TEST-VISIBLE"]'), "sub-layer omitted the external interface context port");
+  const clickCanvasTarget = (selector) => {
+    const target = h.must(selector);
+    h.mouse("mousedown", target);
+    h.mouse("mouseup", h.dom.window);
+  };
+  const newFlowIds = new Set(JSON.parse(h.dom.window.eval("JSON.stringify(dfd)")).flows.map((flow) => flow.id));
+  h.click("#cbtn");
+  assert.ok(h.must("#status").textContent.includes("click the source"), "Connect toolbar did not enter endpoint mode");
+  clickCanvasTarget('[data-iface="I-TEST-CHILD"]');
+  assert.ok(h.must("#status").textContent.includes("click the target"), "interface chip was not accepted as a Connect source");
+  clickCanvasTarget('[data-id="N-C3"]');
+  assert.ok(!h.must("#status").textContent.includes("Connect:"), "node endpoint did not complete the flow connection");
+  await h.settle();
+  let createdFlows = lastWriteJson(h, "04-dfd/dfd.json").flows;
+  const ifaceNodeFlow = createdFlows.find((flow) => !newFlowIds.has(flow.id) && flow.from === "I-TEST-CHILD" && flow.to === "N-C3");
+  assert.ok(ifaceNodeFlow, "interface-to-node connection did not persist its model interface ID");
+  newFlowIds.add(ifaceNodeFlow.id);
+  assert.ok(h.must(`[data-flow="${ifaceNodeFlow.id}"]`), "interface-to-node flow was not rendered");
+  h.click(`[data-flow="${ifaceNodeFlow.id}"]`);
+  h.setValue("#ins-flow-label", "EDITED INTERFACE FLOW");
+  await h.settle();
+  assert.strictEqual(lastWriteJson(h, "04-dfd/dfd.json").flows.find((flow) => flow.id === ifaceNodeFlow.id).label,
+    "EDITED INTERFACE FLOW", "flow label was not editable from its inspector");
+  h.click("#cbtn");
+  clickCanvasTarget('[data-iface="I-TEST-CHILD"]');
+  clickCanvasTarget('[data-iface="I-TEST-CHILD-2"]');
+  await h.settle();
+  createdFlows = lastWriteJson(h, "04-dfd/dfd.json").flows;
+  const ifaceIfaceFlow = createdFlows.find((flow) => !newFlowIds.has(flow.id) && flow.from === "I-TEST-CHILD" && flow.to === "I-TEST-CHILD-2");
+  assert.ok(ifaceIfaceFlow, "interface-to-interface connection did not persist both model interface IDs");
+  newFlowIds.add(ifaceIfaceFlow.id);
+  h.click("#cbtn");
+  clickCanvasTarget('[data-port="N-C1"]');
+  clickCanvasTarget('[data-iface="I-TEST-CHILD-2"]');
+  await h.settle();
+  createdFlows = lastWriteJson(h, "04-dfd/dfd.json").flows;
+  const portFlow = createdFlows.find((flow) => !newFlowIds.has(flow.id) && flow.from === "N-C1" && flow.to === "I-TEST-CHILD-2");
+  assert.ok(portFlow, "context-port connection did not persist the original external endpoint ID");
+  newFlowIds.add(portFlow.id);
+  h.click("#cbtn");
+  clickCanvasTarget('[data-port="I-TEST-VISIBLE"]');
+  clickCanvasTarget('[data-id="N-C3"]');
+  await h.settle();
+  createdFlows = lastWriteJson(h, "04-dfd/dfd.json").flows;
+  const interfacePortFlow = createdFlows.find((flow) => !newFlowIds.has(flow.id) && flow.from === "I-TEST-VISIBLE" && flow.to === "N-C3");
+  assert.ok(interfacePortFlow, "interface context-port connection did not persist the original interface ID");
+  newFlowIds.add(interfacePortFlow.id);
+  h.click('[data-flow="F-TEST-IFACE-IFACE"]');
+  assert.ok(h.must("#ins-delete-flow"), "selected flow inspector omitted delete control");
+  h.click("#ins-delete-flow");
+  await h.settle();
+  assert.ok(!lastWriteJson(h, "04-dfd/dfd.json").flows.some((flow) => flow.id === "F-TEST-IFACE-IFACE"),
+    "flow was not deletable from its inspector");
   h.key("Backspace");
   h.key("Backspace");
   const matrixCell = (l, i) => h.must(`#dfd-risk-matrix td[data-l="${l}"][data-i="${i}"]`);
@@ -1981,6 +2045,7 @@ async function nativeDfdEditor(h) {
   assert.strictEqual(matrixCount(2, 3), "2", "selected component omitted child threats");
   assert.strictEqual(matrixCount(1, 2), "1", "selected component omitted transitive grandchild threat");
   assert.strictEqual(matrixCell(5, 5).getAttribute("role"), "button");
+  const matrixUndoState = h.must("#undo").disabled, matrixRedoState = h.must("#redo").disabled;
   const navigationMessages = () => h.toHost.filter((m) => m.type === "navigateThreat");
   const navigationBefore = navigationMessages().length;
   const rootCell = matrixCell(5, 5);
@@ -2009,7 +2074,8 @@ async function nativeDfdEditor(h) {
   assert.ok(h.commandCalls.some((call) => call.id === "embedrisk.wizard" && call.args[0] === "CHILD2"),
     "DFD navigation did not open the wizard focused on the selected threat");
   assert.strictEqual(h.writes.length, matrixWrites, "matrix interactions wrote DFD data");
-  assert.ok(h.must("#undo").disabled && h.must("#redo").disabled, "matrix interactions entered DFD history");
+  assert.strictEqual(h.must("#undo").disabled, matrixUndoState, "matrix interactions changed undo history");
+  assert.strictEqual(h.must("#redo").disabled, matrixRedoState, "matrix interactions changed redo history");
   delete project.acceptableRisk;
   h.overlay.set(path.join(projectDir, projectPath), JSON.stringify(project));
   h.deliverToHost({ type: "ready" });
@@ -2085,6 +2151,27 @@ async function nativeDfdEditor(h) {
   reopenedPanel.dispose();
   assert.strictEqual(watcher.disposed, true, "system watcher was not disposed with the editor");
   assert.strictEqual(reopenedWatcher.disposed, true, "reopened editor watcher was not disposed");
+  h.close();
+  const roundTripPanel = h.createPanel();
+  await provider.resolveCustomTextEditor(h.createDocument("04-dfd/dfd.json"), roundTripPanel, {});
+  h.openDom();
+  await h.settle();
+  const roundTripDfd = JSON.parse(h.dom.window.eval("JSON.stringify(dfd)"));
+  assert.ok(roundTripDfd.flows.some((flow) => flow.id === ifaceNodeFlow.id && flow.from === "I-TEST-CHILD" && flow.label === "EDITED INTERFACE FLOW"),
+    "edited interface-to-node flow did not survive save/reopen");
+  assert.ok(roundTripDfd.flows.some((flow) => flow.id === ifaceIfaceFlow.id && flow.from === "I-TEST-CHILD" && flow.to === "I-TEST-CHILD-2"),
+    "interface-to-interface flow did not survive save/reopen");
+  assert.ok(roundTripDfd.flows.some((flow) => flow.id === portFlow.id && flow.from === "N-C1" && flow.to === "I-TEST-CHILD-2"),
+    "context-port flow did not survive save/reopen with its original endpoint ID");
+  assert.ok(roundTripDfd.flows.some((flow) => flow.id === interfacePortFlow.id && flow.from === "I-TEST-VISIBLE" && flow.to === "N-C3"),
+    "interface context-port flow did not survive save/reopen with its original endpoint ID");
+  h.setValue("#sel", "N-DEV");
+  h.key("Enter");
+  h.setValue("#sel", "N-C2");
+  h.key("Enter");
+  assert.ok(h.dom.window.document.querySelector("#cv").textContent.includes("EDITED INTERFACE FLOW"),
+    "saved interface flow label was not rendered after reopen");
+  roundTripPanel.dispose();
 }
 
 async function useCaseEditor(h) {
