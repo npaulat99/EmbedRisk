@@ -8,6 +8,7 @@ const DfdModel = require(path.join(root, "vscode-extension/media/dfd-model.js"))
 const AtModel = require(path.join(root, "vscode-extension/media/attacktree-model.js"));
 const RiskModel = require(path.join(root, "vscode-extension/media/risk-model.js"));
 const LayerVisibilityModel = require(path.join(root, "vscode-extension/media/layer-visibility.js"));
+const StrideModel = require(path.join(root, "vscode-extension/media/stride-model.js"));
 
 function hasTraFixtures(projectDir) {
   return fs.existsSync(path.join(projectDir, "04-dfd/dfd.json")) && fs.existsSync(path.join(projectDir, "07-attack-trees/attack-trees.json"));
@@ -640,11 +641,82 @@ async function checkWebappParity() {
   });
 }
 
+function runStrideTests() {
+  const { boundaryPairs, analysisHasContent, anyPairHasContent, STRIDE_KEYS, STRIDE_LABEL } = StrideModel;
+  // Execute the actual webapp TypeScript after stripping types, rather than mirroring its rules here.
+  const vm = require("node:vm");
+  const esbuild = require(path.join(root, "vscode-extension/node_modules/esbuild"));
+  const ts = fs.readFileSync(path.join(root, "webapp/client/src/lib/stride.ts"), "utf8");
+  const webModule = { exports: {} };
+  vm.runInNewContext(esbuild.transformSync(ts, { loader: "ts", format: "cjs" }).code, { module: webModule });
+  const webStride = webModule.exports;
+  const browser = { window: {} };
+  vm.runInNewContext(fs.readFileSync(path.join(root, "vscode-extension/media/stride-model.js"), "utf8"), browser);
+  ok("stride browser global exposes API", browser.window.StrideModel &&
+    Object.keys(browser.window.StrideModel).join(",") === Object.keys(StrideModel).join(","));
+  ok("stride keys and labels match webapp", JSON.stringify([STRIDE_KEYS, STRIDE_LABEL]) ===
+    JSON.stringify([webStride.STRIDE_KEYS, webStride.STRIDE_LABEL]));
+  ok("stride keys order", STRIDE_KEYS.join("") === "STRIDE");
+  ok("stride labels", STRIDE_LABEL.S === "Spoofing" && STRIDE_LABEL.I === "Information disclosure" && STRIDE_LABEL.E === "Elevation of privilege");
+  // Inside set of "tb" = dev (member) + sub (descendant of dev) + deep (descendant of sub).
+  const dfd = {
+    nodes: [
+      { id: "tb", type: "trust-boundary", members: ["dev"] },
+      { id: "dev", label: "Device", componentRef: "c-dev" },
+      { id: "sub", label: "Sub", parent: "dev" },
+      { id: "deep", label: "", parent: "sub" },
+      { id: "cloud", label: "Cloud", componentRef: "c-cloud" },
+      { id: "other", label: "Other" },
+    ],
+    flows: [
+      { from: "sub", to: "cloud" },     // crossing, inside->outside
+      { from: "cloud", to: "sub" },     // reverse duplicate, deduped
+      { from: "dev", to: "sub" },       // internal only
+      { from: "cloud", to: "other" },   // external only
+      { from: "", to: "cloud" },        // missing endpoint
+      { from: "if-dev", to: "other" },  // interface endpoint inside via component c-dev -> dev
+      { from: "cloud", to: "if-x" },    // if-x component has no DFD node: outside, so external only
+      { from: "other", to: "deep" },    // crossing, outside->inside; empty label kept by ??
+    ],
+  };
+  const system = { interfaces: [{ id: "if-dev", name: "BLE", component: "c-dev" }, { id: "if-x", name: "Nameless", component: "c-none" }] };
+  const pairs = boundaryPairs(system, dfd, "tb");
+  ok("stride crossing pairs match webapp", JSON.stringify(pairs) === JSON.stringify(webStride.boundaryPairs(system, dfd, "tb")));
+  ok("stride pair count", pairs.length === 3);
+  ok("stride nested member pair", pairs[0].key === "cloud~sub" && pairs[0].inside.id === "sub" && pairs[0].outside.id === "cloud");
+  ok("stride node labels", pairs[0].inside.label === "Sub" && pairs[0].outside.label === "Cloud");
+  ok("stride interface endpoint inside", pairs[1].key === "if-dev~other" && pairs[1].inside.id === "if-dev" && pairs[1].outside.id === "other");
+  ok("stride interface label fallback to name", pairs[1].inside.label === "BLE" && pairs[1].outside.label === "Other");
+  ok("stride to-side inside orientation", pairs[2].key === "deep~other" && pairs[2].inside.id === "deep" && pairs[2].outside.id === "other");
+  ok("stride empty-string label kept (??)", pairs[2].inside.label === "");
+  ok("stride unresolved interface not a crossing", !pairs.some((p) => p.key.includes("if-x")));
+  ok("stride missing boundary", boundaryPairs(system, dfd, "nope").length === 0);
+  ok("stride non-trust-boundary id", boundaryPairs(system, dfd, "dev").length === 0);
+  ok("stride empty inputs", boundaryPairs(undefined, {}, "tb").length === 0);
+  const lab = boundaryPairs({}, { nodes: [{ id: "tb", type: "trust-boundary", members: ["a"] }, { id: "a" }], flows: [{ from: "a", to: "zzz" }] }, "tb");
+  ok("stride label fallback to id", lab.length === 1 && lab[0].inside.label === "a" && lab[0].outside.label === "zzz");
+  const cell = (c) => ({ endpoints: { a: { cells: { S: c } } } });
+  ok("stride whitespace-only content is empty", analysisHasContent(cell({ strengths: ["  "], weaknesses: [""] })) === false);
+  ok("stride strengths content", analysisHasContent(cell({ strengths: ["x"] })) === true);
+  ok("stride weaknesses content on other side", analysisHasContent({ endpoints: { a: null, b: { cells: { T: { weaknesses: [" x "] } } } } }) === true);
+  ok("stride endpoints required", analysisHasContent({ cells: { S: { strengths: ["x"] } } }) === false && analysisHasContent(undefined) === false);
+  ok("stride any pair true", anyPairHasContent({ p: {}, q: cell({ strengths: ["ok"] }) }) === true);
+  ok("stride any pair false", anyPairHasContent({ p: {} }) === false && anyPairHasContent(undefined) === false);
+  for (const analysis of [undefined, {}, cell({ strengths: ["\t"] }), cell({ weaknesses: [" x "] }),
+    { endpoints: { a: { cells: { S: { strengths: ["ok"], ignored: ["y"] } } } } }]) {
+    ok("stride authored content matches webapp", analysisHasContent(analysis) === webStride.analysisHasContent(analysis));
+  }
+  for (const analyses of [undefined, {}, { p: cell({ strengths: ["\t"] }) }, { p: {}, q: cell({ weaknesses: ["x"] }) }]) {
+    ok("stride any authored pair matches webapp", anyPairHasContent(analyses) === webStride.anyPairHasContent(analyses));
+  }
+}
+
 checkWebappParity()
   .then(async () => {
     const { runLayerVisibilityTests } = await import("../webapp/test/dfd-layer-visibility.test.mjs");
     runLayerVisibilityTests(LayerVisibilityModel);
   })
+  .then(() => runStrideTests())
   .then(() => console.log("All " + passed + " model assertions passed."))
   .catch((err) => {
     console.error(err && err.message ? err.message : err);
