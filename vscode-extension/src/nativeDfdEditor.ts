@@ -191,6 +191,7 @@ const M=DfdModel, R=window.RiskModel, V=window.LayerVisibilityModel, vs=acquireV
 const TYPES=['external-entity','process','multiprocess','store','trust-boundary'];
 let dfd={nodes:[],flows:[]}, components=[], interfaces=[], trustBoundaryIds=[], riskData={}, threats=[], cms=[], riskScheme=null, acceptableRisk, matrixMode='residual', stack=[], focus=null, connect=false, connectFrom=null;
 let drag=null, chipDrag=null, dragMoved=false, dragging=false;
+let renderedNodePositions=new Map();
 const $=id=>document.getElementById(id);
 function esc(s){return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
 function cur(){return stack.length?stack[stack.length-1]:null;}
@@ -246,6 +247,7 @@ function drawCanvas(){
   var positionedNodes=M.layout(renderDfd,cur()).filter(function(n){return n.type!=='trust-boundary';});
   var inner=M.render(renderDfd,cur(),focus,nodeRisk);
   var positionedById=new Map(positionedNodes.map(function(n){return [n.id,n];}));
+  renderedNodePositions=positionedById;
   var ifacePositions=new Map();
   // Render only interfaces selected by the shared layer-visibility model.
   var ifaceChips='';
@@ -470,7 +472,7 @@ cv.addEventListener('mousedown',function(e){
     draw();
     return;
   }
-  var g=e.target.closest&&e.target.closest('[data-id]');if(!g)return;var id=g.getAttribute('data-id');var n=node(id);if(!n)return;dragMoved=false;dragging=true;drag={id:id,sx:e.clientX,sy:e.clientY,ox:typeof n.x==='number'?n.x:0,oy:typeof n.y==='number'?n.y:0};});
+  var g=e.target.closest&&e.target.closest('[data-id]');if(!g)return;var id=g.getAttribute('data-id');var n=node(id);if(!n)return;var rendered=renderedNodePositions.get(id)||{};dragMoved=false;dragging=true;drag={id:id,sx:e.clientX,sy:e.clientY,ox:typeof n.x==='number'?n.x:(typeof rendered.x==='number'?rendered.x:0),oy:typeof n.y==='number'?n.y:(typeof rendered.y==='number'?rendered.y:0)};});
 window.addEventListener('mousemove',function(e){
   if(!dragging)return;
   if(chipDrag){

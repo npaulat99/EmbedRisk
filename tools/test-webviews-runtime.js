@@ -253,9 +253,9 @@ class Harness {
     el.dispatchEvent(new win.MouseEvent("click", { bubbles: true, cancelable: true }));
   }
 
-  mouse(type, el) {
+  mouse(type, el, coords = {}) {
     const win = this.dom.window;
-    el.dispatchEvent(new win.MouseEvent(type, { bubbles: true, cancelable: true, clientX: 10, clientY: 10 }));
+    el.dispatchEvent(new win.MouseEvent(type, { bubbles: true, cancelable: true, clientX: 10, clientY: 10, ...coords }));
   }
 
   key(key, opts = {}) {
@@ -1863,6 +1863,8 @@ async function nativeDfdEditor(h) {
   const fixtureDfd = readProjectJson("04-dfd/dfd.json");
   const anchor = fixtureDfd.nodes.find((n) => n.parent == null && n.componentRef && n.type !== "trust-boundary");
   assert.ok(anchor, "fixture needs a root component for interface visibility checks");
+  delete anchor.x;
+  delete anchor.y;
   system.components.find((component) => component.id === anchor.componentRef).kind = "device";
   system.interfaces.push(
     { id: "I-TEST-HIDDEN", name: "Hidden interface", component: anchor.componentRef, exposure: "local", hidden: true, tag: "HIDDEN" },
@@ -1913,6 +1915,26 @@ async function nativeDfdEditor(h) {
   await h.settle();
   assert.ok(h.toWebview.some((m) => m.type === "load"), "host did not answer 'ready' with 'load'");
   assert.strictEqual(h.dom.window.eval("JSON.stringify(dfd)"), fixtureDfdJson, "rendering mutated project DFD data");
+  const legacyNode = h.must(`#cv [data-id="${anchor.id}"]`);
+  const expectedLegacyPosition = h.dom.window.DfdModel.layout({ ...fixtureDfd, nodes: fixtureDfd.nodes.map((n) => ({ ...n })) }, null)
+    .find((n) => n.id === anchor.id);
+  h.mouse("mousedown", legacyNode, { clientX: 10, clientY: 10 });
+  h.mouse("mousemove", h.dom.window, { clientX: 40, clientY: 50 });
+  h.mouse("mouseup", h.dom.window, { clientX: 40, clientY: 50 });
+  await h.settle();
+  const draggedDfd = lastWriteJson(h, "04-dfd/dfd.json");
+  const draggedNode = draggedDfd.nodes.find((n) => n.id === anchor.id);
+  assert.strictEqual(draggedNode.x, expectedLegacyPosition.x + 30, "legacy node drag did not start at its rendered x position");
+  assert.strictEqual(draggedNode.y, expectedLegacyPosition.y + 40, "legacy node drag did not start at its rendered y position");
+  h.close();
+  panel.dispose();
+  const reopenedPanel = h.createPanel();
+  await provider.resolveCustomTextEditor(h.createDocument("04-dfd/dfd.json"), reopenedPanel, {});
+  h.openDom();
+  await h.settle();
+  const reopenedWatcher = h.fileWatchers.at(-1);
+  const reopenedDfd = JSON.parse(h.dom.window.eval("JSON.stringify(dfd)"));
+  assert.deepStrictEqual(reopenedDfd.nodes.find((n) => n.id === anchor.id), draggedNode, "saved legacy node position was not restored on reopen");
   assert.ok(h.must('[data-iface="I-TEST-VISIBLE"]'), "root layer omitted a visible interface");
   assert.ok(h.must('[data-flow="F-TEST-ROOT-IFACE"]'), "root layer omitted an interface-endpoint flow");
   assert.strictEqual(h.$('[data-flow="F-TEST-CHILD-IFACE"]'), null, "root layer rendered a flow to a hidden node");
@@ -2060,8 +2082,9 @@ async function nativeDfdEditor(h) {
   const saved = lastWriteJson(h, "04-dfd/dfd.json");
   assert.ok(saved && Array.isArray(saved.nodes) && Array.isArray(saved.flows), "dfd.json not written by host");
   checkLiveDomHandlers(h);
-  panel.dispose();
+  reopenedPanel.dispose();
   assert.strictEqual(watcher.disposed, true, "system watcher was not disposed with the editor");
+  assert.strictEqual(reopenedWatcher.disposed, true, "reopened editor watcher was not disposed");
 }
 
 async function useCaseEditor(h) {
