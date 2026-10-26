@@ -44,6 +44,7 @@ class Harness {
     this.name = name;
     this.failures = [];
     this.overlay = new Map();   // fsPath -> text written by the host (never touches disk)
+    this.externalFiles = new Map(); // Dialog-selected test files; never touches disk
     this.writes = [];           // { path, text } for every host write / workspace edit
     this.toWebview = [];        // messages posted by the host
     this.toHost = [];           // messages posted by the webview
@@ -55,6 +56,9 @@ class Harness {
     this.html = undefined;
     this.hostHandler = null;
     this.dom = null;
+    this.openDialogUri = undefined;
+    this.saveDialogUri = undefined;
+    this.dialogOptions = [];
   }
 
   fail(msg) { this.failures.push(msg); }
@@ -65,7 +69,7 @@ class Harness {
     return p;
   }
 
-  readText(p) { return this.overlay.has(p) ? this.overlay.get(p) : fs.readFileSync(p, "utf8"); }
+  readText(p) { return this.overlay.has(p) ? this.overlay.get(p) : this.externalFiles.has(p) ? this.externalFiles.get(p) : fs.readFileSync(p, "utf8"); }
 
   recordWrite(p, text) {
     try { JSON.parse(text); } catch (err) { this.fail(`host wrote invalid JSON to ${path.relative(root, p)}: ${err.message}`); }
@@ -93,6 +97,8 @@ class Harness {
       window: {
         activeTextEditor: undefined,
         createWebviewPanel: () => h.createPanel(),
+        showOpenDialog: async (options) => { h.dialogOptions.push({ kind: "open", options }); return h.openDialogUri ? [h.openDialogUri] : undefined; },
+        showSaveDialog: async (options) => { h.dialogOptions.push({ kind: "save", options }); return h.saveDialogUri; },
         showInformationMessage: async () => undefined,
         showWarningMessage: async (msg) => { h.fail("host showed warning: " + msg); return undefined; },
         showErrorMessage: async (msg) => { h.fail("host showed error: " + msg); return undefined; },
@@ -1327,6 +1333,99 @@ async function checkRiskMatrices(h, mod) {
   console.log("  Risk matrices: orientation, counts, modes, bands, thresholds, edges, edits, history, reload and read-only metadata passed.");
 }
 
+async function checkThreatCmImportExport(h, mod) {
+  const tp = "06-threats/threats.json", cp = "08-countermeasures/countermeasures.json", sp = "03-system-assets/system.json";
+  const threatEnvelope = { envelopeMetadata: { keep: ["threats"] }, threats: [
+    { id: "T-1", title: "Existing", futureThreatMetadata: { retained: true } },
+    { id: "T-8", title: "Export me", futureThreatMetadata: { nested: ["full record"] } },
+  ] };
+  const cmEnvelope = { envelopeMetadata: { keep: ["countermeasures"] }, countermeasures: [
+    { id: "CM1", title: "Export control", addresses: [{ threat: "T-8", futureAddressMetadata: { retained: true } }], futureCmMetadata: ["full record"] },
+    { id: "CM8", title: "Not selected", addresses: [] },
+  ] };
+  const systemEnvelope = { components: [{ id: "T-2", name: "Project-wide ID collision" }], interfaces: [], trustBoundaries: [], assets: [] };
+  h.overlay.set(path.join(projectDir, tp), JSON.stringify(threatEnvelope));
+  h.overlay.set(path.join(projectDir, cp), JSON.stringify(cmEnvelope));
+  h.overlay.set(path.join(projectDir, sp), JSON.stringify(systemEnvelope));
+  const reopen = async () => { h.close(); await mod.openWizard(ctx); h.openDom(); await h.settle(); };
+  await reopen();
+  assert.ok(h.$('[data-act="importThreatCm"]') && h.$('[data-act="exportThreatCm"]'), "import/export controls missing");
+  const checks = h.$$('[data-export-kind]');
+  assert.strictEqual(checks.length, 4, "expected selectable actual threat and countermeasure records");
+  for (const check of checks) if (check.dataset.exportId !== "T-8" && check.dataset.exportId !== "CM1") h.click(check);
+  h.saveDialogUri = Uri.file(path.join(projectDir, "selected-export.json"));
+  h.click('[data-act="exportThreatCm"]');
+  await h.settle();
+  const exported = JSON.parse(h.readText(h.saveDialogUri.fsPath));
+  assert.deepStrictEqual(Object.keys(exported).sort(), ["countermeasures", "threats"]);
+  assert.deepStrictEqual(exported.threats, [threatEnvelope.threats[1]], "export must retain full selected threat records");
+  assert.deepStrictEqual(exported.countermeasures, [cmEnvelope.countermeasures[0]], "export must retain full selected countermeasure metadata");
+  assert.deepStrictEqual(h.dialogOptions[h.dialogOptions.length - 1].options.filters, { JSON: ["json"] }, "export should offer JSON only");
+
+  const importFile = async (name, text) => {
+    const uri = Uri.file(path.join(projectDir, name));
+    h.externalFiles.set(uri.fsPath, text);
+    h.openDialogUri = uri;
+    h.click('[data-act="importThreatCm"]');
+    await h.settle();
+  };
+  const writesBeforeInvalid = h.writes.length;
+  const threatBeforeInvalid = h.readText(path.join(projectDir, tp));
+  const cmBeforeInvalid = h.readText(path.join(projectDir, cp));
+  await importFile("invalid.json", "{");
+  assert.match(h.must("#err").textContent, /not valid JSON/i);
+  await importFile("empty.json", "{}");
+  assert.match(h.must("#err").textContent, /No threats or countermeasures/i);
+  await importFile("malformed.json", JSON.stringify({ threats: [null] }));
+  assert.match(h.must("#err").textContent, /must be a JSON object/i);
+  assert.strictEqual(h.writes.length, writesBeforeInvalid, "invalid/no-record input must not write");
+  assert.strictEqual(h.readText(path.join(projectDir, tp)), threatBeforeInvalid);
+  assert.strictEqual(h.readText(path.join(projectDir, cp)), cmBeforeInvalid);
+
+  const batch = {
+    threats: [{
+      id: "T-1", title: "Imported threat", countermeasures: ["CM1", "EXTERNAL-CM"],
+      futureThreatMetadata: { retain: ["unknown fields"] },
+    }],
+    countermeasures: [{
+      id: "CM1", title: "Imported control",
+      addresses: [{ threat: "T-1", residualImpact: 2, futureAddressMetadata: { keep: true } }, { threat: "EXTERNAL-T", futureAddressMetadata: "external" }],
+      futureCmMetadata: { keep: true },
+    }],
+  };
+  await importFile("batch.json", JSON.stringify({ ...batch, exportMetadata: { "retainedOn-source": true } }));
+  let savedThreatDoc = JSON.parse(h.readText(path.join(projectDir, tp)));
+  let savedCmDoc = JSON.parse(h.readText(path.join(projectDir, cp)));
+  const importedThreat = savedThreatDoc.threats.find((t) => t.title === "Imported threat");
+  const importedCm = savedCmDoc.countermeasures.find((c) => c.title === "Imported control");
+  assert.strictEqual(importedThreat.id, "T-3", "ID remapping must use project-wide collisions");
+  assert.strictEqual(importedCm.id, "CM2", "countermeasure ID collision was not remapped");
+  assert.deepStrictEqual(importedThreat.countermeasures, ["CM2", "EXTERNAL-CM"]);
+  assert.deepStrictEqual(importedCm.addresses.map((a) => a.threat), ["T-3", "EXTERNAL-T"]);
+  assert.deepStrictEqual(importedThreat.futureThreatMetadata, batch.threats[0].futureThreatMetadata);
+  assert.deepStrictEqual(importedCm.futureCmMetadata, batch.countermeasures[0].futureCmMetadata);
+  assert.deepStrictEqual(importedCm.addresses[0].futureAddressMetadata, { keep: true });
+  assert.deepStrictEqual(savedThreatDoc.envelopeMetadata, threatEnvelope.envelopeMetadata);
+  assert.deepStrictEqual(savedCmDoc.envelopeMetadata, cmEnvelope.envelopeMetadata);
+  assert.ok(h.$$('#threats-body [data-export-kind="threat"]').some((el) => el.dataset.exportId === "T-3"), "successful import did not update live state");
+
+  await importFile("bare-threats.json", JSON.stringify([{ id: "BARE-7", title: "Bare array threat", future: 7 }]));
+  await importFile("bare-countermeasures.json", JSON.stringify([{ id: "BARE-CM-8", addresses: [{ threat: "external" }], future: 8 }]));
+  await importFile("raw-threat-step.json", JSON.stringify({ threats: [{ id: "STEP-3", title: "Raw step threat" }], stepMetadata: "preserved outside records" }));
+  await importFile("raw-cm-step.json", JSON.stringify({ countermeasures: [{ id: "STEP-CM-5", addresses: [] }], stepMetadata: "raw step" }));
+  savedThreatDoc = JSON.parse(h.readText(path.join(projectDir, tp)));
+  savedCmDoc = JSON.parse(h.readText(path.join(projectDir, cp)));
+  assert.ok(savedThreatDoc.threats.some((t) => t.id === "BARE-7" && t.future === 7), "bare threat array was not imported");
+  assert.ok(savedThreatDoc.threats.some((t) => t.id === "STEP-3"), "raw threats step envelope was not imported");
+  assert.ok(savedCmDoc.countermeasures.some((c) => c.id === "BARE-CM-8" && c.addresses[0].threat === "external"), "bare countermeasure array was not imported");
+  assert.ok(savedCmDoc.countermeasures.some((c) => c.id === "STEP-CM-5"), "raw countermeasure step envelope was not imported");
+  await reopen();
+  assert.ok(h.$$('#threats-body [data-export-kind="threat"]').some((el) => el.dataset.exportId === "BARE-7"), "imported data did not persist and reload through the host");
+  assert.ok(h.$$('#cms-list [data-export-kind="countermeasure"]').some((el) => el.dataset.exportId === "STEP-CM-5"), "reloaded countermeasure missing");
+  assert.deepStrictEqual(JSON.parse(h.readText(path.join(projectDir, sp))), systemEnvelope, "import must not mutate other project documents");
+  console.log("  Threat/CM JSON import/export: selected full records, supported formats, collision/cross-reference remapping, rejection without writes and host reload passed.");
+}
+
 async function wizard(h) {
   const mod = await load(h, "wizard.ts");
   await mod.openWizard(ctx);
@@ -1663,6 +1762,7 @@ async function wizard(h) {
   await checkThreatCostControls(h, mod);
   await checkBugBar(h, mod);
   await checkRiskMatrices(h, mod);
+  await checkThreatCmImportExport(h, mod);
   checkLiveDomHandlers(h);
 }
 

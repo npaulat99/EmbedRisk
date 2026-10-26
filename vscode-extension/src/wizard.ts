@@ -148,6 +148,74 @@ async function buildData(proj: vscode.Uri) {
   };
 }
 
+function parseThreatCmImport(parsed: any): { threats: any[]; countermeasures: any[] } {
+  let threats: any[] = [];
+  let countermeasures: any[] = [];
+  if (Array.isArray(parsed)) {
+    if (!parsed.length) throw new Error("No threats or countermeasures found in the file.");
+    countermeasures = parsed[0]?.addresses ? parsed : [];
+    threats = parsed[0]?.addresses ? [] : parsed;
+  } else if (parsed && typeof parsed === "object") {
+    if (Object.prototype.hasOwnProperty.call(parsed, "threats")) {
+      if (!Array.isArray(parsed.threats)) throw new Error("The threats field must be an array.");
+      threats = parsed.threats;
+    }
+    if (Object.prototype.hasOwnProperty.call(parsed, "countermeasures")) {
+      if (!Array.isArray(parsed.countermeasures)) throw new Error("The countermeasures field must be an array.");
+      countermeasures = parsed.countermeasures;
+    }
+  } else throw new Error("Expected a JSON object or array.");
+
+  if (!threats.length && !countermeasures.length) throw new Error("No threats or countermeasures found in the file.");
+  const validateRows = (rows: any[], label: string) => rows.forEach((row, index) => {
+    if (!row || typeof row !== "object" || Array.isArray(row)) throw new Error(`${label} ${index + 1} must be a JSON object.`);
+    if (row.id != null && (typeof row.id !== "string" || !row.id.trim())) throw new Error(`${label} ${index + 1} has an invalid ID.`);
+    if (row.addresses != null && (!Array.isArray(row.addresses) || row.addresses.some((a: any) => !a || typeof a !== "object" || Array.isArray(a)))) {
+      throw new Error(`${label} ${index + 1} has invalid addresses.`);
+    }
+    if (row.countermeasures != null && (!Array.isArray(row.countermeasures) || row.countermeasures.some((id: any) => typeof id !== "string"))) {
+      throw new Error(`${label} ${index + 1} has invalid countermeasure references.`);
+    }
+  });
+  validateRows(threats, "Threat");
+  validateRows(countermeasures, "Countermeasure");
+  return { threats, countermeasures };
+}
+
+async function projectIds(proj: vscode.Uri): Promise<Set<string>> {
+  const docs: [string, string[]][] = [
+    ["03-system-assets/system.json", ["components", "interfaces", "trustBoundaries", "assets"]],
+    ["04-dfd/dfd.json", ["nodes"]],
+    ["05-requirements/requirements.json", ["requirements"]],
+    ["06-threats/threats.json", ["threats"]],
+    ["07-attack-trees/attack-trees.json", ["trees"]],
+    ["08-countermeasures/countermeasures.json", ["countermeasures"]],
+    ["09-defects/defects.json", ["defects"]],
+    ["02-assumptions/assumptions.json", ["device", "system", "environment", "operational", "attacker"]],
+  ];
+  const ids = new Set<string>();
+  for (const [rel, keys] of docs) {
+    const doc = await rdRaw(proj, rel, {});
+    for (const key of keys) if (Array.isArray(doc[key])) {
+      for (const row of doc[key]) if (typeof row?.id === "string") ids.add(row.id);
+    }
+  }
+  return ids;
+}
+
+function nextImportedId(prefix: string, claimed: Set<string>): string {
+  let n = 1;
+  while (claimed.has(`${prefix}${n}`)) n++;
+  const id = `${prefix}${n}`;
+  claimed.add(id);
+  return id;
+}
+
+function importedIdPrefix(id: any, fallback: string): string {
+  const match = typeof id === "string" ? id.match(/^(.*?)\d+$/) : null;
+  return match?.[1] || fallback;
+}
+
 function managedSlcAttacker(sl: string) {
   const level = Math.max(1, Math.min(4, Number(String(sl).replace(/\D/g, "")) || 2));
   const capability = ({ 1: 1, 2: 2, 3: 3, 4: 5 } as Record<number, number>)[level];
@@ -209,6 +277,91 @@ export async function openWizard(ctx: vscode.ExtensionContext, focusThreatId?: s
 
   panel.webview.onDidReceiveMessage(async (m) => {
     if (m.cmd === "ready") return sendInit();
+
+    if (m.cmd === "threatCmExport") {
+      try {
+        const threatDoc = await rdRaw(f.proj, "06-threats/threats.json", { threats: [] });
+        const cmDoc = await rdRaw(f.proj, "08-countermeasures/countermeasures.json", { countermeasures: [] });
+        const threatIds = new Set(Array.isArray(m.threatIds) ? m.threatIds.filter((id: any) => typeof id === "string") : []);
+        const cmIds = new Set(Array.isArray(m.cmIds) ? m.cmIds.filter((id: any) => typeof id === "string") : []);
+        const selectedThreats = (threatDoc.threats || []).filter((t: any) => threatIds.has(t.id));
+        const selectedCms = (cmDoc.countermeasures || []).filter((c: any) => cmIds.has(c.id));
+        if (!selectedThreats.length && !selectedCms.length) {
+          return panel.webview.postMessage({ cmd: "threatCmIo", text: "Select at least one threat or countermeasure to export.", ok: false });
+        }
+        const out: any = {};
+        if (selectedThreats.length) out.threats = selectedThreats;
+        if (selectedCms.length) out.countermeasures = selectedCms;
+        const project = await rdRaw(f.proj, "01-project-description/project.json", {});
+        const base = String(project.projectId || project.title || "embedrisk").replace(/[^A-Za-z0-9_-]+/g, "-").replace(/^-+|-+$/g, "") || "embedrisk";
+        const uri = await vscode.window.showSaveDialog({
+          defaultUri: vscode.Uri.file(`${base}-threats-countermeasures.json`),
+          filters: { JSON: ["json"] },
+          saveLabel: "Export JSON",
+        });
+        if (!uri) return;
+        if (uri.scheme !== "file" || !uri.path.toLowerCase().endsWith(".json")) {
+          return panel.webview.postMessage({ cmd: "threatCmIo", text: "Choose a local .json file for export.", ok: false });
+        }
+        await vscode.workspace.fs.writeFile(uri, Buffer.from(JSON.stringify(out, null, 2)));
+        return panel.webview.postMessage({ cmd: "threatCmIo", text: `Exported ${selectedThreats.length} threat(s) and ${selectedCms.length} countermeasure(s).`, ok: true });
+      } catch {
+        return panel.webview.postMessage({ cmd: "threatCmIo", text: "Export failed.", ok: false });
+      }
+    }
+
+    if (m.cmd === "threatCmImport") {
+      try {
+        const picked = await vscode.window.showOpenDialog({
+          canSelectFiles: true, canSelectFolders: false, canSelectMany: false,
+          openLabel: "Import JSON", filters: { JSON: ["json"] },
+        });
+        if (!picked?.length) return;
+        const source = picked[0];
+        if (source.scheme !== "file" || !source.path.toLowerCase().endsWith(".json")) {
+          return panel.webview.postMessage({ cmd: "threatCmIo", text: "Import only supports local .json files.", ok: false });
+        }
+        let parsed: any;
+        try { parsed = JSON.parse(Buffer.from(await vscode.workspace.fs.readFile(source)).toString()); }
+        catch { return panel.webview.postMessage({ cmd: "threatCmIo", text: "Import failed: not valid JSON.", ok: false }); }
+        const { threats: rawThreats, countermeasures: rawCms } = parseThreatCmImport(parsed);
+        const claimed = await projectIds(f.proj);
+        const threatIdMap = new Map<string, string>();
+        const cmIdMap = new Map<string, string>();
+        const newThreats = rawThreats.map((row: any) => {
+          const id = row.id && !claimed.has(row.id)
+            ? (claimed.add(row.id), row.id)
+            : nextImportedId(importedIdPrefix(row.id, "T"), claimed);
+          if (row.id) threatIdMap.set(row.id, id);
+          return { ...row, id };
+        });
+        const newCms = rawCms.map((row: any) => {
+          const id = row.id && !claimed.has(row.id)
+            ? (claimed.add(row.id), row.id)
+            : nextImportedId(importedIdPrefix(row.id, "CM"), claimed);
+          if (row.id) cmIdMap.set(row.id, id);
+          return { ...row, id };
+        });
+        for (const cm of newCms) cm.addresses = (cm.addresses || []).map((address: any) => ({
+          ...address, threat: threatIdMap.get(address.threat) || address.threat,
+        }));
+        for (const threat of newThreats) if (threat.countermeasures) {
+          threat.countermeasures = threat.countermeasures.map((id: string) => cmIdMap.get(id) || id);
+        }
+        const threatDoc = await rdRaw(f.proj, "06-threats/threats.json", { threats: [] });
+        const cmDoc = await rdRaw(f.proj, "08-countermeasures/countermeasures.json", { countermeasures: [] });
+        if (newThreats.length) await write(f.proj, "06-threats/threats.json", { ...threatDoc, threats: [...(threatDoc.threats || []), ...newThreats] });
+        if (newCms.length) await write(f.proj, "08-countermeasures/countermeasures.json", { ...cmDoc, countermeasures: [...(cmDoc.countermeasures || []), ...newCms] });
+        const remapped = [...threatIdMap.entries(), ...cmIdMap.entries()].filter(([oldId, newId]) => oldId !== newId).length;
+        return panel.webview.postMessage({
+          cmd: "threatCmImported", threats: newThreats, cms: newCms,
+          text: `Imported ${newThreats.length} threat(s) and ${newCms.length} countermeasure(s).${remapped ? ` ${remapped} id(s) renamed to avoid collisions.` : ""}`,
+        });
+      } catch (error) {
+        const text = error instanceof Error ? error.message : "Import failed.";
+        return panel.webview.postMessage({ cmd: "threatCmIo", text: `Import failed: ${text}`, ok: false });
+      }
+    }
 
     const cmInput = m.cmd === "cms" ? m.cms : m.cmd === "autoSave" ? m.data?.cms : undefined;
     if (cmInput !== undefined || m.cmd === "cms") {
@@ -676,14 +829,20 @@ function shell(cssUri: vscode.Uri, riskUri: vscode.Uri, attackTreeUri: vscode.Ur
       <div class="card" id="card-threats">
         <h2>06 · Threats &amp; risk</h2>
         <div class="desc">Each threat needs a unique ID, STRIDE category, and affected component.</div>
+        <div class="row" style="margin:8px 0">
+          <button class="btn sm" data-act="importThreatCm">⇑ Import JSON…</button>
+          <button class="btn sm" data-act="exportThreatCm">⇓ Export selected…</button>
+          <span class="hint">Select records with the Export checkboxes; all fields and metadata are preserved.</span>
+        </div>
         <div class="risk-matrix" id="threats-matrix" aria-label="Threat risk matrix"></div>
-        <table class="grid"><thead><tr><th class="narrow">ID</th><th>Title</th><th>STRIDE</th><th>Components</th><th class="num">L</th><th class="num">I</th><th>Risk &rarr; residual</th><th class="stat">Status</th><th></th></tr></thead><tbody id="threats-body"></tbody></table>
+        <table class="grid"><thead><tr><th>Export</th><th class="narrow">ID</th><th>Title</th><th>STRIDE</th><th>Components</th><th class="num">L</th><th class="num">I</th><th>Risk &rarr; residual</th><th class="stat">Status</th><th></th></tr></thead><tbody id="threats-body"></tbody></table>
         <div style="margin-top:10px"><button class="btn" data-act="addT">+ Threat</button></div>
       </div>
 
       <div class="card" id="card-cms">
         <h2>08 · Countermeasures</h2>
         <div class="desc">Countermeasures set residual L/I per threat.</div>
+        <div class="hint" style="margin:8px 0">Use the Export checkboxes to include selected countermeasures in JSON exports.</div>
         <div class="risk-matrix" id="cms-matrix" aria-label="Countermeasure risk matrix"></div>
         <div id="cms-list"></div>
         <div style="margin-top:10px"><button class="btn" data-act="addC">+ Countermeasure</button></div>
@@ -1059,6 +1218,7 @@ function renderThreats(){
       '</div>':
       '';
     var mainRow='<tr id="threat-row-'+i+'" data-threat-row="'+esc(t.id)+'" tabindex="-1">'+
+      '<td><input type="checkbox" data-export-kind="threat" data-export-id="'+esc(t.id)+'" checked aria-label="Export threat '+esc(t.id)+'"></td>'+
       '<td class="narrow"><input class="inp" data-i='+i+' data-k="id" value="'+esc(t.id)+'"></td>'+
       '<td><input class="inp" data-i='+i+' data-k="title" value="'+esc(t.title)+'"></td>'+
       '<td><div class="chips">'+st+'</div></td>'+
@@ -1078,7 +1238,7 @@ function renderThreats(){
       '</details>'+
     '</td></tr>';
     return mainRow+detailRow;
-  }).join(''):'<tr><td colspan=9 class="hint">No threats yet.</td></tr>';
+  }).join(''):'<tr><td colspan=10 class="hint">No threats yet.</td></tr>';
 }
 function updatePills(){threats.forEach(function(t,i){var el=document.getElementById('tp-'+i);if(el)el.innerHTML=riskCell(t);});renderMatrices();}
 function ticketRows(c){return c.ticketUrls&&c.ticketUrls.length?c.ticketUrls:c.ticketUrl?[c.ticketUrl]:[''];}
@@ -1114,7 +1274,7 @@ function renderCms(){
     }).join('');
     var avail=threats.filter(function(t){return addressed.indexOf(t.id)<0;}).map(function(t){return chip(t.id,false,'data-act="addAddr" data-c='+i+' data-val="'+esc(t.id)+'"',t.title);}).join('');
     return '<div class="card" style="margin:10px 0;background:var(--surface-2)">'+
-      '<div class="row"><div class="field narrow" style="flex:0 0 90px"><label>ID</label><input class="inp" data-ci='+i+' data-k="id" value="'+esc(c.id)+'"></div>'+
+      '<div class="row"><label class="hint"><input type="checkbox" data-export-kind="countermeasure" data-export-id="'+esc(c.id)+'" checked aria-label="Export countermeasure '+esc(c.id)+'"> Export</label><div class="field narrow" style="flex:0 0 90px"><label>ID</label><input class="inp" data-ci='+i+' data-k="id" value="'+esc(c.id)+'"></div>'+
       '<div class="field" style="flex:2"><label>Title</label><input class="inp" data-ci='+i+' data-k="title" value="'+esc(c.title)+'"></div>'+
       '<div class="field"><label>Type</label><select class="inp" data-ci='+i+' data-k="type">'+['preventive','detective','corrective','organizational'].map(function(o){return '<option'+(c.type===o?' selected':'')+'>'+o+'</option>';}).join('')+'</select></div>'+
       '<div class="field"><label>Status</label><select class="inp" data-ci='+i+' data-k="status">'+['proposed','planned','implemented','verified'].map(function(o){return '<option'+(c.status===o?' selected':'')+'>'+o+'</option>';}).join('')+'</select></div>'+
@@ -1347,6 +1507,12 @@ document.addEventListener('click',function(e){
   if(act==='undo'){undo();return;}
   if(act==='redo'){redo();return;}
   if(act==='matrixMode'){matrixMode=el.dataset.mode;var mount=el.closest('.risk-matrix');renderMatrices();var button=mount.querySelector('[data-mode="'+matrixMode+'"]');if(button)button.focus();return;}
+  if(act==='importThreatCm'){vs.postMessage({cmd:'threatCmImport'});return;}
+  if(act==='exportThreatCm'){
+    var selectedThreatIds=Array.prototype.filter.call(document.querySelectorAll('[data-export-kind="threat"]:checked'),function(input){return input.checked;}).map(function(input){return input.dataset.exportId;});
+    var selectedCmIds=Array.prototype.filter.call(document.querySelectorAll('[data-export-kind="countermeasure"]:checked'),function(input){return input.checked;}).map(function(input){return input.dataset.exportId;});
+    vs.postMessage({cmd:'threatCmExport',threatIds:selectedThreatIds,cmIds:selectedCmIds});return;
+  }
   if(kind){
     if(kind==='scroll'){var n=document.querySelector(el.dataset.target);if(n)n.scrollIntoView({behavior:'smooth',block:'start'});}
     else if(kind==='cmd'){vs.postMessage({cmd:el.dataset.target});}
@@ -1560,6 +1726,12 @@ window.addEventListener('message',function(ev){
   else if(m.cmd==='requirements'){requirements=m.requirements||requirements;counts=m.counts||counts;renderRequirements();renderRail();toast('ok',m.text);}
   else if(m.cmd==='msg'){counts=m.counts||counts;renderRail();toast('ok',m.text);}
   else if(m.cmd==='saved'){counts=m.counts||counts;renderRail();var st=$('#savingStatus');if(st){st.textContent='Saved';st.style.color='#4caf50';setTimeout(function(){if(st&&st.textContent==='Saved')st.textContent='';},2500);}}
+  else if(m.cmd==='threatCmIo'){toast(m.ok?'ok':'err',m.text||'Import/export finished.');}
+  else if(m.cmd==='threatCmImported'){
+    threats=threats.concat(m.threats||[]);cms=cms.concat(m.cms||[]);
+    counts.threats=threats.length;counts.countermeasures=cms.length;
+    renderThreats();renderCms();updatePills();renderRail();toast('ok',m.text||'Imported threats and countermeasures.');
+  }
   else if(m.cmd==='versionResult'){if(!m.ok)toast('err',m.error||'Could not record version.');else{changeTracker=m.tracker||changeTracker;counts=m.counts||counts;try{renderVersions();}catch(e){}renderRail();toast('ok',m.text);}}
   else if(m.cmd==='err'){toast('err',m.text);}
 });
