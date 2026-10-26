@@ -7,6 +7,7 @@ const root = path.resolve(__dirname, "..");
 const DfdModel = require(path.join(root, "vscode-extension/media/dfd-model.js"));
 const AtModel = require(path.join(root, "vscode-extension/media/attacktree-model.js"));
 const RiskModel = require(path.join(root, "vscode-extension/media/risk-model.js"));
+const LayerVisibilityModel = require(path.join(root, "vscode-extension/media/layer-visibility.js"));
 
 function hasTraFixtures(projectDir) {
   return fs.existsSync(path.join(projectDir, "04-dfd/dfd.json")) && fs.existsSync(path.join(projectDir, "07-attack-trees/attack-trees.json"));
@@ -640,6 +641,10 @@ async function checkWebappParity() {
 }
 
 checkWebappParity()
+  .then(async () => {
+    const { runLayerVisibilityTests } = await import("../webapp/test/dfd-layer-visibility.test.mjs");
+    runLayerVisibilityTests(LayerVisibilityModel);
+  })
   .then(() => console.log("All " + passed + " model assertions passed."))
   .catch((err) => {
     console.error(err && err.message ? err.message : err);
