@@ -1863,10 +1863,23 @@ async function nativeDfdEditor(h) {
   const fixtureDfd = readProjectJson("04-dfd/dfd.json");
   const anchor = fixtureDfd.nodes.find((n) => n.parent == null && n.componentRef && n.type !== "trust-boundary");
   assert.ok(anchor, "fixture needs a root component for interface visibility checks");
+  system.components.find((component) => component.id === anchor.componentRef).kind = "device";
   system.interfaces.push(
     { id: "I-TEST-HIDDEN", name: "Hidden interface", component: anchor.componentRef, exposure: "local", hidden: true, tag: "HIDDEN" },
     { id: "I-TEST-VISIBLE", name: "Visible interface", component: anchor.componentRef, exposure: "local", tag: "VISIBLE" },
+    { id: "I-TEST-CHILD", name: "Child interface", component: "C-3", exposure: "local", tag: "CHILD" },
+    { id: "I-TEST-CHILD-2", name: "Second child interface", component: "C-3", exposure: "local", tag: "CHILD2" },
+    { id: "I-TEST-BOUNDARY", name: "Device boundary", component: "C-3", exposure: "adjacent", tag: "BOUNDARY" },
   );
+  fixtureDfd.flows.push(
+    { id: "F-TEST-ROOT-IFACE", from: "I-TEST-VISIBLE", to: "N-EXT-CTRL", label: "ROOT IFACE" },
+    { id: "F-TEST-CHILD-IFACE", from: "I-TEST-CHILD", to: "N-C3", label: "CHILD IFACE" },
+    { id: "F-TEST-CHILD-IFACE-2", from: "I-TEST-CHILD-2", to: "N-C3", label: "CHILD IFACE 2" },
+    { id: "F-TEST-IFACE-IFACE", from: "I-TEST-CHILD", to: "I-TEST-CHILD-2", label: "INTERFACE FLOW" },
+    { id: "F-TEST-BOUNDARY", from: "I-TEST-BOUNDARY", to: "N-EXT-CTRL", label: "DEVICE BOUNDARY" },
+  );
+  const fixtureDfdJson = JSON.stringify(fixtureDfd);
+  h.overlay.set(path.join(projectDir, "04-dfd/dfd.json"), fixtureDfdJson);
   h.overlay.set(path.join(projectDir, systemPath), JSON.stringify(system));
   const threatPath = "06-threats/threats.json", cmPath = "08-countermeasures/countermeasures.json";
   const projectPath = "01-project-description/project.json";
@@ -1899,6 +1912,24 @@ async function nativeDfdEditor(h) {
   h.openDom();
   await h.settle();
   assert.ok(h.toWebview.some((m) => m.type === "load"), "host did not answer 'ready' with 'load'");
+  assert.strictEqual(h.dom.window.eval("JSON.stringify(dfd)"), fixtureDfdJson, "rendering mutated project DFD data");
+  assert.ok(h.must('[data-iface="I-TEST-VISIBLE"]'), "root layer omitted a visible interface");
+  assert.ok(h.must('[data-flow="F-TEST-ROOT-IFACE"]'), "root layer omitted an interface-endpoint flow");
+  assert.strictEqual(h.$('[data-flow="F-TEST-CHILD-IFACE"]'), null, "root layer rendered a flow to a hidden node");
+  h.setValue("#sel", "N-DEV");
+  h.key("Enter");
+  assert.notStrictEqual(h.must("#crumb").textContent, "root", "device layer navigation did not enter the selected node");
+  assert.ok(h.must('[data-iface="I-TEST-BOUNDARY"]'), "device boundary exception omitted a descendant interface");
+  assert.strictEqual(h.$('[data-iface="I-TEST-HIDDEN"]'), null, "device layer rendered a hidden interface");
+  assert.strictEqual(h.$('[data-flow="F-TEST-CHILD-IFACE"]'), null, "device layer rendered a flow whose node endpoint is hidden");
+  h.setValue("#sel", "N-C2");
+  h.key("Enter");
+  assert.ok(h.must('[data-iface="I-TEST-CHILD"]'), "sub-layer omitted a visible interface");
+  assert.ok(h.must('[data-iface="I-TEST-CHILD-2"]'), "sub-layer omitted a second visible interface");
+  assert.ok(h.must('[data-flow="F-TEST-CHILD-IFACE"]'), "sub-layer omitted an interface-endpoint flow");
+  assert.ok(h.must('[data-flow="F-TEST-IFACE-IFACE"]'), "sub-layer omitted a flow between visible interfaces");
+  h.key("Backspace");
+  h.key("Backspace");
   const matrixCell = (l, i) => h.must(`#dfd-risk-matrix td[data-l="${l}"][data-i="${i}"]`);
   const matrixCount = (l, i) => matrixCell(l, i).querySelector(".n").textContent;
   h.setValue("#sel", "N-EXT-CTRL");

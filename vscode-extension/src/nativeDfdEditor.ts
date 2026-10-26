@@ -12,6 +12,7 @@ export class NativeDfdEditor implements vscode.CustomTextEditorProvider {
     panel.webview.options = { enableScripts: true, localResourceRoots: [media] };
     const modelUri = panel.webview.asWebviewUri(vscode.Uri.joinPath(media, "dfd-model.js"));
     const riskUri = panel.webview.asWebviewUri(vscode.Uri.joinPath(media, "risk-model.js"));
+    const visibilityUri = panel.webview.asWebviewUri(vscode.Uri.joinPath(media, "layer-visibility.js"));
     const cssUri = panel.webview.asWebviewUri(vscode.Uri.joinPath(media, "tra-ui.css"));
     const logoUri = panel.webview.asWebviewUri(vscode.Uri.joinPath(media, "embedrisk-logo.svg"));
     const nonce = String(Math.random()).slice(2);
@@ -22,7 +23,7 @@ export class NativeDfdEditor implements vscode.CustomTextEditorProvider {
       try {
         const sys = JSON.parse(Buffer.from(await vscode.workspace.fs.readFile(vscode.Uri.joinPath(projRoot, "03-system-assets/system.json"))).toString());
         return {
-          components: (sys.components || []).map((c: any) => ({ id: c.id, name: c.name, parent: c.parent })),
+          components: (sys.components || []).map((c: any) => ({ id: c.id, name: c.name, kind: c.kind, parent: c.parent })),
           interfaces: (sys.interfaces || []).map((itf: any) => ({
             id: itf.id, name: itf.name, tag: itf.tag || '',
             component: itf.component || '', exposure: itf.exposure || '',
@@ -88,7 +89,7 @@ export class NativeDfdEditor implements vscode.CustomTextEditorProvider {
       await vscode.workspace.applyEdit(ed);
     };
 
-    panel.webview.html = this.html(modelUri, riskUri, cssUri, logoUri, csp, nonce);
+    panel.webview.html = this.html(modelUri, riskUri, visibilityUri, cssUri, logoUri, csp, nonce);
 
     const sub = vscode.workspace.onDidChangeTextDocument((e) => {
       if (e.document.uri.toString() === doc.uri.toString() && e.document.getText() !== lastText) post();
@@ -108,7 +109,7 @@ export class NativeDfdEditor implements vscode.CustomTextEditorProvider {
     });
   }
 
-  private html(modelUri: vscode.Uri, riskUri: vscode.Uri, cssUri: vscode.Uri, logoUri: vscode.Uri, csp: string, nonce: string): string {
+  private html(modelUri: vscode.Uri, riskUri: vscode.Uri, visibilityUri: vscode.Uri, cssUri: vscode.Uri, logoUri: vscode.Uri, csp: string, nonce: string): string {
     return `<!doctype html><html><head><meta charset="utf8"><meta http-equiv="Content-Security-Policy" content="${csp}">
 <link rel="stylesheet" href="${cssUri}">
 <style>
@@ -184,8 +185,9 @@ svg{display:block}
 <div id="ov"><div id="ovbox"><div id="ovlabel"></div><input id="ovinput"><div class="r"><button class="btn" id="ovcancel">Cancel</button><button class="btn primary" id="ovok">OK</button></div></div></div>
 <script nonce="${nonce}" src="${modelUri}"></script>
 <script nonce="${nonce}" src="${riskUri}"></script>
+<script nonce="${nonce}" src="${visibilityUri}"></script>
 <script nonce="${nonce}">
-const M=DfdModel, R=window.RiskModel, vs=acquireVsCodeApi();
+const M=DfdModel, R=window.RiskModel, V=window.LayerVisibilityModel, vs=acquireVsCodeApi();
 const TYPES=['external-entity','process','multiprocess','store','trust-boundary'];
 let dfd={nodes:[],flows:[]}, components=[], interfaces=[], trustBoundaryIds=[], riskData={}, threats=[], cms=[], riskScheme=null, acceptableRisk, matrixMode='residual', stack=[], focus=null, connect=false, connectFrom=null;
 let drag=null, chipDrag=null, dragMoved=false, dragging=false;
@@ -225,32 +227,37 @@ function worstRiskForNode(nodeId){
   });
   return worstColor;
 }
-function findIfaceAnchor(componentId){
-  var visNodes=M.viewNodes(dfd,cur());
-  var direct=visNodes.find(function(n){return n.componentRef===componentId;});
-  if(direct)return direct;
-  var candidate=dfd.nodes.find(function(n){return n.componentRef===componentId;});
-  while(candidate&&candidate.parent!=null){
-    var vis=visNodes.find(function(n){return n.id===candidate.parent;});
-    if(vis)return vis;
-    candidate=dfd.nodes.find(function(n){return n.id===candidate.parent;});
-  }
-  return null;
-}
 function drawCanvas(){
   // Build risk color map using subtree propagation so root-level nodes inherit sub-component risk
   var nodeRisk={};
-  M.viewNodes(dfd,cur()).forEach(function(n){var c=worstRiskForNode(n.id);if(c)nodeRisk[n.id]=c;});
-  var inner=M.render(dfd,cur(),focus,nodeRisk);
-  // Render interface chips using ancestor-lookup so they appear on whatever layer is visible
+  var visibleRealNodes=M.viewNodes(dfd,cur()).filter(function(n){return n.type!=='trust-boundary';});
+  visibleRealNodes.forEach(function(n){var c=worstRiskForNode(n.id);if(c)nodeRisk[n.id]=c;});
+  var compById=new Map((components||[]).map(function(c){return [c.id,c];}));
+  var visibleRealNodeIds=new Set(visibleRealNodes.map(function(n){return n.id;}));
+  var visibleIfaceIds=V.deriveVisibleInterfaceIds({
+    currentParent:cur(),nodes:dfd.nodes,compById:compById,interfaces:interfaces,flows:dfd.flows,visibleRealNodes:visibleRealNodes
+  });
+  var visibleFlows=dfd.flows.filter(function(flow){return V.flowBelongsToLayerContext({
+    flow:flow,currentParent:cur(),visibleRealNodeIds:visibleRealNodeIds,visibleIfaceIds:visibleIfaceIds,
+    nodes:dfd.nodes,compById:compById,interfaces:interfaces
+  });});
+  // Layout/render a copy: DfdModel.layout assigns default coordinates to nodes without positions.
+  var renderDfd={...dfd,nodes:dfd.nodes.map(function(n){return {...n};}),flows:visibleFlows};
+  var positionedNodes=M.layout(renderDfd,cur()).filter(function(n){return n.type!=='trust-boundary';});
+  var inner=M.render(renderDfd,cur(),focus,nodeRisk);
+  var positionedById=new Map(positionedNodes.map(function(n){return [n.id,n];}));
+  var ifacePositions=new Map();
+  // Render only interfaces selected by the shared layer-visibility model.
   var ifaceChips='';
   (interfaces||[]).forEach(function(itf){
-    if(itf.hidden||!itf.component)return;
-    var nb=findIfaceAnchor(itf.component);
+    if(!visibleIfaceIds.has(itf.id)||!itf.component)return;
+    var targetId=V.resolveTargetNodeId(itf.component,visibleRealNodes,compById);
+    var nb=positionedById.get(targetId);
     if(!nb)return;
     var posKey=(cur()||'root')+':'+itf.id;
     var cp=(dfd.ifacePos||{})[posKey];
     var cx=cp?cp.x:((nb.x||0)+4), cy=cp?cp.y:((nb.y||0)-50);
+    ifacePositions.set(itf.id,{x:cx,y:cy});
     var lbl=esc((itf.tag||itf.name).slice(0,13));
     var tx=(nb.x||0)+65, ty=(nb.y||0)+28; // midpoint of target node
     var isFocus=focus==='iface:'+itf.id;
@@ -260,11 +267,31 @@ function drawCanvas(){
       '<text x="'+(cx+40)+'" y="'+(cy+17)+'" text-anchor="middle" font-size="10" fill="#5c8df6">'+lbl+'</text>'+
     '</g>';
   });
+  var ifaceFlows='';
+  visibleFlows.forEach(function(flow){
+    var fromIface=visibleIfaceIds.has(flow.from), toIface=visibleIfaceIds.has(flow.to);
+    if(fromIface&&toIface){
+      var fromChip=ifacePositions.get(flow.from), toChip=ifacePositions.get(flow.to);
+      if(!fromChip||!toChip)return;
+      var x1=fromChip.x+40, y1=fromChip.y+14, x2=toChip.x+40, y2=toChip.y+14;
+      ifaceFlows+='<path data-flow="'+esc(flow.id)+'" d="M '+x1+' '+y1+' L '+x2+' '+y2+'" stroke="#666" stroke-width="1.5" fill="none" marker-end="url(#arrow)"/>';
+      return;
+    }
+    if(!fromIface&&!toIface)return;
+    var ifaceId=fromIface?flow.from:flow.to, otherId=fromIface?flow.to:flow.from;
+    var chip=ifacePositions.get(ifaceId), endpoint=positionedById.get(otherId);
+    if(!chip||!endpoint)return;
+    var ix=chip.x+40, iy=chip.y+14, nx=(endpoint.x||0)+65, ny=(endpoint.y||0)+28;
+    var x1=fromIface?ix:nx, y1=fromIface?iy:ny, x2=fromIface?nx:ix, y2=fromIface?ny:iy;
+    var lx=(x1+x2)/2, ly=(y1+y2)/2-5;
+    ifaceFlows+='<path data-flow="'+esc(flow.id)+'" d="M '+x1+' '+y1+' L '+x2+' '+y2+'" stroke="#666" stroke-width="1.5" fill="none" marker-end="url(#arrow)"/>'+
+      (flow.label?'<text x="'+lx+'" y="'+ly+'" text-anchor="middle" font-size="10" fill="#555">'+esc(flow.label)+'</text>':'');
+  });
   var maxX=600,maxY=400;
-  var ns=M.viewNodes(dfd,cur());
+  var ns=positionedNodes;
   ns.forEach(function(n){if(typeof n.x==='number')maxX=Math.max(maxX,n.x+220);if(typeof n.y==='number')maxY=Math.max(maxY,n.y+180);});
   var cv=$('cv');cv.setAttribute('width',maxX);cv.setAttribute('height',maxY);
-  cv.innerHTML="<defs><marker id='arrow' markerWidth='9' markerHeight='9' refX='8' refY='3' orient='auto'><path d='M0,0L8,3L0,6' fill='#888'/></marker></defs>"+inner+ifaceChips;
+  cv.innerHTML="<defs><marker id='arrow' markerWidth='9' markerHeight='9' refX='8' refY='3' orient='auto'><path d='M0,0L8,3L0,6' fill='#888'/></marker></defs>"+inner+ifaceFlows+ifaceChips;
   $('crumb').textContent=['root'].concat(stack.map(label)).join(' / ');
   $('cbtn').className=connect?'on':'';
   $('status').textContent=connect?(connectFrom?('Connect: click the target for '+label(connectFrom)):'Connect: click the source node'):'';
