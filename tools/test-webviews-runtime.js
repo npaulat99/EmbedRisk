@@ -1875,6 +1875,25 @@ async function nativeDfdEditor(h) {
     { id: "I-TEST-CHILD-2", name: "Second child interface", component: "C-3", exposure: "local", tag: "CHILD2" },
     { id: "I-TEST-BOUNDARY", name: "Device boundary", component: "C-3", exposure: "adjacent", tag: "BOUNDARY" },
   );
+  system.runtimeTestMetadata = { keep: true };
+  system.trustBoundaries = system.trustBoundaries || [];
+  system.trustBoundaries.push(
+    { id: "TB-EXT-DFD7", name: "DFD7 system boundary", unknownBoundaryField: "preserved" },
+    { id: "TB-EXT-DFD7-SHARED", name: "Shared pair boundary" },
+    { id: "TB-EXT-DFD7-EMPTY", name: "Empty pair boundary" },
+  );
+  system.envelopeUnknown = { source: "runtime fixture" };
+  system.strideAnalyses = {
+    ...(system.strideAnalyses || {}),
+    "OTHER~PAIR": { unknownAnalysisField: "keep this other pair" },
+  };
+  fixtureDfd.nodes.push(
+    { id: "N-EXT-DFD7-IN", type: "process", label: "Internal endpoint", parent: null },
+    { id: "N-EXT-DFD7-OUT", type: "store", label: "External endpoint", parent: null },
+    { id: "TB-EXT-DFD7", type: "trust-boundary", label: "DFD7 boundary label", members: ["N-EXT-DFD7-IN"], parent: null },
+    { id: "TB-EXT-DFD7-SHARED", type: "trust-boundary", label: "Shared boundary", members: ["N-EXT-DFD7-IN"], parent: null },
+    { id: "TB-EXT-DFD7-EMPTY", type: "trust-boundary", label: "Empty boundary", members: [], parent: null },
+  );
   fixtureDfd.flows.push(
     { id: "F-TEST-ROOT-CONTEXT", from: anchor.id, to: "N-EXT-CTRL", label: "ROOT CONTEXT" },
     { id: "F-TEST-ROOT-IFACE", from: "I-TEST-VISIBLE", to: "N-EXT-CTRL", label: "ROOT IFACE" },
@@ -1884,7 +1903,19 @@ async function nativeDfdEditor(h) {
     { id: "F-TEST-BOUNDARY", from: "I-TEST-BOUNDARY", to: "N-EXT-CTRL", label: "DEVICE BOUNDARY" },
     { id: "F-TEST-CONTEXT-PORT", from: "N-C1", to: "N-C3", label: "CONTEXT PORT" },
     { id: "F-TEST-IFACE-CONTEXT-PORT", from: "N-C3", to: "I-TEST-VISIBLE", label: "CONTEXT INTERFACE PORT" },
+    { id: "F-EXT-DFD7", from: "N-EXT-DFD7-IN", to: "N-EXT-DFD7-OUT", label: "STRIDE shared flow" },
   );
+  const stridePairKey = ["N-EXT-DFD7-IN", "N-EXT-DFD7-OUT"].sort().join("~");
+  system.strideAnalyses[stridePairKey] = {
+    unknownAnalysisField: "preserve analysis metadata",
+    endpoints: {
+      "N-EXT-DFD7-IN": {
+        unknownEndpointField: "preserve inside endpoint metadata",
+        cells: { S: { strengths: ["seed"], weaknesses: ["retain weakness"], unknownCellField: "preserve cell metadata" } },
+      },
+      "N-EXT-DFD7-OUT": { label: "Old outside override", unknownEndpointField: "preserve outside endpoint metadata" },
+    },
+  };
   const fixtureDfdJson = JSON.stringify(fixtureDfd);
   h.overlay.set(path.join(projectDir, "04-dfd/dfd.json"), fixtureDfdJson);
   h.overlay.set(path.join(projectDir, systemPath), JSON.stringify(system));
@@ -2143,6 +2174,80 @@ async function nativeDfdEditor(h) {
     const mem = h.$("#insp [data-mem]");
     if (mem) { h.click(mem); h.click(h.must("#insp [data-mem]")); }
   }
+
+  const openStrideFor = (tbId) => {
+    h.setValue("#sel", tbId);
+    h.click("#insp [data-open-stride]");
+    return h.must('.stride-overlay [role="dialog"][aria-modal="true"]');
+  };
+  const stridePairs = h.dom.window.StrideModel.boundaryPairs(system, fixtureDfd, "TB-EXT-DFD7");
+  assert.strictEqual(stridePairs.length, 1, "fixture did not produce one real boundary pair");
+  assert.strictEqual(stridePairs[0].key, stridePairKey, "STRIDE pair key is not stable and flat");
+  let strideDialog = openStrideFor("TB-EXT-DFD7");
+  assert.ok(strideDialog.querySelector("h2").textContent.includes("DFD7 system boundary"),
+    "editor did not prefer system trust-boundary name");
+  assert.strictEqual(strideDialog.querySelectorAll("[data-pair-key]").length, 1, "pair table missing");
+  assert.strictEqual(strideDialog.querySelectorAll("textarea").length, 24, "editor did not render six STRIDE rows and both sides");
+  assert.ok(strideDialog.querySelector('[aria-label="inside Spoofing strengths"]'), "accessible STRIDE cell label missing");
+  const sides = {
+    inside: "N-EXT-DFD7-IN",
+    outside: "N-EXT-DFD7-OUT",
+  };
+  for (const key of ["S", "T", "R", "I", "D", "E"]) {
+    for (const side of ["inside", "outside"]) {
+      for (const field of ["strengths", "weaknesses"]) {
+        const value = key === "E" && side === "outside" && field === "weaknesses" ? "" : `${key}-${side}-${field}`;
+        h.setValue(
+          `[data-stride-cell="${sides[side]}"][data-stride-key="${key}"][data-stride-field="${field}"]`,
+          value,
+        );
+      }
+    }
+  }
+  h.setValue('[data-stride-label="N-EXT-DFD7-IN"]', "  Trimmed inside  ");
+  h.setValue('[data-stride-label="N-EXT-DFD7-OUT"]', "   ");
+  await h.settle();
+  let savedSystem = lastWriteJson(h, systemPath);
+  assert.ok(savedSystem, "STRIDE edits did not write system.json");
+  const savedAnalysis = savedSystem.strideAnalyses[stridePairKey];
+  assert.strictEqual(savedAnalysis.endpoints[sides.inside].label, "Trimmed inside", "endpoint override was not trimmed");
+  assert.strictEqual(Object.hasOwn(savedAnalysis.endpoints[sides.outside], "label"), false, "empty endpoint override was not omitted");
+  assert.deepStrictEqual(savedAnalysis.endpoints[sides.inside].cells.S.strengths, ["S-inside-strengths"]);
+  assert.deepStrictEqual(savedAnalysis.endpoints[sides.inside].cells.S.weaknesses, ["S-inside-weaknesses"]);
+  assert.deepStrictEqual(savedAnalysis.endpoints[sides.outside].cells.E.weaknesses, [], "empty textarea did not save as []");
+  assert.strictEqual(savedAnalysis.endpoints[sides.inside].cells.S.unknownCellField, "preserve cell metadata");
+  assert.strictEqual(savedAnalysis.endpoints[sides.inside].unknownEndpointField, "preserve inside endpoint metadata");
+  assert.strictEqual(savedAnalysis.endpoints[sides.outside].unknownEndpointField, "preserve outside endpoint metadata");
+  assert.strictEqual(savedAnalysis.unknownAnalysisField, "preserve analysis metadata");
+  assert.strictEqual(savedSystem.strideAnalyses["OTHER~PAIR"].unknownAnalysisField, "keep this other pair");
+  assert.strictEqual(Object.hasOwn(savedSystem.strideAnalyses, "TB-EXT-DFD7"), false, "analysis was incorrectly nested under boundary ID");
+  assert.deepStrictEqual(savedSystem.runtimeTestMetadata, { keep: true }, "unknown system metadata was lost");
+  assert.deepStrictEqual(savedSystem.envelopeUnknown, { source: "runtime fixture" }, "unknown system envelope data was lost");
+  assert.strictEqual(savedSystem.trustBoundaries.find((b) => b.id === "TB-EXT-DFD7").unknownBoundaryField, "preserved");
+  const loadCountBeforeOwnWriteRefresh = h.toWebview.filter((m) => m.type === "load").length;
+  const strideWatcher = h.fileWatchers.filter((w) => w.pattern.pattern === systemPath && w.pattern.baseUri.fsPath === projectDir).at(-1);
+  h.track(strideWatcher.change(Uri.file(path.join(projectDir, systemPath))));
+  await h.settle();
+  assert.strictEqual(h.toWebview.filter((m) => m.type === "load").length, loadCountBeforeOwnWriteRefresh,
+    "self-write watcher refreshed and clobbered active STRIDE editor");
+  assert.ok(h.$(".stride-overlay"), "self-write watcher closed the active editor");
+  h.click(".stride-overlay [data-stride-close]");
+  assert.strictEqual(h.$(".stride-overlay"), null, "Close button did not dismiss STRIDE editor");
+
+  strideDialog = openStrideFor("TB-EXT-DFD7-SHARED");
+  assert.strictEqual(strideDialog.querySelectorAll("[data-pair-key]").length, 1, "second boundary did not share the communicating pair");
+  assert.strictEqual(strideDialog.querySelector('[data-stride-label="N-EXT-DFD7-IN"]').value, "Trimmed inside",
+    "shared flat pair-key label did not survive close/reopen");
+  assert.strictEqual(strideDialog.querySelector('[data-stride-cell="N-EXT-DFD7-OUT"][data-stride-key="R"][data-stride-field="strengths"]').value,
+    "R-outside-strengths", "shared flat pair-key cell did not survive close/reopen");
+  h.key("Escape", { target: strideDialog });
+  assert.strictEqual(h.$(".stride-overlay"), null, "Escape did not dismiss STRIDE editor");
+  strideDialog = openStrideFor("TB-EXT-DFD7-EMPTY");
+  assert.ok(strideDialog.querySelector(".stride-empty").textContent.includes("No data flows cross this boundary"),
+    "empty boundary did not explain how to create a pair");
+  assert.strictEqual(strideDialog.querySelectorAll("[data-pair-key]").length, 0, "empty boundary unexpectedly rendered a pair");
+  h.click(".stride-overlay");
+  assert.strictEqual(h.$(".stride-overlay"), null, "backdrop click did not dismiss STRIDE editor");
   await h.settle();
 
   const saved = lastWriteJson(h, "04-dfd/dfd.json");

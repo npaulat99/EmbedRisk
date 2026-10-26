@@ -228,7 +228,18 @@ the orchestrator implements them directly (anchors: `renderProject()` and the de
     layer visibility and round-trip behavior. Runtime regressions cover interface-to-node and
     interface-to-interface connection creation, nested external endpoint ports, and save/reopen.
 - [x] **EXT-DFD6 STRIDE boundary-pair model** `media/stride-model.js` (port of `lib/stride.ts`).
-- [ ] **EXT-DFD7 STRIDE-per-boundary editor** writing `system.strideAnalyses` (Deps: EXT-DFD6).
+- [x] **EXT-DFD7 STRIDE-per-boundary editor** writing `system.strideAnalyses` (Deps: EXT-DFD6).
+  - AC: The native DFD inspector opens a STRIDE dialog for a selected trust boundary, titled with its
+    system boundary name, DFD label, or ID fallback. It derives communicating pairs from
+    `StrideModel.boundaryPairs`; analyses are globally keyed by stable pair key and shared by all
+    boundaries crossing that pair. Each pair edits both endpoint labels and S/T/R/I/D/E strengths
+    and weaknesses as multiline text. Every edit immediately persists to `03-system-assets/system.json`,
+    preserving the document envelope, unknown metadata, other pair entries, endpoint sides, and cells;
+    empty text writes `[]`, and endpoint labels are trimmed with empty overrides omitted. Changes
+    survive close/reopen. The accessible modal has an explanatory no-pairs state and supports close
+    button, backdrop, and Escape dismissal. In-memory runtime regressions cover pair sharing,
+    persistence/round-trip, preservation, field semantics, accessibility, dismissal, and empty state;
+    required baseline passes.
 - [ ] **EXT-DFD8 Edge routing engine** `media/dfd-engine.js` (port of `webapp/shared/dfdEngine.js`).
 - [ ] **EXT-UC1 Preserve `independent-dfd` diagrams** in the use-case editor (read-only, byte-identical).
 - [ ] **EXT-UC2 Create/edit independent DFD diagrams** (Deps: EXT-UC1).
@@ -269,6 +280,7 @@ the orchestrator implements them directly (anchors: `renderProject()` and the de
 
 | Item | Impl | Review | Test | Notes |
 |---|---|---|---|---|
+| EXT-DFD7 | ✅ | ✅ PASS (combined verifier; source, behavior, preservation, watcher and accessibility checks) | ✅ PASS (compile, 174 model assertions, 6 parsed scripts + 6 runtime webviews, diff check) | Added a STRIDE editor to the native DFD trust-boundary inspector. Pair analyses are stored flat by stable pair key and shared across boundaries; endpoint labels and all six STRIDE strengths/weaknesses persist immediately while preserving system-document and nested unknown metadata. Runtime tests cover pairs, editing, empty/trim semantics, shared views, save/reopen, watcher feedback suppression, accessibility, dismissals and empty state. No fixture edits or live VS Code/browser validation. |
 | EXT-DFD6 | ✅ | ✅ PASS (direct source/parity review) | ✅ PASS (compile, 174 model assertions, 6 parsed scripts + 6 runtime webviews, diff check) | Ported webapp STRIDE boundary pairs and authored-content predicates to a browser-global/CommonJS pure model. Tests compare against the actual webapp TypeScript and cover nested members, interfaces, crossing direction/deduplication, labels, missing boundaries and whitespace content. No editor UI, fixtures or live VS Code validation. |
 | EXT-DFD5 | ✅ | ✅ PASS (combined verifier identified one parent-normalization regression; fixed in one bounded round and rechecked) | ✅ PASS (compile, 142 model assertions, 6 parsed scripts + 6 runtime webviews, diff check) | Preserved the EXT-DFD4 visibility rendering and added connectable interface chips plus nested external sibling/interface context ports. Connect mode stores original endpoint IDs; flows render with labels and can be selected, edited, and deleted. Per-layer `ifacePos`/`portPos` placement and reopen persistence are covered. Runtime regressions cover interface↔node/interface flows, sibling and interface ports, inspector operations, save/reopen, hidden-interface visibility, and legacy nodes without `parent` keys. The verifier found strict null-vs-undefined parent comparisons; normalized them to the shared DFD model semantics and added a regression for root selection and nested sibling ports. Baseline passed after the fix. No fixture edits or live VS Code/browser validation. |
 | EXT-DFD4a | ✅ | ✅ PASS (direct bounded diff review) | ✅ PASS (compile, 142 model assertions, 6 parsed scripts + 6 runtime webviews, diff check) | Native DFD drag starts from the rendered auto-layout coordinates for legacy nodes lacking saved positions; render remains copy-only. Runtime regression removes coordinates in-memory, confirms rendering does not mutate DFD data, drags and saves the node, then reopens the editor and checks the saved position is restored. Full verification baseline passed; no fixture edits or live VS Code/browser validation. |

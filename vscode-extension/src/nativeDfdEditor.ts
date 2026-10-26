@@ -13,6 +13,7 @@ export class NativeDfdEditor implements vscode.CustomTextEditorProvider {
     const modelUri = panel.webview.asWebviewUri(vscode.Uri.joinPath(media, "dfd-model.js"));
     const riskUri = panel.webview.asWebviewUri(vscode.Uri.joinPath(media, "risk-model.js"));
     const visibilityUri = panel.webview.asWebviewUri(vscode.Uri.joinPath(media, "layer-visibility.js"));
+    const strideUri = panel.webview.asWebviewUri(vscode.Uri.joinPath(media, "stride-model.js"));
     const cssUri = panel.webview.asWebviewUri(vscode.Uri.joinPath(media, "tra-ui.css"));
     const logoUri = panel.webview.asWebviewUri(vscode.Uri.joinPath(media, "embedrisk-logo.svg"));
     const nonce = String(Math.random()).slice(2);
@@ -23,6 +24,7 @@ export class NativeDfdEditor implements vscode.CustomTextEditorProvider {
       try {
         const sys = JSON.parse(Buffer.from(await vscode.workspace.fs.readFile(vscode.Uri.joinPath(projRoot, "03-system-assets/system.json"))).toString());
         return {
+          system: sys,
           components: (sys.components || []).map((c: any) => ({ id: c.id, name: c.name, kind: c.kind, parent: c.parent })),
           interfaces: (sys.interfaces || []).map((itf: any) => ({
             id: itf.id, name: itf.name, tag: itf.tag || '',
@@ -32,7 +34,7 @@ export class NativeDfdEditor implements vscode.CustomTextEditorProvider {
           })),
           trustBoundaryIds: (sys.trustBoundaries || []).map((b: any) => b.id).filter((id: any) => typeof id === "string"),
         };
-      } catch { return { components: [], interfaces: [], trustBoundaryIds: [] }; }
+      } catch { return { system: {}, components: [], interfaces: [], trustBoundaryIds: [] }; }
     };
 
     let lastText = "";
@@ -80,7 +82,42 @@ export class NativeDfdEditor implements vscode.CustomTextEditorProvider {
       const sys = await readSystemData();
       const riskData = await readRiskData();
       const matrixData = await readMatrixData();
-      panel.webview.postMessage({ type: "load", dfd: doc.getText() || '{"nodes":[],"flows":[]}', components: sys.components, interfaces: sys.interfaces, trustBoundaryIds: sys.trustBoundaryIds, riskData, ...matrixData });
+      panel.webview.postMessage({ type: "load", dfd: doc.getText() || '{"nodes":[],"flows":[]}', system: sys.system, components: sys.components, interfaces: sys.interfaces, trustBoundaryIds: sys.trustBoundaryIds, riskData, ...matrixData });
+    };
+    let strideWriteQueue = Promise.resolve();
+    let lastStrideWriteText: string | undefined;
+    const saveStrideEdit = async (m: any) => {
+      if (typeof m.pairKey !== "string" || typeof m.endpointId !== "string") return;
+      const systemUri = vscode.Uri.joinPath(projRoot, "03-system-assets/system.json");
+      const system = JSON.parse(Buffer.from(await vscode.workspace.fs.readFile(systemUri)).toString());
+      const analyses = system.strideAnalyses || (system.strideAnalyses = {});
+      const analysis = analyses[m.pairKey] || (analyses[m.pairKey] = {});
+      const endpoints = analysis.endpoints || (analysis.endpoints = {});
+      const endpoint = endpoints[m.endpointId] || (endpoints[m.endpointId] = {});
+      if (m.kind === "label" && typeof m.value === "string") {
+        const label = m.value.trim();
+        if (label) endpoint.label = label;
+        else delete endpoint.label;
+      } else if (m.kind === "cell" && typeof m.strideKey === "string" &&
+          ["S", "T", "R", "I", "D", "E"].includes(m.strideKey) &&
+          (m.field === "strengths" || m.field === "weaknesses") && typeof m.value === "string") {
+        const cells = endpoint.cells || (endpoint.cells = {});
+        const cell = cells[m.strideKey] || (cells[m.strideKey] = {});
+        const lines = m.value.split("\n");
+        cell[m.field] = lines.length === 1 && lines[0] === "" ? [] : lines;
+      } else return;
+      const text = JSON.stringify(system, null, 2);
+      await vscode.workspace.fs.writeFile(systemUri, Buffer.from(text));
+      lastStrideWriteText = text;
+    };
+    const refreshSystem = async () => {
+      if (lastStrideWriteText !== undefined) {
+        try {
+          const current = Buffer.from(await vscode.workspace.fs.readFile(vscode.Uri.joinPath(projRoot, "03-system-assets/system.json"))).toString();
+          if (current === lastStrideWriteText) return;
+        } catch { /* a deleted file should still refresh the editor's system view */ }
+      }
+      await post();
     };
     const save = async (text: string) => {
       lastText = text;
@@ -89,27 +126,31 @@ export class NativeDfdEditor implements vscode.CustomTextEditorProvider {
       await vscode.workspace.applyEdit(ed);
     };
 
-    panel.webview.html = this.html(modelUri, riskUri, visibilityUri, cssUri, logoUri, csp, nonce);
+    panel.webview.html = this.html(modelUri, riskUri, visibilityUri, strideUri, cssUri, logoUri, csp, nonce);
 
     const sub = vscode.workspace.onDidChangeTextDocument((e) => {
       if (e.document.uri.toString() === doc.uri.toString() && e.document.getText() !== lastText) post();
     });
     const systemWatcher = vscode.workspace.createFileSystemWatcher(new vscode.RelativePattern(projRoot, "03-system-assets/system.json"));
-    systemWatcher.onDidChange(post);
-    systemWatcher.onDidCreate(post);
-    systemWatcher.onDidDelete(post);
+    systemWatcher.onDidChange(refreshSystem);
+    systemWatcher.onDidCreate(refreshSystem);
+    systemWatcher.onDidDelete(refreshSystem);
     panel.onDidDispose(() => { sub.dispose(); systemWatcher.dispose(); });
 
     panel.webview.onDidReceiveMessage(async (m) => {
       if (m.type === "ready") { await post(); }
       else if (m.type === "save") { await save(m.dfd); }
+      else if (m.type === "strideEdit") {
+        strideWriteQueue = strideWriteQueue.then(() => saveStrideEdit(m));
+        await strideWriteQueue;
+      }
       else if (m.type === "navigateThreat" && typeof m.threatId === "string") {
         await vscode.commands.executeCommand("embedrisk.wizard", m.threatId);
       }
     });
   }
 
-  private html(modelUri: vscode.Uri, riskUri: vscode.Uri, visibilityUri: vscode.Uri, cssUri: vscode.Uri, logoUri: vscode.Uri, csp: string, nonce: string): string {
+  private html(modelUri: vscode.Uri, riskUri: vscode.Uri, visibilityUri: vscode.Uri, strideUri: vscode.Uri, cssUri: vscode.Uri, logoUri: vscode.Uri, csp: string, nonce: string): string {
     return `<!doctype html><html><head><meta charset="utf8"><meta http-equiv="Content-Security-Policy" content="${csp}">
 <link rel="stylesheet" href="${cssUri}">
 <style>
@@ -157,6 +198,22 @@ svg{display:block}
 #ovbox .r{display:flex;gap:8px;justify-content:flex-end}
 .conn{display:flex;align-items:center;gap:6px;margin:4px 0}
 .conn .peer{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.stride-overlay{position:fixed;inset:0;z-index:20;background:rgba(0,0,0,.55);display:flex;align-items:center;justify-content:center;padding:18px}
+.stride-dialog{box-sizing:border-box;width:min(1120px,100%);max-height:94vh;overflow:auto;background:var(--surface);color:var(--text);padding:16px;border:1px solid var(--border);border-radius:10px}
+.stride-dialog>header{display:flex;align-items:center;justify-content:space-between;gap:12px}
+.stride-dialog h2{font-size:17px;margin:0}
+.stride-dialog>header button{flex:0 0 auto}
+.stride-dialog .stride-pair{margin:14px 0;padding:10px;border:1px solid var(--border);border-radius:8px}
+.stride-dialog .stride-pair h3{font-size:13px;margin:4px 0 8px}
+.stride-dialog .stride-labels{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px}
+.stride-dialog .stride-labels label{display:flex;flex-direction:column;gap:4px}
+.stride-dialog table{width:100%;border-collapse:collapse;font-size:12px}
+.stride-dialog th,.stride-dialog td{padding:4px;border-top:1px solid var(--border);vertical-align:top}
+.stride-dialog thead th{text-align:center;border-bottom:1px solid var(--border)}
+.stride-dialog tbody th{text-align:left;white-space:nowrap}
+.stride-dialog textarea{box-sizing:border-box;width:100%;min-height:54px;resize:vertical;font:12px system-ui}
+.stride-dialog [data-stride-heading]{border-left:2px solid var(--border)}
+.stride-dialog .stride-empty{margin:18px 0}
 </style></head><body>
 <div id="bar">
   <span class="brand"><img class="logo" src="${logoUri}" alt=""><b>EmbedRisk</b></span>
@@ -186,10 +243,11 @@ svg{display:block}
 <script nonce="${nonce}" src="${modelUri}"></script>
 <script nonce="${nonce}" src="${riskUri}"></script>
 <script nonce="${nonce}" src="${visibilityUri}"></script>
+<script nonce="${nonce}" src="${strideUri}"></script>
 <script nonce="${nonce}">
-const M=DfdModel, R=window.RiskModel, V=window.LayerVisibilityModel, vs=acquireVsCodeApi();
+const M=DfdModel, R=window.RiskModel, V=window.LayerVisibilityModel, S=window.StrideModel, vs=acquireVsCodeApi();
 const TYPES=['external-entity','process','multiprocess','store','trust-boundary'];
-let dfd={nodes:[],flows:[]}, components=[], interfaces=[], trustBoundaryIds=[], riskData={}, threats=[], cms=[], riskScheme=null, acceptableRisk, matrixMode='residual', stack=[], focus=null, connect=false, connectFrom=null;
+let dfd={nodes:[],flows:[]}, system={}, components=[], interfaces=[], trustBoundaryIds=[], riskData={}, threats=[], cms=[], riskScheme=null, acceptableRisk, matrixMode='residual', stack=[], focus=null, connect=false, connectFrom=null, strideOverlay=null;
 let drag=null, chipDrag=null, portDrag=null, dragMoved=false, dragging=false;
 let renderedNodePositions=new Map();
 const $=id=>document.getElementById(id);
@@ -449,6 +507,7 @@ function renderInspector(){
     var opts=sibs();
     html+='<div class="field"><label>Members (a boundary must contain at least one node)</label><div class="chips">'+
       (opts.length?opts.map(function(s){return chip(s.label,(n.members||[]).indexOf(s.id)>=0,'data-mem="'+esc(s.id)+'"');}).join(''):'<span class="hint">No nodes on this layer yet.</span>')+'</div></div>';
+    html+='<div class="field"><button type="button" class="btn sm" data-open-stride>Analyze STRIDE per boundary</button></div>';
   } else {
     html+='<div class="field"><label>Linked component</label><select class="inp" id="ins-comp"><option value="">&mdash; none &mdash;</option>'+
       components.map(function(c){return '<option value="'+esc(c.id)+'"'+(n.componentRef===c.id?' selected':'')+'>'+esc(c.name)+' ('+esc(c.id)+')</option>';}).join('')+'</select></div>';
@@ -519,6 +578,88 @@ function add(type){
 }
 function del(){if(!focus)return;var id=focus;confirmBox("Delete '"+label(id)+"'"+(M.children(dfd,id).length?" and its sub-components":"")+"?",function(ok){if(!ok)return;M.deleteNode(dfd,id);focus=null;persist();draw();});}
 function toggleConnect(){connect=!connect;connectFrom=null;draw();}
+
+function closeStrideEditor(){
+  if(strideOverlay){strideOverlay.remove();strideOverlay=null;}
+}
+function openStrideEditor(tbId){
+  closeStrideEditor();
+  var tb=(system.trustBoundaries||[]).find(function(b){return b.id===tbId;});
+  var tbNode=(dfd.nodes||[]).find(function(n){return n.id===tbId&&n.type==='trust-boundary';});
+  var name=(tb&&tb.name)||(tbNode&&tbNode.label)||tbId;
+  var pairs=S.boundaryPairs(system,dfd,tbId);
+  var overlay=document.createElement('div');
+  overlay.className='stride-overlay';
+  overlay.innerHTML='<section class="stride-dialog" role="dialog" aria-modal="true" aria-label="STRIDE analysis per trust boundary">'+
+    '<header><h2>STRIDE analysis · <span class="mono">'+esc(tbId)+'</span> '+esc(name)+'</h2><button type="button" class="btn sm" data-stride-close aria-label="Close">✕ Close</button></header>'+
+    '<p class="hint">One table per communicating pair. Analyses are <b>shared across all boundaries</b> — edits appear in every boundary crossed by the same flow.</p>'+
+    (pairs.length?pairs.map(function(pair){
+      var analysis=(system.strideAnalyses||{})[pair.key]||{};
+      function sideLabel(side){
+        var ep=side==='inside'?pair.inside:pair.outside;
+        var saved=analysis.endpoints&&analysis.endpoints[ep.id]&&analysis.endpoints[ep.id].label;
+        return saved==null?ep.label:saved;
+      }
+      var sides=['inside','outside'];
+      var fields=['strengths','weaknesses'];
+      var head='<div class="stride-pair" data-pair-key="'+esc(pair.key)+'">'+
+        '<h3><span data-pair-inside>'+esc(pair.inside.label)+'</span> <span class="muted">⇄</span> <span data-pair-outside>'+esc(pair.outside.label)+'</span></h3>'+
+        '<div class="stride-labels">'+sides.map(function(side){
+          var ep=side==='inside'?pair.inside:pair.outside;
+          return '<label>Side '+(side==='inside'?'A':'B')+' — '+esc(ep.label)+(side==='inside'?' (inside this boundary)':' (across this boundary)')+
+            '<input class="inp" data-stride-label="'+esc(ep.id)+'" aria-label="'+esc(side+' endpoint label')+'" value="'+esc(sideLabel(side))+'"></label>';
+        }).join('')+'</div><table><thead><tr><th rowspan="2">STRIDE</th>'+
+          '<th colspan="2" data-stride-heading="'+esc(pair.inside.id)+'">'+esc(sideLabel('inside'))+'</th>'+
+          '<th colspan="2" data-stride-heading="'+esc(pair.outside.id)+'">'+esc(sideLabel('outside'))+'</th></tr>'+
+          '<tr><th>Strengths</th><th>Weaknesses</th><th>Strengths</th><th>Weaknesses</th></tr></thead><tbody>';
+      var rows=S.STRIDE_KEYS.map(function(key){
+        var cells='<tr><th><span class="mono">'+key+'</span> · '+esc(S.STRIDE_LABEL[key])+'</th>';
+        sides.forEach(function(side){
+          var ep=side==='inside'?pair.inside:pair.outside;
+          fields.forEach(function(field){
+            var items=analysis.endpoints&&analysis.endpoints[ep.id]&&analysis.endpoints[ep.id].cells&&analysis.endpoints[ep.id].cells[key]&&analysis.endpoints[ep.id].cells[key][field]||[];
+            cells+='<td><textarea class="inp" data-stride-cell="'+esc(ep.id)+'" data-stride-key="'+key+'" data-stride-field="'+field+'" aria-label="'+esc(side+' '+S.STRIDE_LABEL[key]+' '+field)+'" placeholder="one per line">'+esc(items.join('\\n'))+'</textarea></td>';
+          });
+        });
+        return cells+'</tr>';
+      }).join('');
+      return head+rows+'</tbody></table></div>';
+    }).join(''):'<p class="hint stride-empty">No data flows cross this boundary yet. Add flows in the DFD that cross <span class="mono">'+esc(tbId)+'</span> to analyse each communicating pair.</p>')+
+    '</section>';
+  document.body.appendChild(overlay);
+  strideOverlay=overlay;
+  overlay.addEventListener('click',function(e){
+    if(e.target===overlay||e.target.closest('[data-stride-close]'))closeStrideEditor();
+  });
+  overlay.addEventListener('input',function(e){
+    var t=e.target, pairEl=t.closest('[data-pair-key]');
+    if(!pairEl)return;
+    var key=pairEl.dataset.pairKey, endpointId=t.dataset.strideLabel||t.dataset.strideCell;
+    if(!endpointId)return;
+    var analyses=system.strideAnalyses||(system.strideAnalyses={});
+    var analysis=analyses[key]||(analyses[key]={});
+    var endpoints=analysis.endpoints||(analysis.endpoints={});
+    var endpoint=endpoints[endpointId]||(endpoints[endpointId]={});
+    if(t.dataset.strideLabel!==undefined){
+      var labelText=t.value.trim();
+      if(labelText)endpoint.label=labelText;else delete endpoint.label;
+      var headings=Array.from(pairEl.querySelectorAll('[data-stride-heading]'));
+      var insideId=pairEl.querySelector('[data-stride-heading]').dataset.strideHeading;
+      var matchingHeading=headings.find(function(header){return header.dataset.strideHeading===endpointId;});
+      var pair=pairs.find(function(p){return p.key===key;});
+      if(matchingHeading)matchingHeading.textContent=labelText||(endpointId===insideId?pair.inside.label:pair.outside.label);
+      var display=labelText||(endpointId===insideId?pair.inside.label:pair.outside.label);
+      var head=pairEl.querySelector(endpointId===insideId?'[data-pair-inside]':'[data-pair-outside]');
+      if(head)head.textContent=display;
+      vs.postMessage({type:'strideEdit',pairKey:key,endpointId:endpointId,kind:'label',value:t.value});
+    }else{
+      var cells=endpoint.cells||(endpoint.cells={}), cell=cells[t.dataset.strideKey]||(cells[t.dataset.strideKey]={});
+      var lines=t.value.split('\\n');cell[t.dataset.strideField]=lines.length===1&&lines[0]===''?[]:lines;
+      vs.postMessage({type:'strideEdit',pairKey:key,endpointId:endpointId,kind:'cell',strideKey:t.dataset.strideKey,field:t.dataset.strideField,value:t.value});
+    }
+  });
+  overlay.querySelector('button').focus();
+}
 
 let ovCb=null,ovMode=null;
 function promptBox(lbl,val,cb){ovMode='prompt';ovCb=cb;$('ovlabel').textContent=lbl;$('ovinput').style.display='';$('ovinput').value=val||'';$('ov').style.display='flex';$('ovinput').focus();}
@@ -598,6 +739,8 @@ $('insp').addEventListener('change',function(e){var t=e.target,n=focus?node(focu
   else if(t.dataset.flow){persist();}
 });
 $('insp').addEventListener('click',function(e){
+  var strideButton=e.target.closest&&e.target.closest('[data-open-stride]');
+  if(strideButton&&focus){openStrideEditor(focus);return;}
   var flowChoice=e.target.closest&&e.target.closest('[data-flow-select]');
   if(flowChoice){focus='flow:'+flowChoice.dataset.flowSelect;draw();return;}
   var matrixCell=e.target.closest&&e.target.closest('[data-matrix-threats]');
@@ -614,6 +757,7 @@ $('insp').addEventListener('click',function(e){
 $('ovok').addEventListener('click',ovOk);$('ovcancel').addEventListener('click',ovCancel);
 window.addEventListener('keydown',function(e){
   if(e.key==='Escape'){
+    if(strideOverlay){closeStrideEditor();e.preventDefault();return;}
     var dialog=document.querySelector('.matrix-threat-overlay');if(dialog){var close=dialog.querySelector('[aria-label="Close threat chooser"]');if(close)close.click();e.preventDefault();return;}
   }
   if(e.key==='Enter'||e.key===' '){
@@ -638,7 +782,7 @@ window.addEventListener('keydown',function(e){
 });
 
 window.addEventListener('message',function(ev){var m=ev.data;
-  if(m.type==='load'){try{dfd=JSON.parse(m.dfd);}catch(_){dfd={nodes:[],flows:[]};}if(!dfd.nodes)dfd.nodes=[];if(!dfd.flows)dfd.flows=[];if(m.components)components=m.components;if(m.interfaces)interfaces=m.interfaces;if(m.trustBoundaryIds)trustBoundaryIds=m.trustBoundaryIds;if(m.riskData)riskData=m.riskData;threats=m.threats||[];cms=m.cms||[];riskScheme=m.scheme||null;acceptableRisk=m.acceptableRisk;baseState=snap();updUndo();if(dragging)return;draw();}
+  if(m.type==='load'){try{dfd=JSON.parse(m.dfd);}catch(_){dfd={nodes:[],flows:[]};}if(!dfd.nodes)dfd.nodes=[];if(!dfd.flows)dfd.flows=[];if(m.system)system=m.system;if(m.components)components=m.components;if(m.interfaces)interfaces=m.interfaces;if(m.trustBoundaryIds)trustBoundaryIds=m.trustBoundaryIds;if(m.riskData)riskData=m.riskData;threats=m.threats||[];cms=m.cms||[];riskScheme=m.scheme||null;acceptableRisk=m.acceptableRisk;baseState=snap();updUndo();if(dragging)return;draw();}
 });
 vs.postMessage({type:'ready'});
 </script></body></html>`;
