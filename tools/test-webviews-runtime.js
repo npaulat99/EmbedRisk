@@ -2285,7 +2285,7 @@ async function useCaseEditor(h) {
     id: "DFD-PRESERVE", name: "Scenario DFD", kind: "independent-dfd",
     entities: [{ id: "A1", name: "Legacy actor" }], connections: [{ id: "CN1", from: "A1", to: "U1" }],
     groups: [{ id: "G1", members: ["A1"] }], drawioXml: "<mxfile><diagram>keep exactly</diagram></mxfile>",
-    dfd: { nodes: [{ id: "N1", type: "process", label: "Independent process", futureKey: { keep: true } }], flows: [] },
+    dfd: { futureDfd: 1, nodes: [{ id: "N1", type: "process", label: "Independent process", futureKey: { keep: true }, x: 10, y: 10 }, { id: "N2", type: "store", label: "Other", x: 300, y: 10 }], flows: [{ id: "F1", from: "N1", to: "N2", label: "keep until node deleted", futureFlow: true }] },
     futureMetadata: { nested: ["preserve", "byte-for-byte"] },
   };
   const useCase = { id: "UC-PRESERVE", name: "Scenario", entities: [], connections: [], groups: [], drawioXml: "<mxfile/>" };
@@ -2303,17 +2303,6 @@ async function useCaseEditor(h) {
   const win = h.dom.window;
   win.dispatchEvent(new win.MessageEvent("message", { data: JSON.stringify({ event: "init" }) }));
 
-  h.setValue("#diagSel", "1");
-  assert.strictEqual(h.must("#diagramEditor").style.display, "none", "independent DFD exposed use-case editing controls");
-  assert.strictEqual(h.must("#readOnlyDfd").style.display, "block", "independent DFD read-only notice missing");
-  assert.strictEqual(h.must("#delDiag").disabled, true, "read-only independent DFD was deletable");
-  assert.strictEqual(h.must("#f").style.visibility, "hidden", "independent DFD opened an editable draw.io canvas");
-  h.setValue("#diagName", "Changed");
-  h.click("#delDiag");
-  h.click('[data-add-kind="actor"]');
-  assert.strictEqual(h.writes.length, 0, "viewing/edit attempts on an independent DFD wrote the document");
-  h.setValue("#diagSel", "0");
-
   for (const kind of ["actor", "misuse-actor", "action", "misuse-action"]) h.click(`[data-add-kind="${kind}"]`);
   h.click("#addConn");
   h.click("#addGroup");
@@ -2322,15 +2311,73 @@ async function useCaseEditor(h) {
   h.setValue("#diagName", "Runtime test diagram");
   h.click("#addDiag");
   h.setValue("#diagSel", "0");
+  await h.settle();
+  {
+    const mid = lastWriteJson(h, "04b-use-cases/use-cases.json");
+    assert.strictEqual(JSON.stringify(mid.diagrams.find((x) => x.id === independent.id)), JSON.stringify(independent), "independent DFD changed during unrelated use-case edits");
+    assert.deepStrictEqual(mid.futureEnvelope, { preserve: true }, "use-case save lost document metadata");
+  }
+
+  // UC2a: independent DFD opens the native SVG canvas.
+  const writesBefore = h.writes.length;
+  h.setValue("#diagSel", "1");
+  assert.strictEqual(h.must("#diagramEditor").style.display, "none", "independent DFD exposed use-case editing controls");
+  assert.strictEqual(h.must("#dfdEditor").style.display, "block", "DFD inspector hidden");
+  assert.strictEqual(h.must("#dfdPane").style.display, "flex", "DFD canvas hidden");
+  assert.strictEqual(h.must("#f").style.visibility, "hidden", "independent DFD opened a draw.io canvas");
+  assert.strictEqual(h.writes.length, writesBefore, "merely opening an independent DFD wrote the document");
+  assert.strictEqual(h.$$("#dfdSvg [data-node]").length, 2, "existing DFD nodes not rendered");
+  const loadMsg = h.toWebview.filter((m) => m.type === "load").pop();
+  assert.ok(loadMsg.availableComponents.length > 0, "system components not exposed to webview");
+  assert.ok(loadMsg.availableComponents.every((a) => a.componentRef), "available components include unlinked nodes");
+  const compOptions = h.$$("#dfdComp option").length;
+  assert.strictEqual(compOptions, loadMsg.availableComponents.length + 1, "component picker options mismatch");
+
+  h.click('[data-dfd-add="store"]');
+  h.click('[data-dfd-add="external-entity"]');
+  h.click('[data-dfd-add="multiprocess"]');
+  assert.strictEqual(h.$$("#dfdSvg [data-node]").length, 5, "added nodes not rendered");
+  assert.ok(h.$("#dfdSvg g.dn.store line"), "store not drawn with DeMarco lines");
+  assert.strictEqual(h.must('#dfdSvg [data-node="SCN-DFD1"]').getAttribute("transform"), "translate(460,40)", "add geometry mismatch");
+  h.mouse("mousedown", h.must('#dfdSvg [data-node="SCN-DFD1"]'));
+  h.mouse("mouseup", h.must("#dfdSvg"));
+  h.setValue('[data-dn="label"]', "Renamed store");
+  h.setValue('[data-dn="type"]', "external-entity");
+  const linked = loadMsg.availableComponents[0];
+  h.setValue('[data-dn="componentRef"]', linked.componentRef);
+  h.dom.window.document.querySelector("#dfdComp").value = "0";
+  h.dom.window.document.querySelector("#dfdComp").dispatchEvent(new h.dom.window.Event("change", { bubbles: true }));
+  assert.strictEqual(h.$$("#dfdSvg [data-node]").length, 6, "linked component node not added");
+  // drag
+  const target = h.must('#dfdSvg [data-node="N1"]');
+  h.mouse("mousedown", target, { clientX: 20, clientY: 20 });
+  h.mouse("mousemove", h.must("#dfdSvg"), { clientX: 120, clientY: 90 });
+  h.mouse("mouseup", h.must("#dfdSvg"), { clientX: 120, clientY: 90 });
+  h.click("#dfdLayout");
+  h.mouse("mousedown", h.must('#dfdSvg [data-node="N2"]'));
+  h.click("#dfdDelete");
+  assert.strictEqual(h.$$("#dfdSvg [data-node]").length, 5, "delete did not remove node");
   h.click("#exitBtn");
   await h.settle();
 
   const saved = lastWriteJson(h, "04b-use-cases/use-cases.json");
+  {
+    const di = saved.diagrams.find((x) => x.id === independent.id);
+    const dn = Object.fromEntries(di.dfd.nodes.map((n) => [n.id, n]));
+    assert.ok(!dn.N2 && di.dfd.flows.length === 0, "deleting a node kept node or incident flow");
+    assert.deepStrictEqual(dn.N1.futureKey, { keep: true }, "node unknown metadata lost");
+    assert.strictEqual(di.dfd.futureDfd, 1, "dfd envelope metadata lost");
+    assert.deepStrictEqual([dn.N1.x, dn.N1.y], [48, 48], "auto layout not persisted");
+    assert.strictEqual(dn["SCN-DFD1"].label, "Renamed store");
+    assert.strictEqual(dn["SCN-DFD1"].componentRef, linked.componentRef, "component reference not saved");
+    assert.strictEqual(dn["SCN-DFD1"].layer, 1);
+    assert.ok(di.dfd.nodes.some((n) => n.id === "SCN-DFD4" && n.componentRef), "linked component node not persisted");
+    assert.strictEqual(di.drawioXml, independent.drawioXml, "DFD edit rewrote drawioXml");
+    assert.deepStrictEqual(di.futureMetadata, independent.futureMetadata);
+    assert.deepStrictEqual(di.entities, independent.entities);
+  }
   assert.ok(saved && Array.isArray(saved.diagrams), "use-cases.json not written by host");
   assert.match(saved.diagrams[saved.diagrams.length - 1].id, /^UC[0-9]+$/, "new diagram id has no webapp prefix");
-  const savedIndependent = saved.diagrams.find((diagram) => diagram.id === independent.id);
-  assert.ok(savedIndependent, "editing use-case diagrams dropped the independent DFD");
-  assert.strictEqual(JSON.stringify(savedIndependent), JSON.stringify(independent), "independent DFD changed during unrelated use-case edits");
   assert.deepStrictEqual(saved.futureEnvelope, { preserve: true }, "independent diagram save lost document metadata");
   assert.ok(h.commands.includes("embedrisk.wizard") && h.disposed, "Exit did not return to the wizard");
   checkLiveDomHandlers(h);
