@@ -896,8 +896,76 @@ async function runValidationCoreTests() {
     !fixtureIssues.some((i) => i.message.includes(`re-assessment overdue (review date ${dateOffset(1)})`)));
 }
 
+async function runValidationDiagnosticsTests() {
+  const model = require(path.join(root, "vscode-extension/media/validation-diagnostics.js"));
+  const files = new Map([
+    ["01-project-description/project.json", { title: "Test", riskScoringMethod: "cost-based", acceptedNotices: [] }],
+    ["02-assumptions/assumptions.json", { attacker: [] }],
+    ["03-system-assets/system.json", { components: [{ id: "C-1" }], interfaces: [], assets: [], trustBoundaries: [] }],
+    ["04-dfd/dfd.json", { nodes: [], flows: [] }],
+    ["04b-use-cases/use-cases.json", { diagrams: [{ id: "UC-1" }] }],
+    ["06-threats/threats.json", { threats: [
+      { id: "T-1", likelihood: 5, impact: 5, components: ["C-MISSING"], stride: ["S"] },
+      { likelihood: 1, impact: 1, components: [], stride: [] },
+    ] }],
+    ["05-requirements/requirements.json", { requirements: [{ id: "R-1", derivedFromThreat: [], satisfiedByCM: [] }] }],
+    ["08-countermeasures/countermeasures.json", { countermeasures: [] }],
+    ["07-attack-trees/attack-trees.json", { trees: [] }],
+    ["09-defects/defects.json", { defects: [] }],
+  ]);
+  const before = JSON.stringify([...files]);
+  const published = new Map();
+  let clearCount = 0;
+  let projectRoots = ["/workspace/project"];
+  const controller = model.createValidationController({
+    findProjects: async () => projectRoots,
+    readFile: async (_root, relative) => {
+      if (!files.has(relative)) {
+        const error = new Error("missing");
+        error.code = "ENOENT";
+        throw error;
+      }
+      return JSON.stringify(files.get(relative));
+    },
+    clear: () => { clearCount++; published.clear(); },
+    publish: async (projectRoot, relative, diagnostics) => published.set(`${projectRoot}/${relative}`, diagnostics),
+  });
+  assert.strictEqual(model.severityFor("error"), "error");
+  assert.strictEqual(model.severityFor("warning"), "warning");
+  assert.strictEqual(model.severityFor("notice"), "information");
+  await controller.refresh();
+  ok("validation diagnostics: maps error to the owning threat file",
+    published.get("/workspace/project/06-threats/threats.json").some((d) => d.severity === "error" && d.message.includes("unknown component")));
+  ok("validation diagnostics: missing entity ID maps to that entity artifact",
+    published.get("/workspace/project/06-threats/threats.json").some((d) => d.message === "A threat is missing its ID."));
+  ok("validation diagnostics: maps project-level warning to project file",
+    published.get("/workspace/project/01-project-description/project.json").some((d) => d.severity === "warning"));
+  ok("validation diagnostics: maps use-case notice to use-case file",
+    published.get("/workspace/project/04b-use-cases/use-cases.json").some((d) => d.severity === "information"));
+  ok("validation diagnostics: maps standalone requirement notice to requirement file",
+    published.get("/workspace/project/05-requirements/requirements.json")?.some((d) => d.severity === "information" && d.key === "req-standalone:R-1"));
+  const noticeCount = [...published.values()].flat().filter((d) => d.severity === "information").length;
+  files.set("01-project-description/project.json", { ...files.get("01-project-description/project.json"), acceptedNotices: ["req-standalone:R-1"] });
+  await controller.refresh();
+  ok("validation diagnostics: accepted notice refresh suppresses only that notice",
+    [...published.values()].flat().filter((d) => d.severity === "information").length === noticeCount - 1
+      && !published.get("/workspace/project/05-requirements/requirements.json")?.some((d) => d.key === "req-standalone:R-1")
+      && published.get("/workspace/project/04b-use-cases/use-cases.json")?.some((d) => d.key === "usecases-excluded"));
+  files.set("06-threats/threats.json", { threats: [{ id: "T-1", likelihood: 1, impact: 1, components: ["C-1"], stride: ["S"] }] });
+  await controller.refresh();
+  ok("validation diagnostics: update clears stale diagnostics before publishing current results",
+    clearCount === 3 && !published.get("/workspace/project/06-threats/threats.json")?.some((d) => d.message.includes("unknown component")));
+  const updatedSnapshot = JSON.stringify([...files]);
+  await controller.refresh();
+  ok("validation diagnostics: refresh does not mutate project documents", JSON.stringify([...files]) === updatedSnapshot && updatedSnapshot !== before);
+  projectRoots = [];
+  await controller.refresh();
+  ok("validation diagnostics: deleted project refresh clears stale diagnostics", clearCount === 5 && published.size === 0);
+}
+
 checkWebappParity()
   .then(() => runValidationCoreTests())
+  .then(() => runValidationDiagnosticsTests())
   .then(async () => {
     const { runLayerVisibilityTests } = await import("../webapp/test/dfd-layer-visibility.test.mjs");
     runLayerVisibilityTests(LayerVisibilityModel);
