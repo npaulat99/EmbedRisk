@@ -249,6 +249,20 @@ the orchestrator implements them directly (anchors: `renderProject()` and the de
     when viewing/attempting edits and byte-identical serialized object preservation after unrelated
     use-case edits; full verification baseline passes.
 - [ ] **EXT-UC2 Create/edit independent DFD diagrams** (Deps: EXT-UC1).
+  - Sized L: native canvas integration, node CRUD/layout, and flow editing/routing exceed one M
+    item. Split into independently testable children; close the parent only after both pass.
+  - [ ] **EXT-UC2a Independent DFD canvas and node editing** (M; Deps: EXT-UC1).
+    - AC: Selecting an `independent-dfd` diagram opens a native SVG canvas backed by
+      `diagram.dfd`; add supported node types or a linked System component, select/edit node label,
+      type and component reference, drag nodes and auto-layout, and delete a node with its incident
+      flows. Persist only the DFD patch while preserving diagram envelope/unknown metadata and keep
+      use-case diagrams plus UC1 read-only preservation intact. Runtime tests cover controls,
+      node/render geometry, save/reopen and metadata; full baseline passes.
+  - [ ] **EXT-UC2b Independent DFD flow editing and routing** (M; Deps: EXT-UC2a, EXT-DFD8).
+    - AC: Connect two canvas nodes to create a flow; select/edit its endpoints and label, delete it,
+      render routed edges with `DfdEngine` geometry, and preserve unknown flow metadata across
+      save/reopen. Runtime tests cover connect/edit/delete, routed paths, round-trip and interaction
+      with node editing; full baseline passes.
 
 ## Epic 6 — Platform (VS Code-native equivalents)
 
