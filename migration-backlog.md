@@ -279,6 +279,18 @@ the orchestrator implements them directly (anchors: `renderProject()` and the de
     regression tests cover both save paths and reopen without changing unknown link metadata.
     Pre-existing clamp found during EXT-M1a review (`src/wizard.ts:362-363`); not changed by the matrix.
 - [ ] **EXT-V1 Validation diagnostics** in the Problems panel (port of `webapp/server/src/validate.js`).
+  - [ ] **EXT-V1a Validator foundation and core integrity rules.**
+    - AC: Add a side-effect-free extension validator with the same structured issue shape and
+      severities as the webapp; port core project/entity identity, duplicate-ID, and reference
+      integrity checks. Regression tests compare representative results with the webapp validator.
+  - [ ] **EXT-V1b Validator rule parity and accepted notices** (Deps: EXT-V1a).
+    - AC: Port the remaining validation behavior for risk/scoring, completeness, coverage,
+      consistency, and `project.acceptedNotices`; tests cover each rule family and verify accepting
+      a notice suppresses only that notice by key.
+  - [ ] **EXT-V1c Problems-panel diagnostics and refresh** (Deps: EXT-V1b).
+    - AC: Map validator issues to file-associated VS Code diagnostics with error/warning/information
+      severities; refresh and clear diagnostics when project JSON changes or is removed. Tests cover
+      mapping, update/clear behavior, and ensure diagnostics do not write to project files.
 - [ ] **EXT-E1 Traceability CSV/JSON + SBOM export commands** (parity with server endpoints).
 - [ ] **EXT-KB1 Remove imported KB catalogue command.**
 - [ ] **EXT-S1 `contributes.configuration` settings** for options in `SettingsModal.tsx`.
@@ -300,6 +312,7 @@ the orchestrator implements them directly (anchors: `renderProject()` and the de
 
 | Item | Impl | Review | Test | Notes |
 |---|---|---|---|---|
+| EXT-V1 | ✅ (L item split before implementation) | n/a | n/a (documentation-only grooming; baseline below) | The 258-line webapp validator plus VS Code diagnostics lifecycle and regression coverage exceeded the M bound. Split into core rules, remaining parity/notice handling, and diagnostics integration; parent remains open. No external dependencies added. |
 | EXT-C2 | ✅ (S, direct) | ✅ PASS (baseline) | ✅ PASS (compile, 193 model assertions, 6 parsed scripts + 6 runtime webviews, diff check) | Explicit CM normalization, UI editing and rendering now preserve residual zeroes. Runtime regression exercises auto-save and explicit save, reopen, and unknown nested link metadata. |
 | EXT-UC1 | ✅ | ✅ PASS (combined verifier) | ✅ PASS (compile, 193 model assertions, 6 parsed scripts + 6 runtime webviews, diff check) | Use-case editor now treats `kind: "independent-dfd"` diagrams as read-only: displays a preservation notice, hides editing controls and draw.io, blocks edits/deletion, and sends only a blank canvas document. Tests attempt edits and deletion without writes, then edit/save a separate use-case diagram and assert the independent DFD serializes byte-identically, including DFD/XML/unknown metadata. Independent verifier confirmed behavior and preservation; baseline passed. No fixtures or webapp changes; no live VS Code validation. Direct implementation was bounded to the use-case webview and its runtime test. |
 | EXT-UC2a | ✅ | ✅ PASS (fix-round combined verifier) | ✅ PASS (compile, 193 model assertions, 6 parsed scripts + 6 runtime webviews, diff check) | Independent DFD diagrams open a native SVG canvas on `diagram.dfd` (use-case host also posts Step 03/04 `components`/`availableComponents`, read-only). Add process/multiprocess/store/external nodes or linked components, edit label/type/component ref, drag, auto-layout, delete node with incident flows; flows remain simple non-interactive lines (UC2b). Saves mutate only `dfd`; envelope, drawioXml and unknown metadata are preserved. Initial verifier found render-time DFD initialization, unsafe untrusted coordinates in SVG, and missing reopen coverage. One fix round made reads non-mutating, added finite-coordinate render/drag fallbacks and hostile-coordinate regression, and tested reopen in a fresh harness. Follow-up verifier passed; full baseline passed. UC1 byte-preservation remains covered. No live VS Code validation. Initial bounded implementation was direct; verifier handled combined review and tests. |
