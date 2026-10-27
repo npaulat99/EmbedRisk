@@ -746,7 +746,7 @@ function runStrideTests() {
 }
 
 async function runValidationCoreTests() {
-  const { validateCore } = require(path.join(root, "vscode-extension/media/validation-model.js"));
+  const { validateCore, validate: validateExtension } = require(path.join(root, "vscode-extension/media/validation-model.js"));
   const { validate } = await import("../webapp/server/src/validate.js");
   const norm = (issues) => issues.map((i) => JSON.stringify([i.severity, i.key, i.message])).sort();
   const webErrors = (input) => validate(input).filter((i) => i.severity === "error");
@@ -805,6 +805,95 @@ async function runValidationCoreTests() {
     passed++;
   }
   ok("validation core: undefined input yields no issues", validateCore().length === 0);
+
+  const dateOffset = (days) => {
+    const date = new Date();
+    date.setUTCDate(date.getUTCDate() + days);
+    return date.toISOString().slice(0, 10);
+  };
+  const parityFixture = {
+    project: {
+      riskScoringMethod: "cost-based",
+      costFactorWeights: { time: 0.4 },
+      accessProbabilities: { 1: 0.01, 5: 1.1 },
+      likelihoodProbabilityThresholds: { 2: 0.8, 3: 0.7, 4: 0.6, 5: 0.5 },
+      acceptableRisk: 3,
+      slTarget: "SL-C 2",
+      rigorousMode: true,
+    },
+    assumptions: { attacker: [{ id: "ATK-1", access: "remote", capability: 1 }] },
+    system: {
+      components: [{ id: "C1", name: "Controller" }, { id: "C2", name: "Uncovered" }],
+      interfaces: [{ id: "IF1", name: "UART", hidden: "yes" }],
+      trustBoundaries: [{ id: "TB1" }],
+    },
+    threats: { threats: [
+      {
+        id: "T1", likelihood: 5, impact: 5, stride: ["S"], components: ["C1"], attackerRef: "ATK-1",
+        likelihoodFactors: { exposure: 1, exploitability: 1 }, requiredSkill: 4, requiredAccess: 1,
+        costFactors: { time: 1 }, costRationales: { time: "reviewed" }, costLikelihoodProposal: 4,
+        status: "mitigated", classification: "product-vulnerability", responsibility: "integrator-operator",
+        deploymentConstraints: "install securely", reviewDate: dateOffset(-1),
+      },
+      {
+        id: "T2", likelihood: 2, impact: 2, components: ["C1"], status: "accepted",
+        reviewDate: dateOffset(1),
+      },
+    ] },
+    countermeasures: { countermeasures: [{
+      id: "CM1", addresses: [{ threat: "T1", residualImpact: 4, residualLikelihood: 6 }],
+      components: ["C1"], type: "preventive", status: "implemented",
+    }] },
+    requirements: { requirements: [
+      { id: "R1" },
+      { id: "R2", derivedFromThreat: ["T1"] },
+    ] },
+    dfd: {
+      nodes: [{ id: "TB1", type: "trust-boundary" }],
+      flows: [{ id: "F1", from: "C1", to: "C2", label: "" }],
+    },
+    useCases: { diagrams: [{ id: "UC1" }] },
+    attackTrees: { trees: [] },
+    defects: { defects: [{ id: "D1", status: "open", severity: "critical", threatRef: "T1" }] },
+  };
+  const fixtureSnapshot = JSON.stringify(parityFixture);
+  const fixtureIssues = validateExtension(parityFixture);
+  const parityNorm = (issues) => issues.map((issue) => JSON.stringify([issue.severity, issue.message, issue.key])).sort();
+  assert.deepStrictEqual(parityNorm(fixtureIssues), parityNorm(validate(parityFixture)),
+    "FAIL: extension full validator matches complete webapp issues");
+  passed++;
+  ok("validation parity: full validator does not mutate input", JSON.stringify(parityFixture) === fixtureSnapshot);
+  ok("validation parity: cost scoring and attacker-profile rules covered",
+    fixtureIssues.some((i) => i.key === "cost-factor-weights") &&
+    fixtureIssues.some((i) => i.key === "access-probability:1") &&
+    fixtureIssues.some((i) => i.key === "likelihood-thresholds") &&
+    fixtureIssues.some((i) => i.key === "slc-attacker-profile"));
+  ok("validation parity: risk, completeness, and rigorous rules covered",
+    fixtureIssues.some((i) => i.key === "risk-over-acceptable:T1") &&
+    fixtureIssues.some((i) => i.message.includes("no STRIDE category")) &&
+    fixtureIssues.some((i) => i.message.includes("requires the Bug Bar impact dimensions")) &&
+    fixtureIssues.some((i) => i.message.includes("accepted residual risk requires")));
+  ok("validation parity: coverage and consistency rules covered",
+    fixtureIssues.some((i) => i.message.includes("Coverage: component 'C2'")) &&
+    fixtureIssues.some((i) => i.message.includes("Coverage: interface 'IF1'")) &&
+    fixtureIssues.some((i) => i.message.includes("preventive control should reduce likelihood")) &&
+    fixtureIssues.some((i) => i.message.includes("product-vulnerability with integrator-operator")));
+
+  const noticeKey = "req-standalone:R1";
+  const acceptedIssues = validateExtension({
+    ...parityFixture,
+    project: { ...parityFixture.project, acceptedNotices: [noticeKey] },
+  });
+  assert.deepStrictEqual(parityNorm(acceptedIssues), parityNorm(fixtureIssues.filter((i) => i.key !== noticeKey)),
+    "FAIL: accepting a notice suppresses only that notice key");
+  passed++;
+  ok("validation parity: notice acceptance leaves other notices and all non-notices intact",
+    acceptedIssues.some((i) => i.severity === "notice" && i.key !== noticeKey) &&
+    parityNorm(acceptedIssues.filter((i) => i.severity !== "notice")).join() ===
+      parityNorm(fixtureIssues.filter((i) => i.severity !== "notice")).join());
+  ok("validation parity: dynamic review dates distinguish overdue from future",
+    fixtureIssues.some((i) => i.message.includes(`re-assessment overdue (review date ${dateOffset(-1)})`)) &&
+    !fixtureIssues.some((i) => i.message.includes(`re-assessment overdue (review date ${dateOffset(1)})`)));
 }
 
 checkWebappParity()
