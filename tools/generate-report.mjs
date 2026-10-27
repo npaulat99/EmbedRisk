@@ -37,6 +37,17 @@ const assumptionAnchor = (id) => `assumption-${String(id ?? '').replace(/[^A-Za-
 const scheme = JSON.parse(readFileSync(join(root, ".assets/knowledge-base/risk-scheme.json"), "utf8"));
 
 const project = read("01-project-description/project.json");
+// Webapp-created projects have no `steps` map (or a partial one): default to canonical step paths
+// (mirrors STEP_FILES in webapp/server/src/artifacts.js).
+const DEFAULT_STEPS = {
+  "02-assumptions": "02-assumptions/assumptions.json",
+  "03-system-assets": "03-system-assets/system.json",
+  "04b-use-cases": "04b-use-cases/use-cases.json",
+  "05-requirements": "05-requirements/requirements.json",
+  "06-threats": "06-threats/threats.json",
+  "08-countermeasures": "08-countermeasures/countermeasures.json",
+};
+project.steps = { ...DEFAULT_STEPS, ...(project.steps && typeof project.steps === "object" ? project.steps : {}) };
 const ass = read(project.steps["02-assumptions"]);
 const sys = read(project.steps["03-system-assets"]);
 const threats = read(project.steps["06-threats"]).threats;
