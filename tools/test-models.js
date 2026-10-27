@@ -745,7 +745,70 @@ function runStrideTests() {
   }
 }
 
+async function runValidationCoreTests() {
+  const { validateCore } = require(path.join(root, "vscode-extension/media/validation-model.js"));
+  const { validate } = await import("../webapp/server/src/validate.js");
+  const norm = (issues) => issues.map((i) => JSON.stringify([i.severity, i.key, i.message])).sort();
+  const webErrors = (input) => validate(input).filter((i) => i.severity === "error");
+  const clean = {
+    project: { name: "Clean" },
+    assumptions: { device: [{ id: "A-DEV-1" }], attacker: [{ id: "ATK-1", capability: 2 }] },
+    system: {
+      components: [{ id: "C1", name: "MCU" }, { id: "C2", name: "Cloud" }],
+      interfaces: [{ id: "IF1", name: "UART" }],
+      trustBoundaries: [{ id: "TB1" }],
+      assets: [{ id: "AS1" }],
+    },
+    threats: { threats: [{ id: "T1", components: ["C1"], assets: ["AS1"], attackerRef: "ATK-1", interfaceRefs: ["IF1"], interfaceRef: "IF1", assumptionRefs: ["A-DEV-1", "ATK-1"] }] },
+    countermeasures: { countermeasures: [{ id: "CM1", addresses: [{ threat: "T1" }], components: ["C1"] }] },
+    requirements: { requirements: [{ id: "R1", derivedFromThreat: ["T1"], satisfiedByCM: ["CM1"] }] },
+    dfd: { nodes: [{ id: "N1", type: "process" }, { id: "TB1", type: "trust-boundary", members: ["N1"] }, { id: "TB2", type: "trust-boundary", members: ["N1"] }], flows: [{ id: "F1", crossesBoundary: "TB1" }, { id: "F2", crossesBoundary: "TB2" }] },
+    attackTrees: { trees: [{ id: "AT1", threatRef: "T1", threatRefs: ["T1"] }] },
+    defects: { defects: [{ id: "D1", component: "C1", threatRef: "T1" }] },
+  };
+  ok("validation core: clean project has no extension issues", validateCore(clean).length === 0);
+  ok("validation core: clean project has no webapp errors", webErrors(clean).length === 0);
+
+  const bad = {
+    assumptions: { system: [{ id: "A-SYS-1" }], attacker: [{ id: "ATK-1" }] },
+    system: {
+      components: [{ id: "C1" }, { id: "T1" }, { id: "N-DUP" }],
+      interfaces: [{ id: "IF1" }],
+      trustBoundaries: [{ id: "TB1" }],
+      assets: [{ id: "AS1" }],
+    },
+    threats: [
+      { id: "T1", components: ["C1", "C-X"], assets: ["AS-X"], attackerRef: "ATK-X", interfaceRefs: ["IF-X"], interfaceRef: "IF-Y", assumptionRefs: ["bad!", "A-NOPE", "A-SYS-1"] },
+      { components: ["C1"] },
+    ],
+    countermeasures: [{ id: "CM1", addresses: [{ threat: "T-X" }, { threat: "T1" }], components: ["C-Y"] }, { addresses: [] }],
+    requirements: [{ id: "R1", derivedFromThreat: ["T-Z"], satisfiedByCM: ["CM-Z", "CM1"] }],
+    dfd: { nodes: [{ id: "N-DUP", type: "process" }, { id: "TB1", type: "trust-boundary", members: ["N-DUP"] }], flows: [{ id: "F1", crossesBoundary: "TB-X" }, { id: "F2", crossesBoundary: "TB1" }] },
+    attackTrees: { trees: [{ id: "AT1", threatRef: "T-Q", threatRefs: ["T-Q", "T1"] }, { id: "AT2", threatRefs: ["T-R"] }] },
+    defects: [{ id: "D1", component: "C-D", threatRef: "T-D" }, { component: "C-E" }],
+  };
+  const snapshot = JSON.stringify(bad);
+  const extBad = validateCore(bad);
+  ok("validation core: input not mutated", JSON.stringify(bad) === snapshot);
+  assert.deepStrictEqual(norm(extBad), norm(webErrors(bad)), "FAIL: validation core bad project matches webapp errors");
+  passed++;
+  ok("validation core: only error severity", extBad.every((i) => i.severity === "error"));
+  ok("validation core: bad project exercises every rule", extBad.length >= 20);
+  ok("validation core: trust-boundary DFD alias not a duplicate", !extBad.some((i) => i.message.includes("Duplicate ID 'TB1'")));
+  ok("validation core: cross-kind duplicate detected", extBad.some((i) => i.message === "Duplicate ID 'T1' — used by component and threat. IDs must be unique across the project."));
+  ok("validation core: DFD node duplicate detected", extBad.some((i) => i.message.includes("Duplicate ID 'N-DUP' — used by component and DFD node.")));
+  ok("validation core: attack tree refs deduplicated", extBad.filter((i) => i.message.includes("'T-Q'")).length === 1);
+  assert.deepStrictEqual(norm(validateCore(clean)), norm(webErrors(clean)));
+  passed++;
+  for (const input of [undefined, {}, { threats: {}, countermeasures: {}, requirements: {}, defects: {} }]) {
+    assert.deepStrictEqual(norm(validateCore(input)), norm(webErrors(input)), "FAIL: validation core empty input matches webapp");
+    passed++;
+  }
+  ok("validation core: undefined input yields no issues", validateCore().length === 0);
+}
+
 checkWebappParity()
+  .then(() => runValidationCoreTests())
   .then(async () => {
     const { runLayerVisibilityTests } = await import("../webapp/test/dfd-layer-visibility.test.mjs");
     runLayerVisibilityTests(LayerVisibilityModel);

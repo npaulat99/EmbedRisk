@@ -279,7 +279,7 @@ the orchestrator implements them directly (anchors: `renderProject()` and the de
     regression tests cover both save paths and reopen without changing unknown link metadata.
     Pre-existing clamp found during EXT-M1a review (`src/wizard.ts:362-363`); not changed by the matrix.
 - [ ] **EXT-V1 Validation diagnostics** in the Problems panel (port of `webapp/server/src/validate.js`).
-  - [ ] **EXT-V1a Validator foundation and core integrity rules.**
+  - [x] **EXT-V1a Validator foundation and core integrity rules.**
     - AC: Add a side-effect-free extension validator with the same structured issue shape and
       severities as the webapp; port core project/entity identity, duplicate-ID, and reference
       integrity checks. Regression tests compare representative results with the webapp validator.
@@ -312,6 +312,7 @@ the orchestrator implements them directly (anchors: `renderProject()` and the de
 
 | Item | Impl | Review | Test | Notes |
 |---|---|---|---|---|
+| EXT-V1a | ✅ (one implementer) | ✅ PASS (baseline + parent re-run of model tests) | ✅ PASS (compile, 208 model assertions incl. webapp-error parity, 6 parsed scripts + 6 runtime webviews, diff check) | Added side-effect-free media/validation-model.js validateCore: all 17 webapp 'error' rules (duplicate IDs, missing IDs, reference integrity) with identical {severity,message,key}; warnings/notices/acceptedNotices deferred to V1b, Problems diagnostics to V1c. |
 | EXT-V1 | ✅ (L item split before implementation) | n/a | n/a (documentation-only grooming; baseline below) | The 258-line webapp validator plus VS Code diagnostics lifecycle and regression coverage exceeded the M bound. Split into core rules, remaining parity/notice handling, and diagnostics integration; parent remains open. No external dependencies added. |
 | EXT-C2 | ✅ (S, direct) | ✅ PASS (baseline) | ✅ PASS (compile, 193 model assertions, 6 parsed scripts + 6 runtime webviews, diff check) | Explicit CM normalization, UI editing and rendering now preserve residual zeroes. Runtime regression exercises auto-save and explicit save, reopen, and unknown nested link metadata. |
 | EXT-UC1 | ✅ | ✅ PASS (combined verifier) | ✅ PASS (compile, 193 model assertions, 6 parsed scripts + 6 runtime webviews, diff check) | Use-case editor now treats `kind: "independent-dfd"` diagrams as read-only: displays a preservation notice, hides editing controls and draw.io, blocks edits/deletion, and sends only a blank canvas document. Tests attempt edits and deletion without writes, then edit/save a separate use-case diagram and assert the independent DFD serializes byte-identically, including DFD/XML/unknown metadata. Independent verifier confirmed behavior and preservation; baseline passed. No fixtures or webapp changes; no live VS Code validation. Direct implementation was bounded to the use-case webview and its runtime test. |
