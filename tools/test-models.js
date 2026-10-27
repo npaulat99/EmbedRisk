@@ -11,6 +11,7 @@ const AtModel = require(path.join(root, "vscode-extension/media/attacktree-model
 const RiskModel = require(path.join(root, "vscode-extension/media/risk-model.js"));
 const LayerVisibilityModel = require(path.join(root, "vscode-extension/media/layer-visibility.js"));
 const DfdOverviewModel = require(path.join(root, "vscode-extension/media/dfd-overview-model.js"));
+const DashboardModel = require(path.join(root, "vscode-extension/media/dashboard-model.js"));
 const DfdEngine = require(path.join(root, "vscode-extension/media/dfd-engine.js"));
 const StrideModel = require(path.join(root, "vscode-extension/media/stride-model.js"));
 const ImportedKb = require(path.join(root, "vscode-extension/media/imported-kb.js"));
@@ -1188,8 +1189,65 @@ function runDfdOverviewTests() {
       && !provider.includes("writeFile"));
 }
 
+function runDashboardTests() {
+  const input = {
+    project: { device: { name: "Dashboard device" }, slTarget: 2, scope: { mode: "graybox" }, status: "active" },
+    system: {
+      components: [{ id: "C-1", provenance: "own team" }, { id: "C-2", provenance: "Vendor" }],
+      interfaces: [{}], assets: [{}],
+    },
+    threats: { threats: [
+      { id: "T-1", title: "Open high", likelihood: 4, impact: 4, status: "open", classification: "protocol-limitation" },
+      { id: "T-2", title: "Accepted", likelihood: 3, impact: 4, status: "accepted", classification: "deployment-risk" },
+    ] },
+    countermeasures: { countermeasures: [
+      { id: "CM-1", status: "implemented", addresses: [{ threat: "T-1", residualLikelihood: 2, residualImpact: 2 }] },
+      { id: "CM-2", selected: false, status: "verified", ticketUrl: "https://example.invalid/ticket" },
+    ] },
+    requirements: { requirements: [{ id: "R-1", derivedFromThreat: ["T-2"] }] },
+    defects: { defects: [{ status: "open" }, { status: "fixed" }, { status: "wont-fix" }] },
+    scheme: { matrix: { bands: [
+      { name: "Low", min: 1, max: 5 }, { name: "Medium", min: 6, max: 11 },
+      { name: "High", min: 12, max: 19 }, { name: "Critical", min: 20, max: 25 },
+    ] } },
+  };
+  const before = JSON.stringify(input);
+  const model = DashboardModel.buildDashboard(input);
+  const count = (label) => model.stats.find((stat) => stat.label === label).value;
+  ok("dashboard: webapp parity counts and classification rules",
+    model.title === "Dashboard device" && count("Components") === 2 && count("3rd-party SW/HW") === 1
+      && count("Open threats") === 1 && count("Protocol limits") === 1 && count("Deployment risks") === 1
+      && count("High threats w/o req.") === 1 && count("Countermeasures") === 1
+      && count("Missing ticket links") === 1 && count("Open defects") === 1);
+  ok("dashboard: shared risk engine summarizes initial and residual severity",
+    model.initial.maxScore === 16 && model.initial.highCount === 2
+      && model.residual.maxScore === 12 && model.residual.highCount === 1
+      && model.threats[0].description.includes("Residual 4 (Low)"));
+  ok("dashboard: malformed project subobjects default safely and inputs are unchanged",
+    JSON.stringify(input) === before && DashboardModel.buildDashboard({
+      project: null, system: { components: "invalid" }, threats: { threats: [null, "bad"] },
+      countermeasures: { countermeasures: [null] }, requirements: null, defects: { defects: {} },
+      scheme: { matrix: { bands: "malformed" } },
+    }).stats.length === 14);
+
+  const extDir = path.join(root, "vscode-extension");
+  const manifest = JSON.parse(fs.readFileSync(path.join(extDir, "package.json"), "utf8"));
+  const extension = fs.readFileSync(path.join(extDir, "src/extension.ts"), "utf8");
+  const provider = fs.readFileSync(path.join(extDir, "src/dashboard.ts"), "utf8");
+  ok("dashboard: Explorer view and refresh command are contributed and registered",
+    manifest.contributes.views.explorer.some((view) => view.id === "embedrisk.dashboard")
+      && manifest.contributes.commands.some((command) => command.command === "embedrisk.dashboardRefresh")
+      && extension.includes("registerDashboard(ctx)") && provider.includes("embedrisk.dashboardRefresh"));
+  ok("dashboard: native provider reads JSON and uses only read-only document navigation",
+    provider.includes("TreeDataProvider") && provider.includes("workspace.fs.readFile")
+      && provider.includes("workspace.createFileSystemWatcher") && provider.includes("embedrisk.wizard")
+      && provider.includes("embedrisk.dfdNative") && provider.includes("showTextDocument")
+      && !provider.includes("workspace.fs.writeFile"));
+}
+
 runImportedKbTests()
   .then(() => runDfdOverviewTests())
+  .then(() => runDashboardTests())
   .then(() => checkWebappParity())
   .then(() => runValidationCoreTests())
   .then(() => runValidationDiagnosticsTests())

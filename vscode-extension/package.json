@@ -122,6 +122,12 @@
         "icon": "$(refresh)"
       },
       {
+        "command": "embedrisk.dashboardRefresh",
+        "title": "Refresh dashboard",
+        "category": "EmbedRisk",
+        "icon": "$(refresh)"
+      },
+      {
         "command": "embedrisk.dfdOverviewOpen",
         "title": "Open DFD overview layer",
         "category": "EmbedRisk"
@@ -317,6 +323,11 @@
     "views": {
       "explorer": [
         {
+          "id": "embedrisk.dashboard",
+          "name": "EmbedRisk Dashboard",
+          "when": "workspaceFolderCount > 0"
+        },
+        {
           "id": "embedrisk.dfdOverview",
           "name": "EmbedRisk DFD Overview",
           "when": "workspaceFolderCount > 0"
@@ -328,6 +339,7 @@
         { "command": "embedrisk.dfdOverviewOpen", "when": "false" }
       ],
       "view/title": [
+        { "command": "embedrisk.dashboardRefresh", "when": "view == embedrisk.dashboard", "group": "navigation" },
         { "command": "embedrisk.dfdOverviewRefresh", "when": "view == embedrisk.dfdOverview", "group": "navigation" }
       ]
     },

@@ -13,6 +13,7 @@ import { AttackTreeEditor } from "./attackTreeEditor";
 import { UseCaseEditor } from "./useCaseEditor";
 import { registerValidationDiagnostics } from "./validationDiagnostics";
 import { registerDfdOverview } from "./dfdOverview";
+import { registerDashboard } from "./dashboard";
 
 // Isomorphic CommonJS webview model, reused here for the shared threatRefs/threatRef read rule.
 const AtModel = require("../media/attacktree-model.js");
@@ -223,6 +224,7 @@ async function openLayer(target: number) {
 export function activate(ctx: vscode.ExtensionContext) {
   registerValidationDiagnostics(ctx);
   registerDfdOverview(ctx);
+  registerDashboard(ctx);
   const attackTreeEditor = new AttackTreeEditor(ctx.extensionUri);
   const useCaseEditor = new UseCaseEditor(ctx.extensionUri);
   const openWebappCommand = async () => {

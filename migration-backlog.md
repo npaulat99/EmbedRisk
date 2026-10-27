@@ -296,7 +296,7 @@ the orchestrator implements them directly (anchors: `renderProject()` and the de
 - [x] **EXT-S1 `contributes.configuration` settings** for options in `SettingsModal.tsx`.
 - [x] **EXT-W1 Getting-started walkthrough** (replaces webapp tutorial).
 - [x] **EXT-O1 DFD layer overview tree view.**
-- [ ] **EXT-DB1 Dashboard** (counts / risk summary).
+- [x] **EXT-DB1 Dashboard** (counts / risk summary).
 
 ## Dropped / out of scope
 
@@ -312,6 +312,7 @@ the orchestrator implements them directly (anchors: `renderProject()` and the de
 
 | Item | Impl | Review | Test | Notes |
 |---|---|---|---|---|
+| EXT-DB1 | ✅ (M, ext-implementer) | ✅ PASS (combined verifier) | ✅ PASS (compile, 302 model assertions, 6 parsed scripts + 6 runtime webviews, diff check) | Added a native, read-only Explorer dashboard with the 14 webapp-parity counts, initial/residual risk summaries, risk band counts and maximum scores. Project changes refresh the tree; source JSON, threat wizard records and DFD canvas provide navigation. Model tests cover formulas, malformed/empty input, input immutability, manifest/provider registration and read-only IO. |
 | EXT-W1 | ✅ (S, direct) | ✅ PASS (baseline + manifest/content assertions) | ✅ PASS (compile, 287 model assertions, 6 parsed scripts + 6 runtime webviews, diff check) | Native VS Code walkthrough `embedrisk.gettingStarted` (7 Markdown steps: project setup, wizard navigation, DFD, STRIDE threats, risk/countermeasures, reports/exports, settings) plus Command Palette command `EmbedRisk: Getting started walkthrough`. Static bundled Markdown only — no webview, remote links or project writes; step links run existing commands. Tests check contribution, registration, step coverage, bundled self-contained pages, command links and completion events. |
 | EXT-O1 | ✅ (M, ext-implementer) | ✅ baseline PASS; verifier flagged only that node selection reuses `openLayer` (regenerates the derived `dfd.drawio`; asks before creating a missing layer) — accepted, tree browsing itself is read-only | ✅ PASS (compile, 297 model assertions, webviews, diff check) | Explorer view `embedrisk.dfdOverview` (native TreeDataProvider) with device root, nodes by parent, type icons/labels, component name, trust-boundary member count, visible interfaces, empty state; selecting opens the node's layer (draw.io cannot focus a node — documented); debounced watcher + refresh command. Risk dots out of scope. |
 | EXT-S1 | ✅ (S, direct) | ✅ PASS (baseline + manifest assertions) | ✅ PASS (compile, 238 model assertions, 6 parsed scripts + 6 runtime webviews, diff check) | Contributed resource-scoped settings matching the SettingsModal project fields: scoring method, cost-factor weights, access probabilities, likelihood thresholds, acceptable risk, rigorous mode, and STRIDE boundary report content. Defaults and numeric bounds match the webapp; weight defaults total 1.00. |
