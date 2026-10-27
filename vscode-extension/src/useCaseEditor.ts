@@ -154,10 +154,12 @@ const isDfd=(d)=>!!d&&d.kind==='independent-dfd';
 function compById(id){return components.find((c)=>c.id===id);}
 function typeForComp(c,fb){if(c&&(c.kind==='store'||c.kind==='external-entity'||c.kind==='multiprocess'))return c.kind;return fb==='trust-boundary'||!fb?'process':fb;}
 function displayType(n){const t=typeForComp(n.componentRef?compById(n.componentRef):undefined,n.type);return NODE_DIMS[t]?t:'process';}
-function dfdOf(d){if(!d.dfd||typeof d.dfd!=='object')d.dfd={};if(!Array.isArray(d.dfd.nodes))d.dfd.nodes=[];if(!Array.isArray(d.dfd.flows))d.dfd.flows=[];return d.dfd;}
+function dfdOf(d){const raw=d&&d.dfd;return raw&&typeof raw==='object'&&!Array.isArray(raw)?{...raw,nodes:Array.isArray(raw.nodes)?raw.nodes:[],flows:Array.isArray(raw.flows)?raw.flows:[]}:{nodes:[],flows:[]};}
+function ensureDfd(d){if(!d.dfd||typeof d.dfd!=='object'||Array.isArray(d.dfd))d.dfd={};if(!Array.isArray(d.dfd.nodes))d.dfd.nodes=[];if(!Array.isArray(d.dfd.flows))d.dfd.flows=[];return d.dfd;}
 function slot(i,o){return {x:o+(i%4)*210,y:o+Math.floor(i/4)*150};}
+function nodePosition(n,i){const fallback=slot(i,40);return {x:Number.isFinite(n.x)?n.x:fallback.x,y:Number.isFinite(n.y)?n.y:fallback.y};}
 function addDfdNode(d,type,label,componentRef){
-	const g=dfdOf(d);const p=slot(g.nodes.length,40);
+	const g=ensureDfd(d);const p=slot(g.nodes.length,40);
 	const n={id:uid('SCN-DFD',g.nodes),label,type,layer:1,x:p.x,y:p.y};
 	if(componentRef)n.componentRef=componentRef;
 	g.nodes.push(n);selNode=n.id;save();
@@ -170,7 +172,7 @@ function renderDfd(d){
 	$('dfdComp').innerHTML='<option value="">Add a Step 04 component...</option>'+available.map((a,i)=>'<option value="'+i+'">'+esc(a.name||a.label)+' ('+TYPE_LABEL[typeForComp(compById(a.componentRef),a.type)]+')</option>').join('');
 	$('dfdLayout').disabled=!g.nodes.length;
 	$('dfdDelete').disabled=!selNode;
-	const pos=(n)=>drag&&drag.id===n.id?drag:n;
+	const pos=(n)=>drag&&drag.id===n.id?drag:nodePosition(n,nodes.indexOf(n));
 	const nodes=g.nodes.filter((n)=>n.type!=='trust-boundary');
 	const byId=new Map(g.nodes.map((n)=>[n.id,n]));
 	const ctr=(n)=>{const p=pos(n),s=NODE_DIMS[displayType(n)];return {x:(p.x||0)+s.w/2,y:(p.y||0)+s.h/2};};
@@ -318,8 +320,8 @@ document.addEventListener('click',(e)=>{
 		const add=t.getAttribute&&t.getAttribute('data-dfd-add');
 		if(t.id==='delDiag'){doc.diagrams.splice(di,1);selNode=null;ensure();save();return;}
 		if(add&&NODE_DIMS[add]){addDfdNode(d,add,TYPE_LABEL[add]);return;}
-		if(t.id==='dfdLayout'){dfdOf(d).nodes.forEach((n,i)=>{const p=slot(i,48);n.x=p.x;n.y=p.y;});save();return;}
-		if(t.id==='dfdDelete'&&selNode){const g=dfdOf(d),id=selNode;g.nodes=g.nodes.filter((n)=>n.id!==id);g.flows=g.flows.filter((f)=>f.from!==id&&f.to!==id);selNode=null;save();return;}
+		if(t.id==='dfdLayout'){ensureDfd(d).nodes.forEach((n,i)=>{const p=slot(i,48);n.x=p.x;n.y=p.y;});save();return;}
+		if(t.id==='dfdDelete'&&selNode){const g=ensureDfd(d),id=selNode;g.nodes=g.nodes.filter((n)=>n.id!==id);g.flows=g.flows.filter((f)=>f.from!==id&&f.to!==id);selNode=null;save();return;}
 		return;
 	}
 	if(t.id==='delDiag'){if(!d)return;doc.diagrams.splice(di,1);ensure();save();return;}
@@ -372,11 +374,12 @@ svgEl.addEventListener('mousedown',(e)=>{
 	const d=cur();if(!isDfd(d))return;
 	const g=e.target.closest&&e.target.closest('[data-node]');
 	if(!g){selNode=null;renderDfd(d);return;}
-	const n=dfdOf(d).nodes.find((x)=>x.id===g.getAttribute('data-node'));if(!n)return;
+	const nodes=dfdOf(d).nodes,n=nodes.find((x)=>x.id===g.getAttribute('data-node'));if(!n)return;
 	e.preventDefault();
 	const r=svgEl.getBoundingClientRect();
 	selNode=n.id;
-	drag={id:n.id,x:n.x||0,y:n.y||0,ox:e.clientX-r.left-(n.x||0),oy:e.clientY-r.top-(n.y||0),moved:false};
+	const p=nodePosition(n,nodes.indexOf(n));
+	drag={id:n.id,x:p.x,y:p.y,ox:e.clientX-r.left-p.x,oy:e.clientY-r.top-p.y,moved:false};
 	renderDfd(d);
 });
 svgEl.addEventListener('mousemove',(e)=>{
@@ -388,7 +391,7 @@ svgEl.addEventListener('mousemove',(e)=>{
 function endDrag(){
 	if(!drag)return;
 	const dr=drag;drag=null;const d=cur();
-	if(dr.moved&&isDfd(d)){const n=dfdOf(d).nodes.find((x)=>x.id===dr.id);if(n){n.x=dr.x;n.y=dr.y;save();return;}}
+	if(dr.moved&&isDfd(d)){const n=ensureDfd(d).nodes.find((x)=>x.id===dr.id);if(n){n.x=dr.x;n.y=dr.y;save();return;}}
 	if(isDfd(d))renderDfd(d);
 }
 svgEl.addEventListener('mouseup',endDrag);
