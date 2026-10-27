@@ -12,6 +12,7 @@ const RiskModel = require(path.join(root, "vscode-extension/media/risk-model.js"
 const LayerVisibilityModel = require(path.join(root, "vscode-extension/media/layer-visibility.js"));
 const DfdEngine = require(path.join(root, "vscode-extension/media/dfd-engine.js"));
 const StrideModel = require(path.join(root, "vscode-extension/media/stride-model.js"));
+const ImportedKb = require(path.join(root, "vscode-extension/media/imported-kb.js"));
 
 function hasTraFixtures(projectDir) {
   return fs.existsSync(path.join(projectDir, "04-dfd/dfd.json")) && fs.existsSync(path.join(projectDir, "07-attack-trees/attack-trees.json"));
@@ -47,6 +48,61 @@ function discoverProjectDir() {
 
 let passed = 0;
 function ok(name, cond) { assert.ok(cond, "FAIL: " + name); passed++; }
+
+async function runImportedKbTests() {
+  const packageJson = JSON.parse(fs.readFileSync(path.join(root, "vscode-extension/package.json"), "utf8"));
+  const extensionSource = fs.readFileSync(path.join(root, "vscode-extension/src/extension.ts"), "utf8");
+  ok("imported knowledge-base removal command is contributed and registered",
+    packageJson.contributes.commands.some((item) => item.command === "embedrisk.kbRemove")
+      && extensionSource.includes('registerCommand("embedrisk.kbRemove"'));
+
+  const rootPath = path.join(os.tmpdir(), "embedrisk-imported-kbs");
+  const listed = [
+    { name: "catalogue-one", isDirectory: true, isSymbolicLink: false },
+    { name: "regular-file", isDirectory: false, isSymbolicLink: false },
+    { name: "linked-catalogue", isDirectory: true, isSymbolicLink: true },
+  ];
+  const removed = [];
+  let confirmed = 0;
+  const io = {
+    list: async () => listed,
+    choose: async (names) => { assert.deepStrictEqual(names, ["catalogue-one"]); return names[0]; },
+    confirm: async () => { confirmed++; return true; },
+    remove: async (target) => removed.push(target),
+  };
+  const result = await ImportedKb.removeImportedCatalogue(rootPath, io);
+  ok("removal offers only non-symlink directories and deletes the selected child after confirmation",
+    result.status === "removed" && result.name === "catalogue-one" && confirmed === 1
+      && removed.length === 1 && removed[0] === path.join(rootPath, "catalogue-one"));
+
+  let deleteCalls = 0;
+  const cancel = await ImportedKb.removeImportedCatalogue(rootPath, {
+    ...io, choose: async () => "catalogue-one", confirm: async () => false,
+    remove: async () => { deleteCalls++; },
+  });
+  ok("removal cancellation leaves the catalogue untouched", cancel.status === "cancelled" && deleteCalls === 0);
+
+  const empty = await ImportedKb.removeImportedCatalogue(rootPath, {
+    ...io, list: async () => [{ name: "file", isDirectory: false, isSymbolicLink: false }],
+  });
+  ok("removal reports an empty catalogue list when no directories are present", empty.status === "empty");
+
+  await assert.rejects(() => ImportedKb.removeImportedCatalogue(rootPath, {
+    ...io, choose: async () => "../outside",
+    remove: async () => { deleteCalls++; },
+  }), /no longer available/);
+  await assert.rejects(() => ImportedKb.removeImportedCatalogue(rootPath, {
+    ...io, list: async () => [{ name: "../outside", isDirectory: true, isSymbolicLink: false }],
+    choose: async () => "../outside",
+    remove: async () => { deleteCalls++; },
+  }), /outside the imported/);
+  await assert.rejects(() => ImportedKb.removeImportedCatalogue(rootPath, {
+    ...io, list: async () => [{ name: "..", isDirectory: true, isSymbolicLink: false }],
+    choose: async () => "..",
+    remove: async () => { deleteCalls++; },
+  }), /outside the imported/);
+  ok("removal rejects stale or traversing selections without deleting outside the imported root", deleteCalls === 0);
+}
 
 /* ---------- Extension report exports ---------- */
 {
@@ -1033,7 +1089,8 @@ async function runValidationDiagnosticsTests() {
   ok("validation diagnostics: deleted project refresh clears stale diagnostics", clearCount === 5 && published.size === 0);
 }
 
-checkWebappParity()
+runImportedKbTests()
+  .then(() => checkWebappParity())
   .then(() => runValidationCoreTests())
   .then(() => runValidationDiagnosticsTests())
   .then(async () => {

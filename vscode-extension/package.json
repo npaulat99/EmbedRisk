@@ -56,6 +56,11 @@
         "category": "EmbedRisk"
       },
       {
+        "command": "embedrisk.kbRemove",
+        "title": "Remove imported knowledge base",
+        "category": "EmbedRisk"
+      },
+      {
         "command": "embedrisk.dfdToDrawio",
         "title": "Open DFD in draw.io editor",
         "category": "EmbedRisk"

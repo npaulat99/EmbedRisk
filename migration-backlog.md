@@ -292,7 +292,7 @@ the orchestrator implements them directly (anchors: `renderProject()` and the de
       severities; refresh and clear diagnostics when project JSON changes or is removed. Tests cover
       mapping, update/clear behavior, and ensure diagnostics do not write to project files.
 - [x] **EXT-E1 Traceability CSV/JSON + SBOM export commands** (parity with server endpoints).
-- [ ] **EXT-KB1 Remove imported KB catalogue command.**
+- [x] **EXT-KB1 Remove imported KB catalogue command.**
 - [ ] **EXT-S1 `contributes.configuration` settings** for options in `SettingsModal.tsx`.
 - [ ] **EXT-W1 Getting-started walkthrough** (replaces webapp tutorial).
 - [ ] **EXT-O1 DFD layer overview tree view.**
@@ -312,6 +312,7 @@ the orchestrator implements them directly (anchors: `renderProject()` and the de
 
 | Item | Impl | Review | Test | Notes |
 |---|---|---|---|---|
+| EXT-KB1 | ✅ (S, direct) | ✅ PASS (baseline) | ✅ PASS (compile, model tests incl. remove/cancel/empty/path-safety, webview parse/runtime, diff check) | Added a native command to select and confirm removal of imported catalogues. Only listed non-symlink directories are offered; the selected direct child is moved to trash, with empty-state and error reporting. Tests cover selected removal, cancellation, empty listings and traversal/stale-selection rejection. |
 | EXT-E1 | ✅ (one implementer) | ✅ PASS (combined verifier) | ✅ PASS (compile, 233 model assertions, 6 parsed scripts + 6 runtime webviews, diff check) | Added native CSV/JSON traceability and SBOM export commands. Traceability schema, field order and CSV quoting match the webapp; SBOM follows project mode/format, reports external-mode unavailability, and generated artifacts stay in `report/`. Tests verify command contributions, exported contents, format/mode selection and that project source files remain unchanged. |
 | EXT-V1a | ✅ (one implementer) | ✅ PASS (baseline + parent re-run of model tests) | ✅ PASS (compile, 208 model assertions incl. webapp-error parity, 6 parsed scripts + 6 runtime webviews, diff check) | Added side-effect-free media/validation-model.js validateCore: all 17 webapp 'error' rules (duplicate IDs, missing IDs, reference integrity) with identical {severity,message,key}; warnings/notices/acceptedNotices deferred to V1b, Problems diagnostics to V1c. |
 | EXT-V1b | ✅ (one implementer) | ✅ PASS (combined verifier) | ✅ PASS (compile, 216 model assertions incl. full webapp validator parity, 6 parsed scripts + 6 runtime webviews, diff check) | Added side-effect-free full validation parity for cost/risk scoring, completeness, coverage, consistency, rigorous checks, residual rules and accepted notices while retaining validateCore. Fixtures compare complete structured issues, test dynamic review dates and verify accepting one keyed notice suppresses only that notice. Problems diagnostics remain for V1c. |

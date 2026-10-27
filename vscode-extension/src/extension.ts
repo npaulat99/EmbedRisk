@@ -17,6 +17,14 @@ import { registerValidationDiagnostics } from "./validationDiagnostics";
 const AtModel = require("../media/attacktree-model.js");
 // Shared webapp-compatible id scheme (prefix + lowest free number), from the isomorphic DFD model.
 const { nextId } = require("../media/dfd-model.js") as { nextId: (prefix: string, ids: unknown[]) => string };
+const { removeImportedCatalogue } = require("../media/imported-kb.js") as {
+  removeImportedCatalogue: (rootPath: string, io: {
+    list: () => Promise<{ name: string; isDirectory: boolean; isSymbolicLink: boolean }[]>;
+    choose: (names: string[]) => Promise<string | undefined>;
+    confirm: (name: string) => Promise<boolean>;
+    remove: (target: string) => Promise<void>;
+  }) => Promise<{ status: "empty" | "cancelled" | "removed"; name?: string }>;
+};
 
 interface Node { id: string; label: string; type: string; layer: number; parent?: string | null }
 interface Dfd { nodes: Node[]; flows: { id: string; label?: string; from: string; to: string }[]; }
@@ -350,6 +358,34 @@ export function activate(ctx: vscode.ExtensionContext) {
       } catch (err: any) {
         const detail = String(err?.stderr || err?.stdout || err?.message || err).trim();
         vscode.window.showErrorMessage(detail ? `Knowledge-base import failed: ${detail}` : "Knowledge-base import failed.");
+      }
+    }),
+    vscode.commands.registerCommand("embedrisk.kbRemove", async () => {
+      const root = importedKbRoot(ctx);
+      try {
+        const result = await removeImportedCatalogue(root.fsPath, {
+          list: async () => (await pathExists(root)
+            ? await vscode.workspace.fs.readDirectory(root)
+            : []).map(([name, type]) => ({
+            name,
+            isDirectory: Boolean(type & vscode.FileType.Directory),
+            isSymbolicLink: Boolean(type & vscode.FileType.SymbolicLink),
+          })),
+          choose: async (names) => (await vscode.window.showQuickPick(names, {
+            placeHolder: "Select an imported knowledge base to remove",
+          })),
+          confirm: async (name) => (await vscode.window.showWarningMessage(
+            `Remove imported knowledge base '${name}' and all its files?`,
+            { modal: true },
+            "Remove"
+          )) === "Remove",
+          remove: async (target) => vscode.workspace.fs.delete(vscode.Uri.file(target), { recursive: true, useTrash: true }),
+        });
+        if (result.status === "empty") vscode.window.showWarningMessage("No imported knowledge bases to remove.");
+        if (result.status === "removed") vscode.window.showInformationMessage(`Removed imported knowledge base '${result.name}'.`);
+      } catch (err: any) {
+        const detail = String(err?.message || err).trim();
+        vscode.window.showErrorMessage(detail ? `Knowledge-base removal failed: ${detail}` : "Knowledge-base removal failed.");
       }
     }),
     vscode.window.registerCustomEditorProvider("embedrisk.dfdNative", new NativeDfdEditor(ctx.extensionUri), { webviewOptions: { retainContextWhenHidden: true } }),
