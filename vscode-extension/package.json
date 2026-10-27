@@ -89,6 +89,21 @@
         "command": "embedrisk.report",
         "title": "Generate report",
         "category": "EmbedRisk"
+      },
+      {
+        "command": "embedrisk.exportTraceabilityCsv",
+        "title": "Export traceability (CSV)",
+        "category": "EmbedRisk"
+      },
+      {
+        "command": "embedrisk.exportTraceabilityJson",
+        "title": "Export traceability (JSON)",
+        "category": "EmbedRisk"
+      },
+      {
+        "command": "embedrisk.exportSbom",
+        "title": "Export SBOM",
+        "category": "EmbedRisk"
       }
     ],
     "keybindings": [

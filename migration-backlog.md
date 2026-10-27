@@ -291,7 +291,7 @@ the orchestrator implements them directly (anchors: `renderProject()` and the de
     - AC: Map validator issues to file-associated VS Code diagnostics with error/warning/information
       severities; refresh and clear diagnostics when project JSON changes or is removed. Tests cover
       mapping, update/clear behavior, and ensure diagnostics do not write to project files.
-- [ ] **EXT-E1 Traceability CSV/JSON + SBOM export commands** (parity with server endpoints).
+- [x] **EXT-E1 Traceability CSV/JSON + SBOM export commands** (parity with server endpoints).
 - [ ] **EXT-KB1 Remove imported KB catalogue command.**
 - [ ] **EXT-S1 `contributes.configuration` settings** for options in `SettingsModal.tsx`.
 - [ ] **EXT-W1 Getting-started walkthrough** (replaces webapp tutorial).
@@ -312,6 +312,7 @@ the orchestrator implements them directly (anchors: `renderProject()` and the de
 
 | Item | Impl | Review | Test | Notes |
 |---|---|---|---|---|
+| EXT-E1 | ✅ (one implementer) | ✅ PASS (combined verifier) | ✅ PASS (compile, 233 model assertions, 6 parsed scripts + 6 runtime webviews, diff check) | Added native CSV/JSON traceability and SBOM export commands. Traceability schema, field order and CSV quoting match the webapp; SBOM follows project mode/format, reports external-mode unavailability, and generated artifacts stay in `report/`. Tests verify command contributions, exported contents, format/mode selection and that project source files remain unchanged. |
 | EXT-V1a | ✅ (one implementer) | ✅ PASS (baseline + parent re-run of model tests) | ✅ PASS (compile, 208 model assertions incl. webapp-error parity, 6 parsed scripts + 6 runtime webviews, diff check) | Added side-effect-free media/validation-model.js validateCore: all 17 webapp 'error' rules (duplicate IDs, missing IDs, reference integrity) with identical {severity,message,key}; warnings/notices/acceptedNotices deferred to V1b, Problems diagnostics to V1c. |
 | EXT-V1b | ✅ (one implementer) | ✅ PASS (combined verifier) | ✅ PASS (compile, 216 model assertions incl. full webapp validator parity, 6 parsed scripts + 6 runtime webviews, diff check) | Added side-effect-free full validation parity for cost/risk scoring, completeness, coverage, consistency, rigorous checks, residual rules and accepted notices while retaining validateCore. Fixtures compare complete structured issues, test dynamic review dates and verify accepting one keyed notice suppresses only that notice. Problems diagnostics remain for V1c. |
 | EXT-V1c | ✅ (one direct implementation) | ✅ PASS (fix-round combined verifier) | ✅ PASS (compile, 225 model assertions incl. diagnostic mapping/update/clear/no-write checks, 6 parsed scripts + 6 runtime webviews, diff check) | Added project-wide file-associated Problems diagnostics with error/warning/information mapping, workspace JSON create/change/delete and folder watchers, read-only refresh, stale clearing on updates/project removal, syntax-error reporting and artifact ownership mapping. Initial verifier found id-less threat errors mapped to project.json; one fix maps id-less threat/CM plus attacker/interface/flow messages to owning artifacts and adds a regression. Verified all three severities, project/requirement/use-case/threat file associations, update/clear and no writes. No live VS Code test. |

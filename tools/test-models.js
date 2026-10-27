@@ -2,6 +2,8 @@
 const assert = require("node:assert");
 const fs = require("node:fs");
 const path = require("node:path");
+const os = require("node:os");
+const { execFileSync } = require("node:child_process");
 
 const root = path.resolve(__dirname, "..");
 const DfdModel = require(path.join(root, "vscode-extension/media/dfd-model.js"));
@@ -45,6 +47,74 @@ function discoverProjectDir() {
 
 let passed = 0;
 function ok(name, cond) { assert.ok(cond, "FAIL: " + name); passed++; }
+
+/* ---------- Extension report exports ---------- */
+{
+  const packageJson = JSON.parse(fs.readFileSync(path.join(root, "vscode-extension/package.json"), "utf8"));
+  const extensionSource = fs.readFileSync(path.join(root, "vscode-extension/src/extension.ts"), "utf8");
+  for (const command of ["embedrisk.exportTraceabilityCsv", "embedrisk.exportTraceabilityJson", "embedrisk.exportSbom"]) {
+    ok(`report export command ${command} is contributed and registered`,
+      packageJson.contributes.commands.some((item) => item.command === command)
+        && extensionSource.includes(`registerCommand("${command}"`));
+  }
+
+  const projectDir = fs.mkdtempSync(path.join(os.tmpdir(), "embedrisk-exports-"));
+  const put = (file, value) => {
+    const target = path.join(projectDir, file);
+    fs.mkdirSync(path.dirname(target), { recursive: true });
+    fs.writeFileSync(target, JSON.stringify(value, null, 2) + "\n");
+  };
+  const inputs = {
+    "01-project-description/project.json": { projectId: "test-project", title: "Test", customUnknownKey: { keep: true } },
+    "02-assumptions/assumptions.json": { device: [], system: [], environment: [], operational: [], attacker: [] },
+    "03-system-assets/system.json": {
+      assets: [{ id: "A-1", name: "Asset", objectives: { confidentiality: 2, integrity: 3, availability: 4, safety: 1 } }],
+      components: [{ id: "C-1", kind: "hardware", name: "Controller" }],
+    },
+    "06-threats/threats.json": { threats: [{
+      id: "T-1", title: 'Threat "quoted"\nline', assets: ["A-1"], components: ["C-1"], stride: ["E", "S"],
+      likelihood: 2, impact: 3, assumptionRefs: ["AS-1"], likelihoodRationale: 'because "yes"\nnext',
+      status: "accepted", ratedBy: "Reviewer", acceptedBy: "Approver", acceptanceRationale: "accepted",
+    }] },
+    "05-requirements/requirements.json": { requirements: [{ id: "R-1", standardRef: "IEC 1", derivedFromThreat: ["T-1"], satisfiedByCM: ["CM-1"] }] },
+    "08-countermeasures/countermeasures.json": { countermeasures: [{
+      id: "CM-1", status: "implemented", addresses: [{ threat: "T-1", residualLikelihood: 1, residualImpact: 2 }],
+      ticketUrls: ["https://example.invalid/ticket"],
+    }] },
+  };
+  try {
+    Object.entries(inputs).forEach(([file, value]) => put(file, value));
+    const sourceSnapshot = Object.fromEntries(Object.keys(inputs).map((file) => [file, fs.readFileSync(path.join(projectDir, file), "utf8")]));
+    const generator = path.join(root, "vscode-extension/runtime/tools/generate-report.mjs");
+    const run = () => execFileSync(process.execPath, [generator, projectDir], { cwd: path.dirname(generator), stdio: "ignore" });
+    run();
+    const reportDir = path.join(projectDir, "report");
+    const trace = JSON.parse(fs.readFileSync(path.join(reportDir, "traceability.json"), "utf8"));
+    ok("traceability JSON matches webapp field order and derived values",
+      Object.keys(trace[0]).join(",") === "asset,cias,threat,title,stride,assumptionRefs,likelihoodRationale,impactRationale,initial,initialBand,requirement,control,residual,residualBand,evidence,status,ratedBy,signoff"
+        && trace[0].stride === "SE" && trace[0].initial === 6 && trace[0].residual === 2
+        && trace[0].requirement === "R-1 [IEC 1] → CM-1" && trace[0].signoff === "by Approver · accepted");
+    const csv = fs.readFileSync(path.join(reportDir, "traceability.csv"), "utf8");
+    ok("traceability CSV preserves schema and quotes embedded quotes/newlines",
+      csv.startsWith('"Asset","C/I/A/S","Threat","Title","STRIDE","Assumptions"')
+        && csv.includes('"Threat ""quoted""\nline"') && csv.includes('"L: because ""yes""\nnext"') && csv.endsWith("\r\n"));
+    ok("CycloneDX is selected by default and source project files are unchanged",
+      fs.existsSync(path.join(reportDir, "sbom.cdx.json"))
+        && !fs.existsSync(path.join(reportDir, "sbom.spdx.json"))
+        && Object.entries(sourceSnapshot).every(([file, value]) => fs.readFileSync(path.join(projectDir, file), "utf8") === value));
+    put("01-project-description/project.json", { ...inputs["01-project-description/project.json"], sbom: { mode: "in-tool", format: "spdx" } });
+    run();
+    ok("SPDX selection emits only the selected SBOM file",
+      fs.existsSync(path.join(reportDir, "sbom.spdx.json")) && !fs.existsSync(path.join(reportDir, "sbom.cdx.json")));
+    put("01-project-description/project.json", { ...inputs["01-project-description/project.json"], sbom: { mode: "external", url: "https://example.invalid/sbom" } });
+    run();
+    ok("external SBOM mode emits no SBOM while retaining traceability",
+      !fs.existsSync(path.join(reportDir, "sbom.cdx.json")) && !fs.existsSync(path.join(reportDir, "sbom.spdx.json"))
+        && fs.existsSync(path.join(reportDir, "traceability.csv")) && fs.existsSync(path.join(reportDir, "traceability.json")));
+  } finally {
+    fs.rmSync(projectDir, { recursive: true, force: true });
+  }
+}
 
 /* ---------- Optional fixture smoke checks ---------- */
 let projectDir = null;

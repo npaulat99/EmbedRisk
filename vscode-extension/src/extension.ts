@@ -95,7 +95,7 @@ async function initGitRepo(dir: vscode.Uri) {
   }
 }
 
-async function generateReport(ctx: vscode.ExtensionContext, projDir: vscode.Uri) {
+async function generateReport(ctx: vscode.ExtensionContext, projDir: vscode.Uri, artifact?: "traceability.csv" | "traceability.json" | "sbom") {
   const script = reportsScript(ctx);
   if (!(await pathExists(script))) {
     vscode.window.showErrorMessage("The packaged report generator is missing. Reinstall the extension.");
@@ -103,7 +103,25 @@ async function generateReport(ctx: vscode.ExtensionContext, projDir: vscode.Uri)
   }
   try {
     await execFileAsync(process.execPath, [script.fsPath, projDir.fsPath], { cwd: path.dirname(script.fsPath) });
-    const report = vscode.Uri.joinPath(projDir, "report", "index.html");
+    let report: vscode.Uri;
+    if (artifact === "sbom") {
+      const projectFile = vscode.Uri.joinPath(projDir, "01-project-description", "project.json");
+      const project = JSON.parse(decoder.decode(await vscode.workspace.fs.readFile(projectFile)));
+      if ((project.sbom?.mode || "in-tool") !== "in-tool") {
+        vscode.window.showWarningMessage("This project uses an externally provided SBOM; no SBOM export is available.");
+        return;
+      }
+      report = vscode.Uri.joinPath(projDir, "report", (project.sbom?.format || "cyclonedx") === "spdx" ? "sbom.spdx.json" : "sbom.cdx.json");
+    } else {
+      report = vscode.Uri.joinPath(projDir, "report", artifact || "index.html");
+    }
+    const filename = path.basename(report.fsPath);
+    if (artifact) {
+      const act = await vscode.window.showInformationMessage(`${filename} generated successfully.`, "Open file", "Reveal file");
+      if (act === "Open file") await vscode.commands.executeCommand("vscode.open", report);
+      else if (act === "Reveal file") await vscode.commands.executeCommand("revealFileInOS", report);
+      return;
+    }
     const act = await vscode.window.showInformationMessage("Report generated successfully.", "Open report", "Reveal folder");
     if (act === "Open report") await vscode.commands.executeCommand("vscode.open", report);
     else if (act === "Reveal folder") await vscode.commands.executeCommand("revealFileInOS", report);
@@ -111,6 +129,12 @@ async function generateReport(ctx: vscode.ExtensionContext, projDir: vscode.Uri)
     const detail = String(err?.stderr || err?.stdout || err?.message || err).trim();
     vscode.window.showErrorMessage(detail ? `Report generation failed: ${detail}` : "Report generation failed.");
   }
+}
+
+async function runReportCommand(ctx: vscode.ExtensionContext, artifact?: "traceability.csv" | "traceability.json" | "sbom") {
+  const u = await find();
+  if (!u) { vscode.window.showWarningMessage("No EmbedRisk project (04-dfd/dfd.json) found."); return; }
+  await generateReport(ctx, vscode.Uri.joinPath(u, "..", ".."), artifact);
 }
 
 async function scaffoldProject(dir: vscode.Uri, name: string, slug: string) {
@@ -226,12 +250,10 @@ export function activate(ctx: vscode.ExtensionContext) {
     vscode.commands.registerCommand("embedrisk.dfdToDrawio", () => openLayer(layer)),
     vscode.commands.registerCommand("embedrisk.dfdLayerDown", () => openLayer(layer + 1)),
     vscode.commands.registerCommand("embedrisk.dfdLayerUp", () => openLayer(Math.max(1, layer - 1))),
-    vscode.commands.registerCommand("embedrisk.report", async () => {
-      const u = await find();
-      if (!u) { vscode.window.showWarningMessage("No EmbedRisk project (04-dfd/dfd.json) found."); return; }
-      const projDir = vscode.Uri.joinPath(u, "..", "..");
-      await generateReport(ctx, projDir);
-    }),
+    vscode.commands.registerCommand("embedrisk.report", () => runReportCommand(ctx)),
+    vscode.commands.registerCommand("embedrisk.exportTraceabilityCsv", () => runReportCommand(ctx, "traceability.csv")),
+    vscode.commands.registerCommand("embedrisk.exportTraceabilityJson", () => runReportCommand(ctx, "traceability.json")),
+    vscode.commands.registerCommand("embedrisk.exportSbom", () => runReportCommand(ctx, "sbom")),
     vscode.commands.registerCommand("embedrisk.newProject", createProjectCommand),
     vscode.commands.registerCommand("embedrisk.openWebapp", openWebappCommand),
     vscode.commands.registerCommand("embedrisk.wizard", (focusThreatId?: string) => openWizard(ctx, focusThreatId)),

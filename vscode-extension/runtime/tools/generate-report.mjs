@@ -2,7 +2,7 @@
 // TRA report generator: zero external dependencies. Loads a TRA project folder,
 // computes initial and residual risk, runs the plausibility checker, and writes report/index.html.
 // Usage: node tools/generate-report.mjs <project-dir>
-import { readFileSync, writeFileSync, mkdirSync, existsSync, readdirSync } from "node:fs";
+import { readFileSync, writeFileSync, mkdirSync, existsSync, readdirSync, unlinkSync } from "node:fs";
 import { isAbsolute, join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -74,6 +74,44 @@ const residual = (t) => {
   }
   return { l, i };
 };
+const strideOrder = ['S', 'T', 'R', 'I', 'D', 'E'];
+const traceability = threats.map((t) => {
+  const assetById = new Map((sys.assets || []).map((a) => [a.id, a]));
+  const rr = residual(t), [rl, ri] = [rr.l, rr.i];
+  const initial = (t.likelihood || 0) * (t.impact || 0), res = (rl || 0) * (ri || 0);
+  const rqs = reqs.filter((r) => (r.derivedFromThreat || []).includes(t.id));
+  const ctrls = cms.filter((c) => c.selected !== false && (c.addresses || []).some((a) => a.threat === t.id));
+  const riskBand = (value) => value <= 0 ? { name: 'None' } : scheme.matrix.bands.find((b) => value >= b.min && value <= b.max) || scheme.matrix.bands[0];
+  return {
+    asset: (t.assets || []).map((a) => assetById.get(a)?.name || a).join('; '),
+    cias: (t.assets || []).map((a) => {
+      const o = assetById.get(a)?.objectives || {};
+      return `C${o.confidentiality ?? '-'}/I${o.integrity ?? '-'}/A${o.availability ?? '-'}/S${o.safety ?? '-'}`;
+    }).join('; '),
+    threat: t.id, title: t.title, stride: [...(t.stride || [])].sort((a, b) => {
+      const ai = strideOrder.indexOf(a), bi = strideOrder.indexOf(b);
+      return (ai < 0 ? 99 : ai) - (bi < 0 ? 99 : bi);
+    }).join(''),
+    assumptionRefs: t.assumptionRefs || [], likelihoodRationale: t.likelihoodRationale || '', impactRationale: t.impactRationale || '',
+    initial, initialBand: riskBand(initial).name,
+    requirement: rqs.map((r) => `${r.id}${r.standardRef ? ` [${r.standardRef}]` : ''}${(r.satisfiedByCM || []).length ? ` → ${(r.satisfiedByCM || []).join('+')}` : ''}`).join('; '),
+    control: ctrls.map((c) => `${c.id} (${c.status || '?'})`).join('; '),
+    residual: res, residualBand: riskBand(res).name,
+    evidence: ctrls.flatMap((c) => [...(c.ticketUrls || []), c.ticketUrl, c.verificationUrl]).filter(Boolean).join(' '),
+    status: t.status || '', ratedBy: t.ratedBy || '',
+    signoff: t.status === 'accepted' ? [t.acceptedBy && `by ${t.acceptedBy}`, t.reviewDate && `review ${t.reviewDate}`, t.acceptanceRationale].filter(Boolean).join(' · ') : '',
+  };
+});
+const csvCell = (value) => `"${String(value ?? '').replace(/"/g, '""')}"`;
+const traceabilityCsv = (() => {
+  const headers = ['Asset', 'C/I/A/S', 'Threat', 'Title', 'STRIDE', 'Assumptions', 'Rationale', 'Initial', 'InitialBand', 'Requirement', 'Control', 'Residual', 'ResidualBand', 'Evidence', 'Status', 'RatedBy', 'SignOff'];
+  const body = traceability.map((r) => [
+    r.asset, r.cias, r.threat, r.title, r.stride, (r.assumptionRefs || []).join('; '),
+    [r.likelihoodRationale && `L: ${r.likelihoodRationale}`, r.impactRationale && `I: ${r.impactRationale}`].filter(Boolean).join(' | '),
+    r.initial, r.initialBand, r.requirement, r.control, r.residual, r.residualBand, r.evidence, r.status, r.ratedBy, r.signoff,
+  ].map(csvCell).join(','));
+  return [headers.map(csvCell).join(','), ...body].join('\r\n') + '\r\n';
+})();
 
 // Plausibility checker
 const ids = new Set(sys.components.map((c) => c.id));
@@ -220,11 +258,19 @@ ${sbomSection}
 
 mkdirSync(join(base, "report"), { recursive: true });
 writeFileSync(join(base, "report/index.html"), html);
+writeFileSync(join(base, "report/traceability.csv"), traceabilityCsv);
+writeFileSync(join(base, "report/traceability.json"), JSON.stringify(traceability, null, 2) + '\n');
 if (sbomMode === 'in-tool') {
   if (sbomFormat === 'spdx') {
+    if (existsSync(join(base, "report/sbom.cdx.json"))) unlinkSync(join(base, "report/sbom.cdx.json"));
     writeFileSync(join(base, "report/sbom.spdx.json"), JSON.stringify(buildSpdx(), null, 2) + '\n');
   } else {
+    if (existsSync(join(base, "report/sbom.spdx.json"))) unlinkSync(join(base, "report/sbom.spdx.json"));
     writeFileSync(join(base, "report/sbom.cdx.json"), JSON.stringify(buildCdx(), null, 2) + '\n');
+  }
+} else {
+  for (const file of ["sbom.cdx.json", "sbom.spdx.json"]) {
+    if (existsSync(join(base, `report/${file}`))) unlinkSync(join(base, `report/${file}`));
   }
 }
 console.log(`Report written to ${join(proj, "report/index.html")}; ${issues.length} plausibility issue(s).`);
