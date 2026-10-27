@@ -12,6 +12,7 @@ import { NativeDfdEditor } from "./nativeDfdEditor";
 import { AttackTreeEditor } from "./attackTreeEditor";
 import { UseCaseEditor } from "./useCaseEditor";
 import { registerValidationDiagnostics } from "./validationDiagnostics";
+import { registerDfdOverview } from "./dfdOverview";
 
 // Isomorphic CommonJS webview model, reused here for the shared threatRefs/threatRef read rule.
 const AtModel = require("../media/attacktree-model.js");
@@ -221,6 +222,7 @@ async function openLayer(target: number) {
 
 export function activate(ctx: vscode.ExtensionContext) {
   registerValidationDiagnostics(ctx);
+  registerDfdOverview(ctx);
   const attackTreeEditor = new AttackTreeEditor(ctx.extensionUri);
   const useCaseEditor = new UseCaseEditor(ctx.extensionUri);
   const openWebappCommand = async () => {
@@ -255,6 +257,7 @@ export function activate(ctx: vscode.ExtensionContext) {
   };
 
   ctx.subscriptions.push(
+    vscode.commands.registerCommand("embedrisk.dfdOverviewOpen", (target: number) => openLayer(target)),
     vscode.commands.registerCommand("embedrisk.dfdToDrawio", () => openLayer(layer)),
     vscode.commands.registerCommand("embedrisk.dfdLayerDown", () => openLayer(layer + 1)),
     vscode.commands.registerCommand("embedrisk.dfdLayerUp", () => openLayer(Math.max(1, layer - 1))),

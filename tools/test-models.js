@@ -10,6 +10,7 @@ const DfdModel = require(path.join(root, "vscode-extension/media/dfd-model.js"))
 const AtModel = require(path.join(root, "vscode-extension/media/attacktree-model.js"));
 const RiskModel = require(path.join(root, "vscode-extension/media/risk-model.js"));
 const LayerVisibilityModel = require(path.join(root, "vscode-extension/media/layer-visibility.js"));
+const DfdOverviewModel = require(path.join(root, "vscode-extension/media/dfd-overview-model.js"));
 const DfdEngine = require(path.join(root, "vscode-extension/media/dfd-engine.js"));
 const StrideModel = require(path.join(root, "vscode-extension/media/stride-model.js"));
 const ImportedKb = require(path.join(root, "vscode-extension/media/imported-kb.js"));
@@ -1131,7 +1132,64 @@ async function runValidationDiagnosticsTests() {
   ok("validation diagnostics: deleted project refresh clears stale diagnostics", clearCount === 5 && published.size === 0);
 }
 
+function runDfdOverviewTests() {
+  const input = {
+    project: { device: { name: "Overview Device" }, title: "Project title" },
+    system: {
+      components: [{ id: "C-1", name: "Main component" }],
+      interfaces: [
+        { id: "I-1", component: "C-1", name: "Ethernet" },
+        { id: "I-2", component: "C-1", name: "Hidden port", hidden: true },
+      ],
+    },
+    dfd: { nodes: [
+      { id: "N-1", label: "Main", type: "process", layer: 1, parent: null, componentRef: "C-1" },
+      { id: "N-2", label: "Storage", type: "store", layer: 2, parent: "N-1" },
+      { id: "N-3", label: "Nested", type: "multiprocess", layer: "invalid", parent: "N-2" },
+      { id: "N-4", label: "Outside", type: "external-entity", layer: 1, parent: null },
+      { id: "TB-1", label: "Boundary", type: "trust-boundary", layer: 1, parent: null, members: ["N-1", "N-2"] },
+    ] },
+  };
+  const before = JSON.stringify(input);
+  const result = DfdOverviewModel.buildOverview(input);
+  ok("DFD overview: device name and root hierarchy", result.deviceName === "Overview Device" && result.roots.length === 3);
+  const main = result.roots.find((node) => node.id === "N-1");
+  ok("DFD overview: parent nesting and integer-layer fallback",
+    main.children[0].id === "N-2" && main.children[0].children[0].layer === 3);
+  ok("DFD overview: type labels and codicon names are mapped",
+    result.roots.map((node) => node.typeLabel).join(",") === "Process,External entity,Trust boundary"
+      && result.roots.every((node) => typeof node.icon === "string" && node.icon.length > 0)
+      && main.children[0].typeLabel === "Data store" && main.children[0].children[0].typeLabel === "Multi-process");
+  ok("DFD overview: component, trust-boundary members and visible interfaces",
+    main.componentName === "Main component" && main.interfaces.join(",") === "Ethernet"
+      && result.roots.find((node) => node.id === "TB-1").memberCount === 2);
+  ok("DFD overview: open action maps to the node layer",
+    JSON.stringify(DfdOverviewModel.openAction(main.children[0])) === JSON.stringify({ command: "embedrisk.dfdOverviewOpen", args: [2] }));
+  ok("DFD overview: model construction does not mutate input", JSON.stringify(input) === before);
+  const empty = DfdOverviewModel.buildOverview({ project: { title: "Fallback title" }, dfd: { nodes: [] } });
+  ok("DFD overview: empty state has no roots and title fallback", empty.roots.length === 0 && empty.deviceName === "Fallback title");
+  const cycle = DfdOverviewModel.buildOverview({ dfd: { nodes: [
+    { id: "A", label: "A", type: "process", parent: "B" },
+    { id: "B", label: "B", type: "process", parent: "A" },
+  ] } });
+  ok("DFD overview: cyclic parent references terminate safely", cycle.roots.length === 0);
+
+  const extDir = path.join(root, "vscode-extension");
+  const manifest = JSON.parse(fs.readFileSync(path.join(extDir, "package.json"), "utf8"));
+  const extension = fs.readFileSync(path.join(extDir, "src/extension.ts"), "utf8");
+  const provider = fs.readFileSync(path.join(extDir, "src/dfdOverview.ts"), "utf8");
+  ok("DFD overview: Explorer view and refresh/open commands are contributed",
+    manifest.contributes.views.explorer.some((view) => view.id === "embedrisk.dfdOverview")
+      && ["embedrisk.dfdOverviewRefresh", "embedrisk.dfdOverviewOpen"].every((id) => manifest.contributes.commands.some((command) => command.command === id)));
+  ok("DFD overview: provider is registered with a debounced refresh watcher and read-only IO",
+    extension.includes("registerDfdOverview(ctx)") && extension.includes("embedrisk.dfdOverviewOpen")
+      && provider.includes("TreeDataProvider") && provider.includes("createFileSystemWatcher")
+      && provider.includes("embedrisk.dfdOverviewRefresh") && provider.includes("workspace.fs.readFile")
+      && !provider.includes("writeFile"));
+}
+
 runImportedKbTests()
+  .then(() => runDfdOverviewTests())
   .then(() => checkWebappParity())
   .then(() => runValidationCoreTests())
   .then(() => runValidationDiagnosticsTests())

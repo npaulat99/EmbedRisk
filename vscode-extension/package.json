@@ -114,6 +114,17 @@
         "command": "embedrisk.exportSbom",
         "title": "Export SBOM",
         "category": "EmbedRisk"
+      },
+      {
+        "command": "embedrisk.dfdOverviewRefresh",
+        "title": "Refresh DFD overview",
+        "category": "EmbedRisk",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "embedrisk.dfdOverviewOpen",
+        "title": "Open DFD overview layer",
+        "category": "EmbedRisk"
       }
     ],
     "walkthroughs": [
@@ -302,6 +313,23 @@
           "description": "Include STRIDE-per-trust-boundary tables in reports."
         }
       }
+    },
+    "views": {
+      "explorer": [
+        {
+          "id": "embedrisk.dfdOverview",
+          "name": "EmbedRisk DFD Overview",
+          "when": "workspaceFolderCount > 0"
+        }
+      ]
+    },
+    "menus": {
+      "commandPalette": [
+        { "command": "embedrisk.dfdOverviewOpen", "when": "false" }
+      ],
+      "view/title": [
+        { "command": "embedrisk.dfdOverviewRefresh", "when": "view == embedrisk.dfdOverview", "group": "navigation" }
+      ]
     },
     "customEditors": [
       {
