@@ -8,6 +8,7 @@ const DfdModel = require(path.join(root, "vscode-extension/media/dfd-model.js"))
 const AtModel = require(path.join(root, "vscode-extension/media/attacktree-model.js"));
 const RiskModel = require(path.join(root, "vscode-extension/media/risk-model.js"));
 const LayerVisibilityModel = require(path.join(root, "vscode-extension/media/layer-visibility.js"));
+const DfdEngine = require(path.join(root, "vscode-extension/media/dfd-engine.js"));
 const StrideModel = require(path.join(root, "vscode-extension/media/stride-model.js"));
 
 function hasTraFixtures(projectDir) {
@@ -641,6 +642,39 @@ async function checkWebappParity() {
   });
 }
 
+function runDfdEngineTests() {
+  const vm = require("node:vm");
+  const esbuild = require(path.join(root, "vscode-extension/node_modules/esbuild"));
+  const webModule = { exports: {} };
+  const source = fs.readFileSync(path.join(root, "webapp/shared/dfdEngine.js"), "utf8");
+  vm.runInNewContext(esbuild.transformSync(source, { format: "cjs" }).code, { module: webModule });
+  const web = webModule.exports;
+  const browser = { window: {} };
+  vm.runInNewContext(fs.readFileSync(path.join(root, "vscode-extension/media/dfd-engine.js"), "utf8"), browser);
+  ok("DFD engine browser global exposes API", browser.window.DfdEngine &&
+    Object.keys(browser.window.DfdEngine).join(",") === Object.keys(DfdEngine).join(","));
+
+  const obstacles = [{ x: 40, y: -10, w: 20, h: 20 }, { x: 70, y: 25, w: 15, h: 15 }];
+  const vectors = [
+    ["routeAround", [0, 0, 100, 0, obstacles, 5]],
+    ["routeAround", [10, 80, 90, -20, [{ x: 35, y: 20, w: 30, h: 25 }], 4]],
+    ["routeAround", [0, 0, 100, 0, obstacles, 5, 5]],
+    ["roundedPath", [[[0, 0], [30, 0]], 8]],
+    ["roundedPath", [[[0, 0], [30, 0], [30, 40], [50, 40]], 8]],
+    ["labelPtOnPolyline", [[[0, 0], [30, 0], [30, 40]]]],
+    ["labelPtOnPolyline", [[[0, 0], [0, 0], [15, 0]]]],
+    ["borderPoint", [{ x: 10, y: 20, w: 40, h: 20 }, 100, 30]],
+    ["borderPoint", [{ x: 10, y: 20, w: 40, h: 20 }, 30, 30]],
+  ];
+  for (const [name, args] of vectors) {
+    const before = JSON.stringify(args);
+    const actual = DfdEngine[name](...args);
+    const expected = web[name](...args);
+    ok("DFD engine parity " + name, JSON.stringify(actual) === JSON.stringify(expected));
+    ok("DFD engine does not mutate inputs " + name, JSON.stringify(args) === before);
+  }
+}
+
 function runStrideTests() {
   const { boundaryPairs, analysisHasContent, anyPairHasContent, STRIDE_KEYS, STRIDE_LABEL } = StrideModel;
   // Execute the actual webapp TypeScript after stripping types, rather than mirroring its rules here.
@@ -716,6 +750,7 @@ checkWebappParity()
     const { runLayerVisibilityTests } = await import("../webapp/test/dfd-layer-visibility.test.mjs");
     runLayerVisibilityTests(LayerVisibilityModel);
   })
+  .then(() => runDfdEngineTests())
   .then(() => runStrideTests())
   .then(() => console.log("All " + passed + " model assertions passed."))
   .catch((err) => {
