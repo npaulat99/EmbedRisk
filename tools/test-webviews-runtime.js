@@ -790,6 +790,34 @@ async function checkCountermeasureFields(h, mod) {
       assert.strictEqual(h.toWebview[h.toWebview.length - 1].cmd, "err", "invalid countermeasure fields must report an error");
     }
   }
+
+  const residualLikelihood = '[data-c="0"][data-j="0"][data-k="residualLikelihood"]';
+  const residualImpact = '[data-c="0"][data-j="0"][data-k="residualImpact"]';
+  h.setValue(residualLikelihood, "0");
+  h.setValue(residualImpact, "0");
+  await h.settle(1700);
+  const zeroAutosaved = saved();
+  assert.strictEqual(zeroAutosaved[0].addresses[0].residualLikelihood, 0, "auto-save changed zero residual likelihood");
+  assert.strictEqual(zeroAutosaved[0].addresses[0].residualImpact, 0, "auto-save changed zero residual impact");
+  assert.deepStrictEqual(zeroAutosaved[0].addresses[0].futureMetadata, initial[0].addresses[0].futureMetadata,
+    "auto-save changed unknown link metadata while saving zero residuals");
+  h.close();
+  await mod.openWizard(ctx);
+  h.openDom();
+  await h.settle();
+  assert.strictEqual(h.must(residualLikelihood).value, "0", "zero residual likelihood was not restored on reopen");
+  assert.strictEqual(h.must(residualImpact).value, "0", "zero residual impact was not restored on reopen");
+
+  const zeroExplicit = JSON.parse(JSON.stringify(zeroAutosaved));
+  h.deliverToHost({ cmd: "cms", cms: zeroExplicit });
+  await h.settle();
+  assert.deepStrictEqual(saved(), zeroExplicit, "explicit save changed zero residual assessments or unknown metadata");
+  h.close();
+  await mod.openWizard(ctx);
+  h.openDom();
+  await h.settle();
+  assert.strictEqual(h.must(residualLikelihood).value, "0", "explicitly saved zero likelihood was not restored on reopen");
+  assert.strictEqual(h.must(residualImpact).value, "0", "explicitly saved zero impact was not restored on reopen");
 }
 
 async function checkDocumentEnvelopes(h, mod) {

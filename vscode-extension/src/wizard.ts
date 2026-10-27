@@ -514,8 +514,8 @@ export async function openWizard(ctx: vscode.ExtensionContext, focusThreatId?: s
             const addr: any = {
               ...prevA,
               threat: a.threat,
-              residualLikelihood: Math.max(1, Math.min(5, +a.residualLikelihood || 2)),
-              residualImpact: Math.max(1, Math.min(5, +a.residualImpact || 2)),
+              residualLikelihood: a.residualLikelihood == null || a.residualLikelihood === "" ? 2 : Math.max(0, Math.min(5, +a.residualLikelihood || 0)),
+              residualImpact: a.residualImpact == null || a.residualImpact === "" ? 2 : Math.max(0, Math.min(5, +a.residualImpact || 0)),
             };
             const pickA = (k: string) => { if (a[k] != null) addr[k] = a[k]; else if (prevA[k] != null) addr[k] = prevA[k]; };
             ['attackerRef', 'interfaceRefs', 'interfaceLabel',
@@ -1260,9 +1260,9 @@ function renderCms(){
         '</div>'+
         '<div class="grid2" style="margin-top:6px">'+
           '<div class="field"><label>Residual likelihood</label>'+
-            '<input class="inp" type="number" min=1 max=5 data-c='+i+' data-j='+j+' data-k="residualLikelihood" value="'+(a.residualLikelihood||2)+'"></div>'+
+            '<input class="inp" type="number" min=0 max=5 data-c='+i+' data-j='+j+' data-k="residualLikelihood" value="'+(a.residualLikelihood??2)+'"></div>'+
           '<div class="field"><label>Residual impact</label>'+
-            '<input class="inp" type="number" min=1 max=5 data-c='+i+' data-j='+j+' data-k="residualImpact" value="'+(a.residualImpact??2)+'"></div>'+
+            '<input class="inp" type="number" min=0 max=5 data-c='+i+' data-j='+j+' data-k="residualImpact" value="'+(a.residualImpact??2)+'"></div>'+
         '</div>'+
         rBlock+
         '<div class="row" style="margin-top:6px"><div class="field"><label for="rated-by-'+i+'-'+j+'">Rated by</label><input class="inp" id="rated-by-'+i+'-'+j+'" data-c='+i+' data-j='+j+' data-k="ratedBy" value="'+esc(a.ratedBy||'')+'" placeholder="name / initials"></div>'+
@@ -1655,7 +1655,7 @@ document.addEventListener('input',function(e){
     if(defects[di]){defects[di][dk]=t.value||((dk==='component'||dk==='threatRef')?undefined:t.value);if(dk==='status'||dk==='severity')renderDefects();}
     return;
   }
-  if(t.dataset.c!==undefined&&t.dataset.j!==undefined&&t.dataset.k){var ci=+t.dataset.c,cj=+t.dataset.j;if(t.dataset.k==='ratedBy'){cms[ci].addresses[cj].ratedBy=t.value;markResidualRated(ci,cj);}else{cms[ci].addresses[cj][t.dataset.k]=Math.max(1,Math.min(5,+t.value||1));updatePills();}return;}
+  if(t.dataset.c!==undefined&&t.dataset.j!==undefined&&t.dataset.k){var ci=+t.dataset.c,cj=+t.dataset.j;if(t.dataset.k==='ratedBy'){cms[ci].addresses[cj].ratedBy=t.value;markResidualRated(ci,cj);}else{var residualValue=t.value===''?1:+t.value;cms[ci].addresses[cj][t.dataset.k]=Math.max(0,Math.min(5,residualValue||0));updatePills();}return;}
   if(t.dataset.asm!==undefined&&t.dataset.ai!==undefined&&t.dataset.k){var arr=assumptions[t.dataset.asm];if(arr&&arr[+t.dataset.ai])arr[+t.dataset.ai][t.dataset.k]=t.value;return;}
   if(t.dataset.comp!==undefined&&t.dataset.k){var c=system.components[+t.dataset.comp];if(c)c[t.dataset.k]=(t.dataset.k==='layer')?(+t.value||1):(t.dataset.k==='parent'?(t.value||null):t.value);return;}
   if(t.dataset.if!==undefined&&t.dataset.k){var f=system.interfaces[+t.dataset.if];if(f){f[t.dataset.k]=t.dataset.k==='hidden'?t.checked:t.value;if(t.dataset.k==='hidden')renderSystem();}return;}

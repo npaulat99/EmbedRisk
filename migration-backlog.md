@@ -274,7 +274,7 @@ the orchestrator implements them directly (anchors: `renderProject()` and the de
   single-best-control, ignore `selected`/`unfeasible`; they also crash on projects without `steps` and with
   `KeyError: 'access'` on attackers lacking that field, e.g. RNI01). AC: same numbers as the `.mjs` generator on RL-100.
 
-- [ ] **EXT-C2 Preserve zero residual assessments on explicit CM save** (Deps: EXT-R1).
+- [x] **EXT-C2 Preserve zero residual assessments on explicit CM save** (Deps: EXT-R1).
   - AC: Explicit CM save preserves zero residual likelihood/impact like RiskModel and autosave;
     regression tests cover both save paths and reopen without changing unknown link metadata.
     Pre-existing clamp found during EXT-M1a review (`src/wizard.ts:362-363`); not changed by the matrix.
@@ -300,6 +300,7 @@ the orchestrator implements them directly (anchors: `renderProject()` and the de
 
 | Item | Impl | Review | Test | Notes |
 |---|---|---|---|---|
+| EXT-C2 | ✅ (S, direct) | ✅ PASS (baseline) | ✅ PASS (compile, 193 model assertions, 6 parsed scripts + 6 runtime webviews, diff check) | Explicit CM normalization, UI editing and rendering now preserve residual zeroes. Runtime regression exercises auto-save and explicit save, reopen, and unknown nested link metadata. |
 | EXT-UC1 | ✅ | ✅ PASS (combined verifier) | ✅ PASS (compile, 193 model assertions, 6 parsed scripts + 6 runtime webviews, diff check) | Use-case editor now treats `kind: "independent-dfd"` diagrams as read-only: displays a preservation notice, hides editing controls and draw.io, blocks edits/deletion, and sends only a blank canvas document. Tests attempt edits and deletion without writes, then edit/save a separate use-case diagram and assert the independent DFD serializes byte-identically, including DFD/XML/unknown metadata. Independent verifier confirmed behavior and preservation; baseline passed. No fixtures or webapp changes; no live VS Code validation. Direct implementation was bounded to the use-case webview and its runtime test. |
 | EXT-UC2a | ✅ | ✅ PASS (fix-round combined verifier) | ✅ PASS (compile, 193 model assertions, 6 parsed scripts + 6 runtime webviews, diff check) | Independent DFD diagrams open a native SVG canvas on `diagram.dfd` (use-case host also posts Step 03/04 `components`/`availableComponents`, read-only). Add process/multiprocess/store/external nodes or linked components, edit label/type/component ref, drag, auto-layout, delete node with incident flows; flows remain simple non-interactive lines (UC2b). Saves mutate only `dfd`; envelope, drawioXml and unknown metadata are preserved. Initial verifier found render-time DFD initialization, unsafe untrusted coordinates in SVG, and missing reopen coverage. One fix round made reads non-mutating, added finite-coordinate render/drag fallbacks and hostile-coordinate regression, and tested reopen in a fresh harness. Follow-up verifier passed; full baseline passed. UC1 byte-preservation remains covered. No live VS Code validation. Initial bounded implementation was direct; verifier handled combined review and tests. |
 | EXT-RPT2 | ✅ | n/a (S, direct) | ✅ RL-100 20/20 threats match `.mjs`; synthetic (no steps, no attacker `access`, multi-CM minima, unselected CM, unfeasible) matches | Both Python copies now mirror webapp residual rules; copies differ only by pre-existing path lines |
