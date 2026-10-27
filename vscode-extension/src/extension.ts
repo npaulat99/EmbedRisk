@@ -262,6 +262,8 @@ export function activate(ctx: vscode.ExtensionContext) {
     vscode.commands.registerCommand("embedrisk.exportTraceabilityCsv", () => runReportCommand(ctx, "traceability.csv")),
     vscode.commands.registerCommand("embedrisk.exportTraceabilityJson", () => runReportCommand(ctx, "traceability.json")),
     vscode.commands.registerCommand("embedrisk.exportSbom", () => runReportCommand(ctx, "sbom")),
+    vscode.commands.registerCommand("embedrisk.gettingStarted", () =>
+      vscode.commands.executeCommand("workbench.action.openWalkthrough", "npaulat.embedrisk#embedrisk.gettingStarted", false)),
     vscode.commands.registerCommand("embedrisk.newProject", createProjectCommand),
     vscode.commands.registerCommand("embedrisk.openWebapp", openWebappCommand),
     vscode.commands.registerCommand("embedrisk.wizard", (focusThreatId?: string) => openWizard(ctx, focusThreatId)),

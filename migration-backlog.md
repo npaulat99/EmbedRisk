@@ -294,7 +294,7 @@ the orchestrator implements them directly (anchors: `renderProject()` and the de
 - [x] **EXT-E1 Traceability CSV/JSON + SBOM export commands** (parity with server endpoints).
 - [x] **EXT-KB1 Remove imported KB catalogue command.**
 - [x] **EXT-S1 `contributes.configuration` settings** for options in `SettingsModal.tsx`.
-- [ ] **EXT-W1 Getting-started walkthrough** (replaces webapp tutorial).
+- [x] **EXT-W1 Getting-started walkthrough** (replaces webapp tutorial).
 - [ ] **EXT-O1 DFD layer overview tree view.**
 - [ ] **EXT-DB1 Dashboard** (counts / risk summary).
 
@@ -312,6 +312,7 @@ the orchestrator implements them directly (anchors: `renderProject()` and the de
 
 | Item | Impl | Review | Test | Notes |
 |---|---|---|---|---|
+| EXT-W1 | ✅ (S, direct) | ✅ PASS (baseline + manifest/content assertions) | ✅ PASS (compile, 287 model assertions, 6 parsed scripts + 6 runtime webviews, diff check) | Native VS Code walkthrough `embedrisk.gettingStarted` (7 Markdown steps: project setup, wizard navigation, DFD, STRIDE threats, risk/countermeasures, reports/exports, settings) plus Command Palette command `EmbedRisk: Getting started walkthrough`. Static bundled Markdown only — no webview, remote links or project writes; step links run existing commands. Tests check contribution, registration, step coverage, bundled self-contained pages, command links and completion events. |
 | EXT-S1 | ✅ (S, direct) | ✅ PASS (baseline + manifest assertions) | ✅ PASS (compile, 238 model assertions, 6 parsed scripts + 6 runtime webviews, diff check) | Contributed resource-scoped settings matching the SettingsModal project fields: scoring method, cost-factor weights, access probabilities, likelihood thresholds, acceptable risk, rigorous mode, and STRIDE boundary report content. Defaults and numeric bounds match the webapp; weight defaults total 1.00. |
 | EXT-KB1 | ✅ (S, direct) | ✅ PASS (baseline) | ✅ PASS (compile, model tests incl. remove/cancel/empty/path-safety, webview parse/runtime, diff check) | Added a native command to select and confirm removal of imported catalogues. Only listed non-symlink directories are offered; the selected direct child is moved to trash, with empty-state and error reporting. Tests cover selected removal, cancellation, empty listings and traversal/stale-selection rejection. |
 | EXT-E1 | ✅ (one implementer) | ✅ PASS (combined verifier) | ✅ PASS (compile, 233 model assertions, 6 parsed scripts + 6 runtime webviews, diff check) | Added native CSV/JSON traceability and SBOM export commands. Traceability schema, field order and CSV quoting match the webapp; SBOM follows project mode/format, reports external-mode unavailability, and generated artifacts stay in `report/`. Tests verify command contributions, exported contents, format/mode selection and that project source files remain unchanged. |

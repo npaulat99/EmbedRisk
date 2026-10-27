@@ -31,6 +31,11 @@
   "contributes": {
     "commands": [
       {
+        "command": "embedrisk.gettingStarted",
+        "title": "Getting started walkthrough",
+        "category": "EmbedRisk"
+      },
+      {
         "command": "embedrisk.newProject",
         "title": "New Project",
         "category": "EmbedRisk"
@@ -109,6 +114,89 @@
         "command": "embedrisk.exportSbom",
         "title": "Export SBOM",
         "category": "EmbedRisk"
+      }
+    ],
+    "walkthroughs": [
+      {
+        "id": "embedrisk.gettingStarted",
+        "title": "Get started with EmbedRisk",
+        "description": "Learn the EmbedRisk threat & risk assessment workflow inside VS Code.",
+        "steps": [
+          {
+            "id": "project",
+            "title": "Set up a project",
+            "description": "Create a self-contained TRA project folder (01-project-description … 09-defects) and describe the device scope, intended use and security-level target.\n[New Project](command:embedrisk.newProject)",
+            "media": {
+              "markdown": "media/walkthrough/project.md"
+            },
+            "completionEvents": [
+              "onCommand:embedrisk.newProject"
+            ]
+          },
+          {
+            "id": "navigation",
+            "title": "Work through the steps",
+            "description": "The guided wizard follows the methodology left to right: assumptions, system & assets, DFD, use cases, threats, attack trees, countermeasures, requirements and review. Revisit any step — a TRA is iterative.\n[Open guided wizard](command:embedrisk.wizard)",
+            "media": {
+              "markdown": "media/walkthrough/navigation.md"
+            },
+            "completionEvents": [
+              "onCommand:embedrisk.wizard"
+            ]
+          },
+          {
+            "id": "dfd",
+            "title": "Model the data flow diagram",
+            "description": "Draw components, data flows and trust boundaries on layered DFDs. Drill into a component with Ctrl+Alt+Down and back up with Ctrl+Alt+Up.\n[Open DFD canvas](command:embedrisk.dfdNative)",
+            "media": {
+              "markdown": "media/walkthrough/dfd.md"
+            },
+            "completionEvents": [
+              "onCommand:embedrisk.dfdNative"
+            ]
+          },
+          {
+            "id": "threats",
+            "title": "Identify STRIDE threats",
+            "description": "Derive Spoofing, Tampering, Repudiation, Information-disclosure, Denial-of-service and Elevation-of-privilege threats from the DFD, link them to assets and refine them with attack trees.\n[New attack tree for a threat](command:embedrisk.newAttackTree)",
+            "media": {
+              "markdown": "media/walkthrough/threats.md"
+            },
+            "completionEvents": [
+              "onCommand:embedrisk.newAttackTree"
+            ]
+          },
+          {
+            "id": "risk",
+            "title": "Rate risk and plan countermeasures",
+            "description": "Rate likelihood × impact, compare against the acceptable-risk threshold and map countermeasures to threats. Validation findings appear in the Problems panel.\n[Open guided wizard](command:embedrisk.wizard)",
+            "media": {
+              "markdown": "media/walkthrough/risk.md"
+            }
+          },
+          {
+            "id": "reports",
+            "title": "Generate reports and exports",
+            "description": "Produce the TRA report and export traceability (CSV/JSON) or an SBOM from the open project.\n[Generate report](command:embedrisk.report)",
+            "media": {
+              "markdown": "media/walkthrough/reports.md"
+            },
+            "completionEvents": [
+              "onCommand:embedrisk.report"
+            ]
+          },
+          {
+            "id": "settings",
+            "title": "Tune project settings",
+            "description": "Choose the risk-scoring method, cost-factor weights, likelihood thresholds, acceptable risk, rigorous mode and report content in VS Code settings.\n[Open EmbedRisk settings](command:workbench.action.openSettings?%5B%22embedrisk.project%22%5D)",
+            "media": {
+              "markdown": "media/walkthrough/settings.md"
+            },
+            "completionEvents": [
+              "onSettingChanged:embedrisk.project.riskScoringMethod"
+            ]
+          }
+        ]
       }
     ],
     "keybindings": [

@@ -104,6 +104,48 @@ async function runImportedKbTests() {
   ok("removal rejects stale or traversing selections without deleting outside the imported root", deleteCalls === 0);
 }
 
+/* ---------- Getting-started walkthrough (EXT-W1) ---------- */
+{
+  const extDir = path.join(root, "vscode-extension");
+  const packageJson = JSON.parse(fs.readFileSync(path.join(extDir, "package.json"), "utf8"));
+  const extensionSource = fs.readFileSync(path.join(extDir, "src/extension.ts"), "utf8");
+  const walkthroughId = `${packageJson.publisher}.${packageJson.name}#embedrisk.gettingStarted`;
+  ok("getting-started command is contributed and opens the contributed walkthrough",
+    packageJson.contributes.commands.some((item) => item.command === "embedrisk.gettingStarted")
+      && extensionSource.includes('registerCommand("embedrisk.gettingStarted"')
+      && extensionSource.includes(`"workbench.action.openWalkthrough", "${walkthroughId}"`));
+  const walkthrough = (packageJson.contributes.walkthroughs || []).find((item) => item.id === "embedrisk.gettingStarted");
+  ok("getting-started walkthrough is contributed", !!walkthrough && walkthrough.title && walkthrough.description);
+  const stepIds = walkthrough.steps.map((step) => step.id);
+  ok("walkthrough covers setup, navigation, DFD, STRIDE, risk, reports and settings",
+    JSON.stringify(stepIds) === JSON.stringify(["project", "navigation", "dfd", "threats", "risk", "reports", "settings"]));
+  const contributed = new Set(packageJson.contributes.commands.map((item) => item.command));
+  const pages = [];
+  for (const step of walkthrough.steps) {
+    ok(`walkthrough step ${step.id} has a title and markdown media`, step.title && step.description && step.media && step.media.markdown);
+    const mdPath = path.resolve(extDir, step.media.markdown);
+    ok(`walkthrough step ${step.id} markdown is a bundled file inside the extension`,
+      mdPath.startsWith(path.join(extDir, "media", "walkthrough") + path.sep) && fs.existsSync(mdPath));
+    const md = fs.readFileSync(mdPath, "utf8");
+    pages.push(md);
+    ok(`walkthrough page ${step.id} is self-contained (heading, no remote links, images or HTML)`,
+      /^# \S/.test(md) && !/https?:\/\/|!\[|<[a-z!/]/i.test(md));
+    for (const [, cmd] of step.description.matchAll(/\(command:([\w.]+)/g)) {
+      ok(`walkthrough step ${step.id} links to a known command (${cmd})`, contributed.has(cmd) || cmd.startsWith("workbench."));
+    }
+    for (const event of step.completionEvents || []) {
+      const [kind, value] = event.split(":");
+      ok(`walkthrough step ${step.id} completion event ${event} is valid`,
+        (kind === "onCommand" && contributed.has(value)) || (kind === "onSettingChanged" && packageJson.contributes.configuration.properties[value]));
+    }
+  }
+  const text = pages.join("\n");
+  for (const topic of ["New Project", "guided wizard", "trust boundar", "Spoofing", "Elevation of privilege", "likelihood × impact", "countermeasures", "Problems", "Generate report", "SBOM", "embedrisk.project"]) {
+    ok(`walkthrough content explains ${topic}`, text.includes(topic));
+  }
+  ok("walkthrough markdown is not packaged-out", !fs.readFileSync(path.join(extDir, ".vscodeignore"), "utf8").includes("media/walkthrough"));
+}
+
 /* ---------- Extension report exports ---------- */
 {
   const packageJson = JSON.parse(fs.readFileSync(path.join(root, "vscode-extension/package.json"), "utf8"));
