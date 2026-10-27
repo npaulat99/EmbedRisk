@@ -83,6 +83,8 @@ body{display:flex;flex-direction:column;background:#0f1115;color:#e8eaee}
 </div>
 <div id="body">
 	<aside id="left">
+		<div id="readOnlyDfd" class="item muted" style="display:none" role="status">Independent DFD diagrams are preserved as-is in this editor. Editing them is not supported here.</div>
+		<div id="diagramEditor">
 		<div class="field"><label>Diagram name</label><input id="diagName"></div>
 		<div class="field"><label>Quick add entities</label>
 			<div class="chips">
@@ -100,6 +102,7 @@ body{display:flex;flex-direction:column;background:#0f1115;color:#e8eaee}
 		<h3>Grouping boxes</h3>
 		<button id="addGroup">+ Group</button>
 		<div id="groups"></div>
+		</div>
 	</aside>
 	<main id="right"><iframe id="f" src="${frameSrc}"></iframe></main>
 </div>
@@ -175,9 +178,13 @@ function sendDrawio(xml){
 	if(f&&f.contentWindow)f.contentWindow.postMessage(JSON.stringify({action:'load',xml}),'*');
 }
 
+const EMPTY_XML='<mxfile><diagram><mxGraphModel><root><mxCell id="0"/><mxCell id="1" parent="0"/></root></mxGraphModel></diagram></mxfile>';
+function diagramXml(d){return d&&d.kind!=='independent-dfd'?(d.drawioXml||toMxXml(d)):EMPTY_XML;}
+
 function save(){
-	vs.postMessage({type:'save',doc:JSON.stringify(doc,null,2)});
 	const d=cur();
+	if(d&&d.kind==='independent-dfd')return;
+	vs.postMessage({type:'save',doc:JSON.stringify(doc,null,2)});
 	if(d){d.drawioXml=toMxXml(d);sendDrawio(d.drawioXml);}
 	render();
 }
@@ -192,10 +199,16 @@ function addDiagram(){
 function render(){
 	ensure();
 	const d=cur();
+	const readOnly=!!d&&d.kind==='independent-dfd';
 	const sel=$('diagSel');
 	sel.innerHTML=doc.diagrams.map((x,i)=>'<option value="'+i+'"'+(i===di?' selected':'')+'>'+esc(x.name||x.id)+'</option>').join('')||'<option>(no diagrams)</option>';
+	$('diagramEditor').style.display=readOnly||!d?'none':'';
+	$('readOnlyDfd').style.display=readOnly?'block':'none';
+	$('delDiag').disabled=readOnly;
+	$('f').style.visibility=readOnly?'hidden':'';
 	$('diagName').value=d?d.name||'':'';
-	if(!d){$('entities').innerHTML='<p class="muted">Add a diagram to start.</p>';$('conns').innerHTML='';$('groups').innerHTML='';sendDrawio('<mxfile><diagram><mxGraphModel><root><mxCell id="0"/><mxCell id="1" parent="0"/></root></mxGraphModel></diagram></mxfile>');return;}
+	if(!d){$('entities').innerHTML='<p class="muted">Add a diagram to start.</p>';$('conns').innerHTML='';$('groups').innerHTML='';sendDrawio(EMPTY_XML);return;}
+	if(readOnly){sendDrawio(EMPTY_XML);return;}
 
 	$('entities').innerHTML=(d.entities||[]).map((e,i)=>{
 		return '<div class="item"><div class="row"><h4>'+esc(e.id)+'</h4><button data-del-entity="'+i+'">Delete</button></div>'+
@@ -231,8 +244,9 @@ document.addEventListener('click',(e)=>{
 	const t=e.target;
 	const d=cur();
 	if(t.id==='addDiag'){addDiagram();return;}
-	if(t.id==='delDiag'){if(!d)return;doc.diagrams.splice(di,1);ensure();save();return;}
 	if(t.id==='exitBtn'){vs.postMessage({type:'exit'});return;}
+	if(d&&d.kind==='independent-dfd')return;
+	if(t.id==='delDiag'){if(!d)return;doc.diagrams.splice(di,1);ensure();save();return;}
 	if(t.id==='addConn'&&d){d.connections=d.connections||[];d.connections.push({id:uid('CN',d.connections),from:'',to:'',arrow:'none',label:'',dashed:false});save();return;}
 	if(t.id==='addGroup'&&d){d.groups=d.groups||[];d.groups.push({id:uid('G',d.groups),name:'Group',members:[]});save();return;}
 
@@ -250,6 +264,7 @@ document.addEventListener('click',(e)=>{
 
 document.addEventListener('input',(e)=>{
 	const t=e.target; const d=cur(); if(!d)return;
+	if(d.kind==='independent-dfd')return;
 	if(t.id==='diagName'){d.name=t.value;save();return;}
 	if(t.hasAttribute&&t.hasAttribute('data-entity')){const i=+t.getAttribute('data-entity');const k=t.getAttribute('data-k');if(k==='x'||k==='y')d.entities[i][k]=t.value===''?undefined:Number(t.value);else d.entities[i][k]=t.value;save();return;}
 	if(t.hasAttribute&&t.hasAttribute('data-conn')){const i=+t.getAttribute('data-conn');const k=t.getAttribute('data-k');d.connections[i][k]=k==='dashed'?!!t.checked:t.value;save();return;}
@@ -264,8 +279,7 @@ window.addEventListener('message',(ev)=>{
 		try{m=JSON.parse(m);}catch{m={};}
 	}
 	if(m.event==='init'){
-		const d=cur();
-		sendDrawio(d?(d.drawioXml||toMxXml(d)):'<mxfile><diagram><mxGraphModel><root><mxCell id="0"/><mxCell id="1" parent="0"/></root></mxGraphModel></diagram></mxfile>');
+		sendDrawio(diagramXml(cur()));
 		return;
 	}
 	if(m.type==='load'){
@@ -280,4 +294,3 @@ vs.postMessage({type:'ready'});
 </script></body></html>`;
     }
 }
-

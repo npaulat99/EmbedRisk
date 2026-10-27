@@ -2280,18 +2280,39 @@ async function nativeDfdEditor(h) {
 }
 
 async function useCaseEditor(h) {
+  const useCasesPath = "04b-use-cases/use-cases.json";
+  const independent = {
+    id: "DFD-PRESERVE", name: "Scenario DFD", kind: "independent-dfd",
+    entities: [{ id: "A1", name: "Legacy actor" }], connections: [{ id: "CN1", from: "A1", to: "U1" }],
+    groups: [{ id: "G1", members: ["A1"] }], drawioXml: "<mxfile><diagram>keep exactly</diagram></mxfile>",
+    dfd: { nodes: [{ id: "N1", type: "process", label: "Independent process", futureKey: { keep: true } }], flows: [] },
+    futureMetadata: { nested: ["preserve", "byte-for-byte"] },
+  };
+  const useCase = { id: "UC-PRESERVE", name: "Scenario", entities: [], connections: [], groups: [], drawioXml: "<mxfile/>" };
+  h.overlay.set(path.join(projectDir, useCasesPath), JSON.stringify({ futureEnvelope: { preserve: true }, diagrams: [useCase, independent] }));
   const mod = await load(h, "useCaseEditor.ts");
   const provider = new mod.UseCaseEditor(ctx.extensionUri);
-  await provider.resolveCustomTextEditor(h.createDocument("04b-use-cases/use-cases.json"), h.createPanel(), {});
+  await provider.resolveCustomTextEditor(h.createDocument(useCasesPath), h.createPanel(), {});
   h.openDom();
   await h.settle();
   assert.ok(h.toWebview.some((m) => m.type === "load"), "host did not answer 'ready' with 'load'");
-  const diagrams = readProjectJson("04b-use-cases/use-cases.json").diagrams || [];
+  const diagrams = readProjectJson(useCasesPath).diagrams || [];
   assert.strictEqual(h.$$("#diagSel option").length, Math.max(1, diagrams.length), "diagrams not listed");
 
   // draw.io iframe handshake (the frame itself is not loaded in jsdom).
   const win = h.dom.window;
   win.dispatchEvent(new win.MessageEvent("message", { data: JSON.stringify({ event: "init" }) }));
+
+  h.setValue("#diagSel", "1");
+  assert.strictEqual(h.must("#diagramEditor").style.display, "none", "independent DFD exposed use-case editing controls");
+  assert.strictEqual(h.must("#readOnlyDfd").style.display, "block", "independent DFD read-only notice missing");
+  assert.strictEqual(h.must("#delDiag").disabled, true, "read-only independent DFD was deletable");
+  assert.strictEqual(h.must("#f").style.visibility, "hidden", "independent DFD opened an editable draw.io canvas");
+  h.setValue("#diagName", "Changed");
+  h.click("#delDiag");
+  h.click('[data-add-kind="actor"]');
+  assert.strictEqual(h.writes.length, 0, "viewing/edit attempts on an independent DFD wrote the document");
+  h.setValue("#diagSel", "0");
 
   for (const kind of ["actor", "misuse-actor", "action", "misuse-action"]) h.click(`[data-add-kind="${kind}"]`);
   h.click("#addConn");
@@ -2307,6 +2328,10 @@ async function useCaseEditor(h) {
   const saved = lastWriteJson(h, "04b-use-cases/use-cases.json");
   assert.ok(saved && Array.isArray(saved.diagrams), "use-cases.json not written by host");
   assert.match(saved.diagrams[saved.diagrams.length - 1].id, /^UC[0-9]+$/, "new diagram id has no webapp prefix");
+  const savedIndependent = saved.diagrams.find((diagram) => diagram.id === independent.id);
+  assert.ok(savedIndependent, "editing use-case diagrams dropped the independent DFD");
+  assert.strictEqual(JSON.stringify(savedIndependent), JSON.stringify(independent), "independent DFD changed during unrelated use-case edits");
+  assert.deepStrictEqual(saved.futureEnvelope, { preserve: true }, "independent diagram save lost document metadata");
   assert.ok(h.commands.includes("embedrisk.wizard") && h.disposed, "Exit did not return to the wizard");
   checkLiveDomHandlers(h);
 }

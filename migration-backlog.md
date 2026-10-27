@@ -241,7 +241,13 @@ the orchestrator implements them directly (anchors: `renderProject()` and the de
     persistence/round-trip, preservation, field semantics, accessibility, dismissal, and empty state;
     required baseline passes.
 - [x] **EXT-DFD8 Edge routing engine** `media/dfd-engine.js` (port of `webapp/shared/dfdEngine.js`).
-- [ ] **EXT-UC1 Preserve `independent-dfd` diagrams** in the use-case editor (read-only, byte-identical).
+- [x] **EXT-UC1 Preserve `independent-dfd` diagrams** in the use-case editor (read-only, byte-identical).
+  - AC: Selecting an independent DFD shows a read-only notice, hides/disables use-case editing and
+    deletion controls, and does not load it into the editable draw.io canvas. Editing another
+    use-case diagram and saving the document preserves the independent DFD object exactly,
+    including its DFD, draw.io XML, and unknown metadata. In-memory runtime coverage checks no writes
+    when viewing/attempting edits and byte-identical serialized object preservation after unrelated
+    use-case edits; full verification baseline passes.
 - [ ] **EXT-UC2 Create/edit independent DFD diagrams** (Deps: EXT-UC1).
 
 ## Epic 6 — Platform (VS Code-native equivalents)
@@ -280,6 +286,7 @@ the orchestrator implements them directly (anchors: `renderProject()` and the de
 
 | Item | Impl | Review | Test | Notes |
 |---|---|---|---|---|
+| EXT-UC1 | ✅ | ✅ PASS (combined verifier) | ✅ PASS (compile, 193 model assertions, 6 parsed scripts + 6 runtime webviews, diff check) | Use-case editor now treats `kind: "independent-dfd"` diagrams as read-only: displays a preservation notice, hides editing controls and draw.io, blocks edits/deletion, and sends only a blank canvas document. Tests attempt edits and deletion without writes, then edit/save a separate use-case diagram and assert the independent DFD serializes byte-identically, including DFD/XML/unknown metadata. Independent verifier confirmed behavior and preservation; baseline passed. No fixtures or webapp changes; no live VS Code validation. Direct implementation was bounded to the use-case webview and its runtime test. |
 | EXT-DFD8 | ✅ | ✅ PASS (combined verifier; all four geometry exports match webapp reference) | ✅ PASS (compile, 193 model assertions, 6 parsed scripts + 6 runtime webviews, diff check) | Ported `routeAround`, `roundedPath`, `labelPtOnPolyline`, and `borderPoint` as a browser-global/CommonJS module. Tests compare all four helpers against the actual webapp engine, exercise routing/path and edge-case vectors, verify browser-global exposure, and assert inputs are not mutated. Standalone engine only; renderer and fixtures unchanged. No live VS Code/browser validation. |
 | EXT-DFD7 | ✅ | ✅ PASS (combined verifier; source, behavior, preservation, watcher and accessibility checks) | ✅ PASS (compile, 174 model assertions, 6 parsed scripts + 6 runtime webviews, diff check) | Added a STRIDE editor to the native DFD trust-boundary inspector. Pair analyses are stored flat by stable pair key and shared across boundaries; endpoint labels and all six STRIDE strengths/weaknesses persist immediately while preserving system-document and nested unknown metadata. Runtime tests cover pairs, editing, empty/trim semantics, shared views, save/reopen, watcher feedback suppression, accessibility, dismissals and empty state. No fixture edits or live VS Code/browser validation. |
 | EXT-DFD6 | ✅ | ✅ PASS (direct source/parity review) | ✅ PASS (compile, 174 model assertions, 6 parsed scripts + 6 runtime webviews, diff check) | Ported webapp STRIDE boundary pairs and authored-content predicates to a browser-global/CommonJS pure model. Tests compare against the actual webapp TypeScript and cover nested members, interfaces, crossing direction/deduplication, labels, missing boundaries and whitespace content. No editor UI, fixtures or live VS Code validation. |
