@@ -56,7 +56,7 @@ async function runImportedKbTests() {
   const extensionSource = fs.readFileSync(path.join(root, "vscode-extension/src/extension.ts"), "utf8");
   ok("imported knowledge-base removal command is contributed and registered",
     packageJson.contributes.commands.some((item) => item.command === "embedrisk.kbRemove")
-      && extensionSource.includes('registerCommand("embedrisk.kbRemove"'));
+    && extensionSource.includes('registerCommand("embedrisk.kbRemove"'));
 
   const rootPath = path.join(os.tmpdir(), "embedrisk-imported-kbs");
   const listed = [
@@ -75,7 +75,7 @@ async function runImportedKbTests() {
   const result = await ImportedKb.removeImportedCatalogue(rootPath, io);
   ok("removal offers only non-symlink directories and deletes the selected child after confirmation",
     result.status === "removed" && result.name === "catalogue-one" && confirmed === 1
-      && removed.length === 1 && removed[0] === path.join(rootPath, "catalogue-one"));
+    && removed.length === 1 && removed[0] === path.join(rootPath, "catalogue-one"));
 
   let deleteCalls = 0;
   const cancel = await ImportedKb.removeImportedCatalogue(rootPath, {
@@ -114,8 +114,8 @@ async function runImportedKbTests() {
   const walkthroughId = `${packageJson.publisher}.${packageJson.name}#embedrisk.gettingStarted`;
   ok("getting-started command is contributed and opens the contributed walkthrough",
     packageJson.contributes.commands.some((item) => item.command === "embedrisk.gettingStarted")
-      && extensionSource.includes('registerCommand("embedrisk.gettingStarted"')
-      && extensionSource.includes(`"workbench.action.openWalkthrough", "${walkthroughId}"`));
+    && extensionSource.includes('registerCommand("embedrisk.gettingStarted"')
+    && extensionSource.includes(`"workbench.action.openWalkthrough", "${walkthroughId}"`));
   const walkthrough = (packageJson.contributes.walkthroughs || []).find((item) => item.id === "embedrisk.gettingStarted");
   ok("getting-started walkthrough is contributed", !!walkthrough && walkthrough.title && walkthrough.description);
   const stepIds = walkthrough.steps.map((step) => step.id);
@@ -155,7 +155,7 @@ async function runImportedKbTests() {
   for (const command of ["embedrisk.exportTraceabilityCsv", "embedrisk.exportTraceabilityJson", "embedrisk.exportSbom"]) {
     ok(`report export command ${command} is contributed and registered`,
       packageJson.contributes.commands.some((item) => item.command === command)
-        && extensionSource.includes(`registerCommand("${command}"`));
+      && extensionSource.includes(`registerCommand("${command}"`));
   }
 
   const projectDir = fs.mkdtempSync(path.join(os.tmpdir(), "embedrisk-exports-"));
@@ -171,16 +171,20 @@ async function runImportedKbTests() {
       assets: [{ id: "A-1", name: "Asset", objectives: { confidentiality: 2, integrity: 3, availability: 4, safety: 1 } }],
       components: [{ id: "C-1", kind: "hardware", name: "Controller" }],
     },
-    "06-threats/threats.json": { threats: [{
-      id: "T-1", title: 'Threat "quoted"\nline', assets: ["A-1"], components: ["C-1"], stride: ["E", "S"],
-      likelihood: 2, impact: 3, assumptionRefs: ["AS-1"], likelihoodRationale: 'because "yes"\nnext',
-      status: "accepted", ratedBy: "Reviewer", acceptedBy: "Approver", acceptanceRationale: "accepted",
-    }] },
+    "06-threats/threats.json": {
+      threats: [{
+        id: "T-1", title: 'Threat "quoted"\nline', assets: ["A-1"], components: ["C-1"], stride: ["E", "S"],
+        likelihood: 2, impact: 3, assumptionRefs: ["AS-1"], likelihoodRationale: 'because "yes"\nnext',
+        status: "accepted", ratedBy: "Reviewer", acceptedBy: "Approver", acceptanceRationale: "accepted",
+      }]
+    },
     "05-requirements/requirements.json": { requirements: [{ id: "R-1", standardRef: "IEC 1", derivedFromThreat: ["T-1"], satisfiedByCM: ["CM-1"] }] },
-    "08-countermeasures/countermeasures.json": { countermeasures: [{
-      id: "CM-1", status: "implemented", addresses: [{ threat: "T-1", residualLikelihood: 1, residualImpact: 2 }],
-      ticketUrls: ["https://example.invalid/ticket"],
-    }] },
+    "08-countermeasures/countermeasures.json": {
+      countermeasures: [{
+        id: "CM-1", status: "implemented", addresses: [{ threat: "T-1", residualLikelihood: 1, residualImpact: 2 }],
+        ticketUrls: ["https://example.invalid/ticket"],
+      }]
+    },
   };
   try {
     Object.entries(inputs).forEach(([file, value]) => put(file, value));
@@ -192,16 +196,16 @@ async function runImportedKbTests() {
     const trace = JSON.parse(fs.readFileSync(path.join(reportDir, "traceability.json"), "utf8"));
     ok("traceability JSON matches webapp field order and derived values",
       Object.keys(trace[0]).join(",") === "asset,cias,threat,title,stride,assumptionRefs,likelihoodRationale,impactRationale,initial,initialBand,requirement,control,residual,residualBand,evidence,status,ratedBy,signoff"
-        && trace[0].stride === "SE" && trace[0].initial === 6 && trace[0].residual === 2
-        && trace[0].requirement === "R-1 [IEC 1] → CM-1" && trace[0].signoff === "by Approver · accepted");
+      && trace[0].stride === "SE" && trace[0].initial === 6 && trace[0].residual === 2
+      && trace[0].requirement === "R-1 [IEC 1] → CM-1" && trace[0].signoff === "by Approver · accepted");
     const csv = fs.readFileSync(path.join(reportDir, "traceability.csv"), "utf8");
     ok("traceability CSV preserves schema and quotes embedded quotes/newlines",
       csv.startsWith('"Asset","C/I/A/S","Threat","Title","STRIDE","Assumptions"')
-        && csv.includes('"Threat ""quoted""\nline"') && csv.includes('"L: because ""yes""\nnext"') && csv.endsWith("\r\n"));
+      && csv.includes('"Threat ""quoted""\nline"') && csv.includes('"L: because ""yes""\nnext"') && csv.endsWith("\r\n"));
     ok("CycloneDX is selected by default and source project files are unchanged",
       fs.existsSync(path.join(reportDir, "sbom.cdx.json"))
-        && !fs.existsSync(path.join(reportDir, "sbom.spdx.json"))
-        && Object.entries(sourceSnapshot).every(([file, value]) => fs.readFileSync(path.join(projectDir, file), "utf8") === value));
+      && !fs.existsSync(path.join(reportDir, "sbom.spdx.json"))
+      && Object.entries(sourceSnapshot).every(([file, value]) => fs.readFileSync(path.join(projectDir, file), "utf8") === value));
     put("01-project-description/project.json", { ...inputs["01-project-description/project.json"], sbom: { mode: "in-tool", format: "spdx" } });
     run();
     ok("SPDX selection emits only the selected SBOM file",
@@ -210,7 +214,7 @@ async function runImportedKbTests() {
     run();
     ok("external SBOM mode emits no SBOM while retaining traceability",
       !fs.existsSync(path.join(reportDir, "sbom.cdx.json")) && !fs.existsSync(path.join(reportDir, "sbom.spdx.json"))
-        && fs.existsSync(path.join(reportDir, "traceability.csv")) && fs.existsSync(path.join(reportDir, "traceability.json")));
+      && fs.existsSync(path.join(reportDir, "traceability.csv")) && fs.existsSync(path.join(reportDir, "traceability.json")));
   } finally {
     fs.rmSync(projectDir, { recursive: true, force: true });
   }
@@ -277,6 +281,56 @@ const mpDfd = { nodes: [{ id: "MP", label: "x", type: "multiprocess", layer: 1, 
 const mpSvg = DfdModel.render(mpDfd, null, null);
 ok("multiprocess renders two concentric ellipses", (mpSvg.match(/<ellipse/g) || []).length === 2);
 ok("multiprocess has no stray vertical line", !mpSvg.includes("<line"));
+
+// Flow geometry: flows end on the outline (not the centre), spread over distinct anchors, curve,
+// and are drawn beneath the nodes so they cannot swallow clicks on a node.
+{
+  const lastPoint = (p) => p.split(" ").slice(-1)[0].split(",").map(Number);
+  const firstPoint = (p) => p.split(" ")[1].split(",").map(Number);
+  const boxes = {
+    A: { x: -400, y: -200, w: 150, h: 60 },
+    B: { x: 100, y: 100, w: 124, h: 84, ellipse: true },
+    C: { x: 600, y: 100, w: 150, h: 60 },
+    D: { x: 100, y: 400, w: 150, h: 60 },
+  };
+  const flows = [
+    { id: "F1", label: "a to b", from: "A", to: "B" },
+    { id: "F2", label: "c to b", from: "C", to: "B" },
+    { id: "F3", label: "b to c", from: "B", to: "C" },
+    { id: "F4", label: "d to b", from: "D", to: "B" },
+    { id: "F5", from: "A", to: "B", sourceHandle: "s-b", targetHandle: "t-t" },
+  ];
+  ok("node sizes match the webapp canvas", DfdModel.sizeOf("process").w === 124 && DfdModel.sizeOf("process").h === 84 && DfdModel.sizeOf("external-entity").w === 150);
+  const pt = DfdModel.handlePoint({ x: 0, y: 0, w: 100, h: 60, ellipse: true }, "s-tr");
+  ok("oval diagonal anchors lie on the ellipse", Math.abs(((pt.x - 50) / 50) ** 2 + ((pt.y - 30) / 30) ** 2 - 1) < 0.02);
+  const routed = DfdModel.routeFlows(flows, boxes);
+  ok("every flow with both endpoints is routed", routed.length === flows.length);
+  ok("flows are curved Beziers", routed.every((r) => r.path.includes(" Q ")));
+  const intoB = routed.filter((r) => r.flow.to === "B" && !r.flow.targetHandle).map((r) => lastPoint(r.path).join(","));
+  ok("flows into one node use different anchor points", new Set(intoB).size === intoB.length);
+  ok("no flow ends on the node centre", routed.every((r) => lastPoint(r.path).join(",") !== "162,142"));
+  const f5 = routed.find((r) => r.flow.id === "F5");
+  ok("stored sourceHandle/targetHandle are honoured",
+    firstPoint(f5.path).join(",") === "-325,-140" && lastPoint(f5.path).join(",") === "162,100");
+  ok("flow labels are placed", routed.find((r) => r.flow.id === "F1").label.lines[0] === "a to b");
+  const geoDfd = {
+    nodes: [
+      { id: "A", label: "A", type: "external-entity", layer: 1, parent: null, x: -400, y: -200 },
+      { id: "B", label: "B", type: "process", layer: 1, parent: null, x: 100, y: 100 },
+    ],
+    flows: [{ id: "F1", label: "a to b", from: "A", to: "B" }],
+  };
+  const geoSvg = DfdModel.render(geoDfd, null, null);
+  ok("flows are drawn beneath nodes", geoSvg.indexOf("data-flow='F1'") < geoSvg.indexOf("data-id='B'"));
+  ok("flows keep a wide transparent hit target", geoSvg.includes("stroke='transparent' stroke-width='14'"));
+  ok("negative coordinates are preserved", geoSvg.includes("x='-400'"));
+  ok("selected flow is highlighted", DfdModel.render(geoDfd, null, "flow:F1").includes("stroke='#1565c0' stroke-width='2.5'"));
+  const wrapped = DfdModel.render({ nodes: [{ id: "L", label: "Engineering workstation for service", type: "external-entity", layer: 1, parent: null }], flows: [] }, null, null);
+  ok("long node labels wrap instead of being cut", ["Engineering", "workstation", "service"].every((w) => wrapped.includes(w)) && (wrapped.match(/<tspan/g) || []).length > 1 && !wrapped.includes("\u2026"));
+  const chipped = DfdModel.render({ nodes: [{ id: "N", label: "N", type: "process", layer: 1, parent: null, x: 0, y: 0 }], flows: [{ id: "F", from: "I", to: "N", label: "" }] },
+    null, null, null, { extraBoxes: { I: { x: 300, y: 0, w: 80, h: 28 } } });
+  ok("flows can attach to interface chips via extraBoxes", chipped.includes("data-flow='F'"));
+}
 
 // mutation tests on a deep copy
 const d2 = JSON.parse(JSON.stringify(dfd));
@@ -634,7 +688,7 @@ const parityTrees = [
   { ...weightedA, children: [weightedVulns[1], { ...weightedVulns[1], skill: 4, access: 2 }] },
   ...["proposed", "planned", "implemented", "verified", "unknown", undefined].map((status) => ({
     ...weightedResidual, children: [...weightedResidual.children,
-      { kind: "countermeasure", countermeasureRef: status }, { kind: "vulnerability" }],
+    { kind: "countermeasure", countermeasureRef: status }, { kind: "vulnerability" }],
   })),
 ];
 const statuses = Object.fromEntries(["proposed", "planned", "implemented", "verified", "unknown"].map((status) => [status, { status }]));
@@ -997,27 +1051,33 @@ async function runValidationCoreTests() {
       interfaces: [{ id: "IF1", name: "UART", hidden: "yes" }],
       trustBoundaries: [{ id: "TB1" }],
     },
-    threats: { threats: [
-      {
-        id: "T1", likelihood: 5, impact: 5, stride: ["S"], components: ["C1"], attackerRef: "ATK-1",
-        likelihoodFactors: { exposure: 1, exploitability: 1 }, requiredSkill: 4, requiredAccess: 1,
-        costFactors: { time: 1 }, costRationales: { time: "reviewed" }, costLikelihoodProposal: 4,
-        status: "mitigated", classification: "product-vulnerability", responsibility: "integrator-operator",
-        deploymentConstraints: "install securely", reviewDate: dateOffset(-1),
-      },
-      {
-        id: "T2", likelihood: 2, impact: 2, components: ["C1"], status: "accepted",
-        reviewDate: dateOffset(1),
-      },
-    ] },
-    countermeasures: { countermeasures: [{
-      id: "CM1", addresses: [{ threat: "T1", residualImpact: 4, residualLikelihood: 6 }],
-      components: ["C1"], type: "preventive", status: "implemented",
-    }] },
-    requirements: { requirements: [
-      { id: "R1" },
-      { id: "R2", derivedFromThreat: ["T1"] },
-    ] },
+    threats: {
+      threats: [
+        {
+          id: "T1", likelihood: 5, impact: 5, stride: ["S"], components: ["C1"], attackerRef: "ATK-1",
+          likelihoodFactors: { exposure: 1, exploitability: 1 }, requiredSkill: 4, requiredAccess: 1,
+          costFactors: { time: 1 }, costRationales: { time: "reviewed" }, costLikelihoodProposal: 4,
+          status: "mitigated", classification: "product-vulnerability", responsibility: "integrator-operator",
+          deploymentConstraints: "install securely", reviewDate: dateOffset(-1),
+        },
+        {
+          id: "T2", likelihood: 2, impact: 2, components: ["C1"], status: "accepted",
+          reviewDate: dateOffset(1),
+        },
+      ]
+    },
+    countermeasures: {
+      countermeasures: [{
+        id: "CM1", addresses: [{ threat: "T1", residualImpact: 4, residualLikelihood: 6 }],
+        components: ["C1"], type: "preventive", status: "implemented",
+      }]
+    },
+    requirements: {
+      requirements: [
+        { id: "R1" },
+        { id: "R2", derivedFromThreat: ["T1"] },
+      ]
+    },
     dfd: {
       nodes: [{ id: "TB1", type: "trust-boundary" }],
       flows: [{ id: "F1", from: "C1", to: "C2", label: "" }],
@@ -1060,7 +1120,7 @@ async function runValidationCoreTests() {
   ok("validation parity: notice acceptance leaves other notices and all non-notices intact",
     acceptedIssues.some((i) => i.severity === "notice" && i.key !== noticeKey) &&
     parityNorm(acceptedIssues.filter((i) => i.severity !== "notice")).join() ===
-      parityNorm(fixtureIssues.filter((i) => i.severity !== "notice")).join());
+    parityNorm(fixtureIssues.filter((i) => i.severity !== "notice")).join());
   ok("validation parity: dynamic review dates distinguish overdue from future",
     fixtureIssues.some((i) => i.message.includes(`re-assessment overdue (review date ${dateOffset(-1)})`)) &&
     !fixtureIssues.some((i) => i.message.includes(`re-assessment overdue (review date ${dateOffset(1)})`)));
@@ -1074,10 +1134,12 @@ async function runValidationDiagnosticsTests() {
     ["03-system-assets/system.json", { components: [{ id: "C-1" }], interfaces: [], assets: [], trustBoundaries: [] }],
     ["04-dfd/dfd.json", { nodes: [], flows: [] }],
     ["04b-use-cases/use-cases.json", { diagrams: [{ id: "UC-1" }] }],
-    ["06-threats/threats.json", { threats: [
-      { id: "T-1", likelihood: 5, impact: 5, components: ["C-MISSING"], stride: ["S"] },
-      { likelihood: 1, impact: 1, components: [], stride: [] },
-    ] }],
+    ["06-threats/threats.json", {
+      threats: [
+        { id: "T-1", likelihood: 5, impact: 5, components: ["C-MISSING"], stride: ["S"] },
+        { likelihood: 1, impact: 1, components: [], stride: [] },
+      ]
+    }],
     ["05-requirements/requirements.json", { requirements: [{ id: "R-1", derivedFromThreat: [], satisfiedByCM: [] }] }],
     ["08-countermeasures/countermeasures.json", { countermeasures: [] }],
     ["07-attack-trees/attack-trees.json", { trees: [] }],
@@ -1119,8 +1181,8 @@ async function runValidationDiagnosticsTests() {
   await controller.refresh();
   ok("validation diagnostics: accepted notice refresh suppresses only that notice",
     [...published.values()].flat().filter((d) => d.severity === "information").length === noticeCount - 1
-      && !published.get("/workspace/project/05-requirements/requirements.json")?.some((d) => d.key === "req-standalone:R-1")
-      && published.get("/workspace/project/04b-use-cases/use-cases.json")?.some((d) => d.key === "usecases-excluded"));
+    && !published.get("/workspace/project/05-requirements/requirements.json")?.some((d) => d.key === "req-standalone:R-1")
+    && published.get("/workspace/project/04b-use-cases/use-cases.json")?.some((d) => d.key === "usecases-excluded"));
   files.set("06-threats/threats.json", { threats: [{ id: "T-1", likelihood: 1, impact: 1, components: ["C-1"], stride: ["S"] }] });
   await controller.refresh();
   ok("validation diagnostics: update clears stale diagnostics before publishing current results",
@@ -1143,13 +1205,15 @@ function runDfdOverviewTests() {
         { id: "I-2", component: "C-1", name: "Hidden port", hidden: true },
       ],
     },
-    dfd: { nodes: [
-      { id: "N-1", label: "Main", type: "process", layer: 1, parent: null, componentRef: "C-1" },
-      { id: "N-2", label: "Storage", type: "store", layer: 2, parent: "N-1" },
-      { id: "N-3", label: "Nested", type: "multiprocess", layer: "invalid", parent: "N-2" },
-      { id: "N-4", label: "Outside", type: "external-entity", layer: 1, parent: null },
-      { id: "TB-1", label: "Boundary", type: "trust-boundary", layer: 1, parent: null, members: ["N-1", "N-2"] },
-    ] },
+    dfd: {
+      nodes: [
+        { id: "N-1", label: "Main", type: "process", layer: 1, parent: null, componentRef: "C-1" },
+        { id: "N-2", label: "Storage", type: "store", layer: 2, parent: "N-1" },
+        { id: "N-3", label: "Nested", type: "multiprocess", layer: "invalid", parent: "N-2" },
+        { id: "N-4", label: "Outside", type: "external-entity", layer: 1, parent: null },
+        { id: "TB-1", label: "Boundary", type: "trust-boundary", layer: 1, parent: null, members: ["N-1", "N-2"] },
+      ]
+    },
   };
   const before = JSON.stringify(input);
   const result = DfdOverviewModel.buildOverview(input);
@@ -1159,20 +1223,24 @@ function runDfdOverviewTests() {
     main.children[0].id === "N-2" && main.children[0].children[0].layer === 3);
   ok("DFD overview: type labels and codicon names are mapped",
     result.roots.map((node) => node.typeLabel).join(",") === "Process,External entity,Trust boundary"
-      && result.roots.every((node) => typeof node.icon === "string" && node.icon.length > 0)
-      && main.children[0].typeLabel === "Data store" && main.children[0].children[0].typeLabel === "Multi-process");
+    && result.roots.every((node) => typeof node.icon === "string" && node.icon.length > 0)
+    && main.children[0].typeLabel === "Data store" && main.children[0].children[0].typeLabel === "Multi-process");
   ok("DFD overview: component, trust-boundary members and visible interfaces",
     main.componentName === "Main component" && main.interfaces.join(",") === "Ethernet"
-      && result.roots.find((node) => node.id === "TB-1").memberCount === 2);
+    && result.roots.find((node) => node.id === "TB-1").memberCount === 2);
   ok("DFD overview: open action maps to the node layer",
     JSON.stringify(DfdOverviewModel.openAction(main.children[0])) === JSON.stringify({ command: "embedrisk.dfdOverviewOpen", args: [2] }));
   ok("DFD overview: model construction does not mutate input", JSON.stringify(input) === before);
   const empty = DfdOverviewModel.buildOverview({ project: { title: "Fallback title" }, dfd: { nodes: [] } });
   ok("DFD overview: empty state has no roots and title fallback", empty.roots.length === 0 && empty.deviceName === "Fallback title");
-  const cycle = DfdOverviewModel.buildOverview({ dfd: { nodes: [
-    { id: "A", label: "A", type: "process", parent: "B" },
-    { id: "B", label: "B", type: "process", parent: "A" },
-  ] } });
+  const cycle = DfdOverviewModel.buildOverview({
+    dfd: {
+      nodes: [
+        { id: "A", label: "A", type: "process", parent: "B" },
+        { id: "B", label: "B", type: "process", parent: "A" },
+      ]
+    }
+  });
   ok("DFD overview: cyclic parent references terminate safely", cycle.roots.length === 0);
 
   const extDir = path.join(root, "vscode-extension");
@@ -1181,12 +1249,12 @@ function runDfdOverviewTests() {
   const provider = fs.readFileSync(path.join(extDir, "src/dfdOverview.ts"), "utf8");
   ok("DFD overview: Explorer view and refresh/open commands are contributed",
     manifest.contributes.views.explorer.some((view) => view.id === "embedrisk.dfdOverview")
-      && ["embedrisk.dfdOverviewRefresh", "embedrisk.dfdOverviewOpen"].every((id) => manifest.contributes.commands.some((command) => command.command === id)));
+    && ["embedrisk.dfdOverviewRefresh", "embedrisk.dfdOverviewOpen"].every((id) => manifest.contributes.commands.some((command) => command.command === id)));
   ok("DFD overview: provider is registered with a debounced refresh watcher and read-only IO",
     extension.includes("registerDfdOverview(ctx)") && extension.includes("embedrisk.dfdOverviewOpen")
-      && provider.includes("TreeDataProvider") && provider.includes("createFileSystemWatcher")
-      && provider.includes("embedrisk.dfdOverviewRefresh") && provider.includes("workspace.fs.readFile")
-      && !provider.includes("writeFile"));
+    && provider.includes("TreeDataProvider") && provider.includes("createFileSystemWatcher")
+    && provider.includes("embedrisk.dfdOverviewRefresh") && provider.includes("workspace.fs.readFile")
+    && !provider.includes("writeFile"));
 }
 
 function runDashboardTests() {
@@ -1196,33 +1264,41 @@ function runDashboardTests() {
       components: [{ id: "C-1", provenance: "own team" }, { id: "C-2", provenance: "Vendor" }],
       interfaces: [{}], assets: [{}],
     },
-    threats: { threats: [
-      { id: "T-1", title: "Open high", likelihood: 4, impact: 4, status: "open", classification: "protocol-limitation" },
-      { id: "T-2", title: "Accepted", likelihood: 3, impact: 4, status: "accepted", classification: "deployment-risk" },
-    ] },
-    countermeasures: { countermeasures: [
-      { id: "CM-1", status: "implemented", addresses: [{ threat: "T-1", residualLikelihood: 2, residualImpact: 2 }] },
-      { id: "CM-2", selected: false, status: "verified", ticketUrl: "https://example.invalid/ticket" },
-    ] },
+    threats: {
+      threats: [
+        { id: "T-1", title: "Open high", likelihood: 4, impact: 4, status: "open", classification: "protocol-limitation" },
+        { id: "T-2", title: "Accepted", likelihood: 3, impact: 4, status: "accepted", classification: "deployment-risk" },
+      ]
+    },
+    countermeasures: {
+      countermeasures: [
+        { id: "CM-1", status: "implemented", addresses: [{ threat: "T-1", residualLikelihood: 2, residualImpact: 2 }] },
+        { id: "CM-2", selected: false, status: "verified", ticketUrl: "https://example.invalid/ticket" },
+      ]
+    },
     requirements: { requirements: [{ id: "R-1", derivedFromThreat: ["T-2"] }] },
     defects: { defects: [{ status: "open" }, { status: "fixed" }, { status: "wont-fix" }] },
-    scheme: { matrix: { bands: [
-      { name: "Low", min: 1, max: 5 }, { name: "Medium", min: 6, max: 11 },
-      { name: "High", min: 12, max: 19 }, { name: "Critical", min: 20, max: 25 },
-    ] } },
+    scheme: {
+      matrix: {
+        bands: [
+          { name: "Low", min: 1, max: 5 }, { name: "Medium", min: 6, max: 11 },
+          { name: "High", min: 12, max: 19 }, { name: "Critical", min: 20, max: 25 },
+        ]
+      }
+    },
   };
   const before = JSON.stringify(input);
   const model = DashboardModel.buildDashboard(input);
   const count = (label) => model.stats.find((stat) => stat.label === label).value;
   ok("dashboard: webapp parity counts and classification rules",
     model.title === "Dashboard device" && count("Components") === 2 && count("3rd-party SW/HW") === 1
-      && count("Open threats") === 1 && count("Protocol limits") === 1 && count("Deployment risks") === 1
-      && count("High threats w/o req.") === 1 && count("Countermeasures") === 1
-      && count("Missing ticket links") === 1 && count("Open defects") === 1);
+    && count("Open threats") === 1 && count("Protocol limits") === 1 && count("Deployment risks") === 1
+    && count("High threats w/o req.") === 1 && count("Countermeasures") === 1
+    && count("Missing ticket links") === 1 && count("Open defects") === 1);
   ok("dashboard: shared risk engine summarizes initial and residual severity",
     model.initial.maxScore === 16 && model.initial.highCount === 2
-      && model.residual.maxScore === 12 && model.residual.highCount === 1
-      && model.threats[0].description.includes("Residual 4 (Low)"));
+    && model.residual.maxScore === 12 && model.residual.highCount === 1
+    && model.threats[0].description.includes("Residual 4 (Low)"));
   ok("dashboard: malformed project subobjects default safely and inputs are unchanged",
     JSON.stringify(input) === before && DashboardModel.buildDashboard({
       project: null, system: { components: "invalid" }, threats: { threats: [null, "bad"] },
@@ -1236,13 +1312,13 @@ function runDashboardTests() {
   const provider = fs.readFileSync(path.join(extDir, "src/dashboard.ts"), "utf8");
   ok("dashboard: Explorer view and refresh command are contributed and registered",
     manifest.contributes.views.explorer.some((view) => view.id === "embedrisk.dashboard")
-      && manifest.contributes.commands.some((command) => command.command === "embedrisk.dashboardRefresh")
-      && extension.includes("registerDashboard(ctx)") && provider.includes("embedrisk.dashboardRefresh"));
+    && manifest.contributes.commands.some((command) => command.command === "embedrisk.dashboardRefresh")
+    && extension.includes("registerDashboard(ctx)") && provider.includes("embedrisk.dashboardRefresh"));
   ok("dashboard: native provider reads JSON and uses only read-only document navigation",
     provider.includes("TreeDataProvider") && provider.includes("workspace.fs.readFile")
-      && provider.includes("workspace.createFileSystemWatcher") && provider.includes("embedrisk.wizard")
-      && provider.includes("embedrisk.dfdNative") && provider.includes("showTextDocument")
-      && !provider.includes("workspace.fs.writeFile"));
+    && provider.includes("workspace.createFileSystemWatcher") && provider.includes("embedrisk.wizard")
+    && provider.includes("embedrisk.dfdNative") && provider.includes("showTextDocument")
+    && !provider.includes("workspace.fs.writeFile"));
 }
 
 runImportedKbTests()

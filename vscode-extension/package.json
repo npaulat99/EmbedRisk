@@ -2,7 +2,7 @@
   "name": "embedrisk",
   "displayName": "EmbedRisk — Threat & Risk Assessment",
   "description": "Guided Threat & Risk Assessment for embedded OT field devices: a layered DFD editor, STRIDE threats, attack-defence trees and reports. The VS Code companion to the EmbedRisk web app (shared JSON project format).",
-  "version": "0.3.4",
+  "version": "0.4.0",
   "publisher": "npaulat",
   "repository": {
     "type": "git",

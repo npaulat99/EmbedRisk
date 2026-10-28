@@ -2542,6 +2542,8 @@ async function main() {
   const known = [];
   const knownHit = new Set();
   for (const [name, run] of SCENARIOS) {
+    // Optional filter: SCENARIO="native DFD" node tools/test-webviews-runtime.js
+    if (process.env.SCENARIO && !name.includes(process.env.SCENARIO)) continue;
     const h = new Harness(name);
     current = h;
     try {
