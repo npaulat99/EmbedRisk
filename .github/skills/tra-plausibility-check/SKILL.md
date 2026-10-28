@@ -1,6 +1,7 @@
 ---
+name: tra-plausibility-check
 description: "Run a quick plausibility and internal-consistency check on an EmbedRisk TRA project: implausible ratings, contradictory assumptions, attacker/exposure mismatches — without a full review report."
-agent: tra-reviewer
+disable-model-invocation: true
 argument-hint: "Path to the TRA project folder, optionally a specific step or threat id"
 ---
 Run a focused plausibility pass on the project (or the specific step/threat id) provided. Skip the

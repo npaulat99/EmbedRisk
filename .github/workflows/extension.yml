@@ -10,9 +10,6 @@ on:
       - "extension/v[0-9]+.[0-9]+.[0-9]+"
   pull_request:
     branches: [main]
-    paths:
-      - "vscode-extension/**"
-      - ".github/workflows/extension.yml"
 
 # Cancel in-flight CI runs (not publish runs triggered by tags).
 concurrency:

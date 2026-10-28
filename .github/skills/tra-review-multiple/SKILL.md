@@ -1,6 +1,7 @@
 ---
+name: tra-review-multiple
 description: "Review multiple EmbedRisk TRA projects together for schema compliance and cross-project consistency: comparable devices rated very differently, diverging countermeasure choices for the same threat pattern, or knowledge-base drift."
-agent: tra-reviewer
+disable-model-invocation: true
 argument-hint: "Paths to two or more TRA project folders"
 ---
 Review each of the TRA project folders provided (ask for the list if not given) individually first,
