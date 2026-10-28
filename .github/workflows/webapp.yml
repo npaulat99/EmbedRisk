@@ -8,9 +8,6 @@ on:
       - ".github/workflows/webapp.yml"
   pull_request:
     branches: [main]
-    paths:
-      - "webapp/**"
-      - ".github/workflows/webapp.yml"
 
 # Cancel in-flight runs for the same branch/PR so only the latest commit is tested.
 concurrency:
