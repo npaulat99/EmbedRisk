@@ -18,15 +18,17 @@ export class AttackTreeEditor implements vscode.CustomTextEditorProvider {
     const csp = `default-src 'none'; img-src ${panel.webview.cspSource}; style-src ${panel.webview.cspSource} 'unsafe-inline'; script-src 'nonce-${nonce}' ${panel.webview.cspSource};`;
 
     const projRoot = vscode.Uri.joinPath(doc.uri, "..", "..");
+    const projectUri = vscode.Uri.joinPath(projRoot, "01-project-description/project.json");
     const readRefs = async () => {
       const rd = async (rel: string, def: any) => { try { return JSON.parse(Buffer.from(await vscode.workspace.fs.readFile(vscode.Uri.joinPath(projRoot, rel))).toString()); } catch { return def; } };
       const cms = ((await rd("08-countermeasures/countermeasures.json", { countermeasures: [] })).countermeasures || []).map((c: any) => ({ id: c.id, title: c.title, status: c.status }));
       const threats = ((await rd("06-threats/threats.json", { threats: [] })).threats || []).map((t: any) => ({ id: t.id, title: t.title }));
-      return { cms, threats };
+      const project = await rd("01-project-description/project.json", {});
+      return { cms, threats, costFactorWeights: project?.costFactorWeights };
     };
 
     let lastText = "";
-    const post = async () => { const r = await readRefs(); const selectId = this.pendingTreeId; this.pendingTreeId = undefined; panel.webview.postMessage({ type: "load", doc: doc.getText() || '{"trees":[]}', cms: r.cms, threats: r.threats, selectId }); };
+    const post = async () => { const r = await readRefs(); const selectId = this.pendingTreeId; this.pendingTreeId = undefined; panel.webview.postMessage({ type: "load", doc: doc.getText() || '{"trees":[]}', cms: r.cms, threats: r.threats, costFactorWeights: r.costFactorWeights, selectId }); };
     const save = async (text: string) => {
       lastText = text;
       const ed = new vscode.WorkspaceEdit();
@@ -38,6 +40,11 @@ export class AttackTreeEditor implements vscode.CustomTextEditorProvider {
     panel.webview.html = this.html(modelUri, cssUri, logoUri, csp, nonce);
     const sub = vscode.workspace.onDidChangeTextDocument((e) => {
       if (e.document.uri.toString() === doc.uri.toString() && e.document.getText() !== lastText) post();
+      if (e.document.uri.toString() === projectUri.toString()) {
+        // Use the edited text (which may not be saved yet), without resetting tree selection/history.
+        try { panel.webview.postMessage({ type: "weights", costFactorWeights: JSON.parse(e.document.getText())?.costFactorWeights }); }
+        catch { /* Keep the last valid weights while project JSON is incomplete. */ }
+      }
     });
     panel.onDidDispose(() => sub.dispose());
     panel.webview.onDidReceiveMessage(async (m) => {
@@ -61,6 +68,9 @@ body{display:flex;flex-direction:column}
 #bar .brand{display:flex;align-items:center;gap:6px;margin-right:2px}
 #bar .brand .logo{width:18px;height:18px;display:block}
 #metrics{color:var(--accent-2);font-size:12px}
+#threatlinks{display:inline-flex;flex-wrap:wrap;gap:4px}
+#threatlinks .chip{display:inline-flex;align-items:center;gap:4px;cursor:default}
+#bar #threatlinks .chip button{padding:0 4px;border:0;background:none;line-height:1}
 #hint{margin-left:auto;color:var(--text-faint);font-size:11px}
 #body{flex:1 1 auto;display:flex;min-height:0}
 #wrap{flex:1 1 auto;min-height:0;overflow:auto;padding:12px;position:relative;color:var(--text)}
@@ -78,7 +88,7 @@ body{display:flex;flex-direction:column}
   <select id="treesel" title="Select tree"></select>
   <button data-act="addtree">+ Tree</button>
   <button data-act="deltree" class="danger" title="Delete the current attack tree (its goal and all nodes)">Delete tree</button>
-  <span class="hint">threat</span><select id="threatsel" title="Threat this tree decomposes"></select>
+  <span class="hint">threats</span><span id="threatlinks"></span><select id="threatsel" title="Link another threat this tree decomposes"></select>
   <span style="width:8px"></span>
   <button id="undo" data-act="undo" title="Undo (Ctrl+Z)" disabled>&#8630; Undo</button>
   <button id="redo" data-act="redo" title="Redo (Ctrl+Shift+Z)" disabled>&#8631; Redo</button>
@@ -106,7 +116,7 @@ const COST_LEVELS={
   prep:[[1,'None'],[2,'Software setup'],[3,'Test environment'],[4,'Procure'],[5,'Infrastructure']],
   abort:[[1,'Robust'],[2,'Rare'],[3,'Moderate'],[4,'Frequent'],[5,'Very Likely']]
 };
-let doc={trees:[]}, ti=0, focus=null, cms=[], threats=[];
+let doc={trees:[]}, ti=0, focus=null, cms=[], threats=[], costFactorWeights;
 const $=id=>document.getElementById(id);
 function esc(s){return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
 function tree(){return doc.trees[ti];}
@@ -135,14 +145,18 @@ function drawCanvas(){
   if(!M.find(t.root,focus))focus=t.root.id;
   var r=M.render(t,focus);
   cv.setAttribute('width',Math.max(r.width,400));cv.setAttribute('height',Math.max(r.height,180));cv.innerHTML=r.svg;
-  var m=M.evaluate(t.root,cmMap());
+  var m=M.evaluate(t.root,cmMap(),costFactorWeights);
   $('metrics').textContent='success ≈ '+Math.round(m.prob*100)+'% · suggests likelihood '+M.likelihoodFromProb(m.prob)+' · access '+m.accessReq+' · skill '+m.skillReq+' · '+m.defenses+' defence(s)';
 }
 function renderTreeSel(){
-  $('treesel').innerHTML=doc.trees.map(function(t,i){var pfx=t.threatRef?(t.threatRef+' \u00b7 '):'';return '<option value="'+i+'"'+(i===ti?' selected':'')+'>'+esc(pfx+(t.title||t.id))+'</option>';}).join('')||'<option>(no trees)</option>';
+  $('treesel').innerHTML=doc.trees.map(function(t,i){var refs=M.threatRefsOf(t);var pfx=refs.length?(refs.join(', ')+' \u00b7 '):'';return '<option value="'+i+'"'+(i===ti?' selected':'')+'>'+esc(pfx+(t.title||t.id))+'</option>';}).join('')||'<option>(no trees)</option>';
   var t=tree();
-  $('threatsel').innerHTML='<option value="">—</option>'+threats.map(function(x){return '<option value="'+esc(x.id)+'"'+(t&&t.threatRef===x.id?' selected':'')+'>'+esc(x.id)+' · '+esc(x.title)+'</option>';}).join('');
+  var linked=t?M.threatRefsOf(t):[];
+  $('threatlinks').innerHTML=linked.map(function(id){var th=threats.find(function(x){return x.id===id;});return '<span class="chip static" title="'+esc(th?th.title:'Unknown threat')+'">'+esc(id)+'<button data-unlink="'+esc(id)+'" title="Unlink threat '+esc(id)+'" aria-label="Unlink threat '+esc(id)+'">\u00d7</button></span>';}).join('')||'<span class="hint">none</span>';
+  $('threatsel').disabled=!t;
+  $('threatsel').innerHTML='<option value="">+ link threat…</option>'+threats.filter(function(x){return linked.indexOf(x.id)<0;}).map(function(x){return '<option value="'+esc(x.id)+'">'+esc(x.id)+' · '+esc(x.title)+'</option>';}).join('');
 }
+function setThreatLinks(next){var t=tree();if(!t)return;M.setThreatRefs(t,next);persist();renderTreeSel();}
 function opt(list,val){return list.map(function(o){return '<option value="'+o[0]+'"'+(+val===o[0]?' selected':'')+'>'+o[0]+' · '+esc(o[1])+'</option>';}).join('');}
 function renderInspector(){
   var t=tree();if(!t){$('insp').innerHTML='<p class="hint">Add a tree to begin.</p>';return;}
@@ -175,7 +189,7 @@ function addSib(){var t=tree();if(!t)return;var n=M.addSibling(t.root,focus,'ste
 function gate(){var t=tree();if(!t)return;if(M.cycleGate(t.root,focus)!==null){persist();draw();}}
 function rename(){var t=tree();if(!t)return;var n=M.find(t.root,focus);if(!n)return;promptBox('Rename',n.label,function(v){if(v){n.label=v;persist();draw();}});}
 function del(){var t=tree();if(!t)return;if(M.remove(t.root,focus)){focus=t.root.id;persist();draw();}}
-function addTree(){var used={};doc.trees.forEach(function(t){used[t.id]=1;});var n=1,id;do{id='AT'+(n++);}while(used[id]);doc.trees.push({id:id,title:'New attack goal',threatRef:'',root:{id:'n1',kind:'goal',label:'Attack goal',gate:'OR',children:[]}});ti=doc.trees.length-1;focus='n1';persist('addtree');draw();}
+function addTree(){var used={};doc.trees.forEach(function(t){used[t.id]=1;});var n=1,id;do{id='AT'+(n++);}while(used[id]);var firstThreat=threats[0]&&threats[0].id;var nt={id:id,title:'New attack goal',threatRefs:firstThreat?[firstThreat]:[],root:{id:'n1',kind:'goal',label:'Attack goal',gate:'OR',children:[]}};if(firstThreat)nt.threatRef=firstThreat;doc.trees.push(nt);ti=doc.trees.length-1;focus='n1';persist('addtree');draw();}
 function delTree(){var t=tree();if(!t)return;confirmBox('Delete this attack tree and all of its nodes?',function(ok){if(!ok)return;doc.trees.splice(ti,1);if(ti>=doc.trees.length)ti=Math.max(0,doc.trees.length-1);var r=root();focus=r?r.id:null;persist('deltree');draw();});}
 
 let ovCb=null, ovMode='prompt';
@@ -188,9 +202,9 @@ $('cv').addEventListener('click',function(e){
   var gg=e.target.closest&&e.target.closest('[data-gate]');
   if(gg){var t=tree();if(t){var id=gg.getAttribute('data-gate');focus=id;if(M.cycleGate(t.root,id)!==null)persist('gate:'+id);draw();}return;}
   var g=e.target.closest&&e.target.closest('[data-id]');if(g){focus=g.getAttribute('data-id');draw();}});
-$('bar').addEventListener('click',function(e){var b=e.target.closest&&e.target.closest('[data-act]');if(!b)return;var a=b.dataset.act;if(a==='addtree')addTree();else if(a==='deltree')delTree();else if(a==='undo')undo();else if(a==='redo')redo();});
+$('bar').addEventListener('click',function(e){var u=e.target.closest&&e.target.closest('[data-unlink]');if(u){var t=tree();if(t){var id=u.getAttribute('data-unlink');setThreatLinks(M.threatRefsOf(t).filter(function(r){return r!==id;}));}return;}var b=e.target.closest&&e.target.closest('[data-act]');if(!b)return;var a=b.dataset.act;if(a==='addtree')addTree();else if(a==='deltree')delTree();else if(a==='undo')undo();else if(a==='redo')redo();});
 $('treesel').addEventListener('change',function(e){ti=+e.target.value;var r=root();focus=r?r.id:null;draw();});
-$('threatsel').addEventListener('change',function(e){var t=tree();if(t){t.threatRef=e.target.value;persist();}});
+$('threatsel').addEventListener('change',function(e){var t=tree(),v=e.target.value;if(t&&v)setThreatLinks(M.threatRefsOf(t).concat([v]));});
 $('insp').addEventListener('input',function(e){var t=tree();if(!t)return;var n=M.find(t.root,focus);if(!n)return;if(e.target.id==='in-label'){n.label=e.target.value;drawCanvas();}});
 $('insp').addEventListener('change',function(e){var t=tree();if(!t)return;var n=M.find(t.root,focus);if(!n)return;var el=e.target;
   if(el.id==='in-label'){persist();}
@@ -218,7 +232,7 @@ window.addEventListener('keydown',function(e){
   else if(e.key==='e'||e.key==='F2'){rename();e.preventDefault();}
   else if(e.key==='d'||e.key==='Delete'){del();e.preventDefault();}
 });
-window.addEventListener('message',function(ev){var m=ev.data;if(m.type==='load'){try{doc=JSON.parse(m.doc);}catch(_){doc={trees:[]};}if(!doc.trees)doc.trees=[];if(m.cms)cms=m.cms;if(m.threats)threats=m.threats;if(m.selectId){var si=doc.trees.findIndex(function(t){return t.id===m.selectId;});if(si>=0){ti=si;focus=null;}}if(ti>=doc.trees.length)ti=0;var r=root();if(r&&!M.find(r,focus))focus=r.id;baseState=snap();updUndo();draw();}});
+window.addEventListener('message',function(ev){var m=ev.data;if(m.type==='weights'){costFactorWeights=m.costFactorWeights;drawCanvas();}if(m.type==='load'){costFactorWeights=m.costFactorWeights;try{doc=JSON.parse(m.doc);}catch(_){doc={trees:[]};}if(!doc.trees)doc.trees=[];if(m.cms)cms=m.cms;if(m.threats)threats=m.threats;if(m.selectId){var si=doc.trees.findIndex(function(t){return t.id===m.selectId;});if(si>=0){ti=si;focus=null;}}if(ti>=doc.trees.length)ti=0;var r=root();if(r&&!M.find(r,focus))focus=r.id;baseState=snap();updUndo();draw();}});
 vs.postMessage({type:'ready'});
 </script></body></html>`;
   }

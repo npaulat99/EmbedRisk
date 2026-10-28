@@ -27,6 +27,7 @@ Both tools focus on structured, traceable assessments for IEC 62443-oriented pro
 - Structured TRA steps with one artifact file per step.
 - STRIDE-based threat modeling grounded in OT device context.
 - Layered DFD modeling with trust boundaries and interfaces.
+- In VS Code, the Explorer DFD Overview presents project layers as a read-only tree; selecting a node opens its layer in draw.io, but cannot focus that specific node.
 - Risk scoring with a configurable 5x5 scheme (Likelihood x Impact).
 - Optional attack trees for deeper threat decomposition.
 - Threat to requirement to countermeasure traceability.

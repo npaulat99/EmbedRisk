@@ -11,6 +11,22 @@ import { DfdEditor } from "./dfdEditor";
 import { NativeDfdEditor } from "./nativeDfdEditor";
 import { AttackTreeEditor } from "./attackTreeEditor";
 import { UseCaseEditor } from "./useCaseEditor";
+import { registerValidationDiagnostics } from "./validationDiagnostics";
+import { registerDfdOverview } from "./dfdOverview";
+import { registerDashboard } from "./dashboard";
+
+// Isomorphic CommonJS webview model, reused here for the shared threatRefs/threatRef read rule.
+const AtModel = require("../media/attacktree-model.js");
+// Shared webapp-compatible id scheme (prefix + lowest free number), from the isomorphic DFD model.
+const { nextId } = require("../media/dfd-model.js") as { nextId: (prefix: string, ids: unknown[]) => string };
+const { removeImportedCatalogue } = require("../media/imported-kb.js") as {
+  removeImportedCatalogue: (rootPath: string, io: {
+    list: () => Promise<{ name: string; isDirectory: boolean; isSymbolicLink: boolean }[]>;
+    choose: (names: string[]) => Promise<string | undefined>;
+    confirm: (name: string) => Promise<boolean>;
+    remove: (target: string) => Promise<void>;
+  }) => Promise<{ status: "empty" | "cancelled" | "removed"; name?: string }>;
+};
 
 interface Node { id: string; label: string; type: string; layer: number; parent?: string | null }
 interface Dfd { nodes: Node[]; flows: { id: string; label?: string; from: string; to: string }[]; }
@@ -89,7 +105,7 @@ async function initGitRepo(dir: vscode.Uri) {
   }
 }
 
-async function generateReport(ctx: vscode.ExtensionContext, projDir: vscode.Uri) {
+async function generateReport(ctx: vscode.ExtensionContext, projDir: vscode.Uri, artifact?: "traceability.csv" | "traceability.json" | "sbom") {
   const script = reportsScript(ctx);
   if (!(await pathExists(script))) {
     vscode.window.showErrorMessage("The packaged report generator is missing. Reinstall the extension.");
@@ -97,7 +113,25 @@ async function generateReport(ctx: vscode.ExtensionContext, projDir: vscode.Uri)
   }
   try {
     await execFileAsync(process.execPath, [script.fsPath, projDir.fsPath], { cwd: path.dirname(script.fsPath) });
-    const report = vscode.Uri.joinPath(projDir, "report", "index.html");
+    let report: vscode.Uri;
+    if (artifact === "sbom") {
+      const projectFile = vscode.Uri.joinPath(projDir, "01-project-description", "project.json");
+      const project = JSON.parse(decoder.decode(await vscode.workspace.fs.readFile(projectFile)));
+      if ((project.sbom?.mode || "in-tool") !== "in-tool") {
+        vscode.window.showWarningMessage("This project uses an externally provided SBOM; no SBOM export is available.");
+        return;
+      }
+      report = vscode.Uri.joinPath(projDir, "report", (project.sbom?.format || "cyclonedx") === "spdx" ? "sbom.spdx.json" : "sbom.cdx.json");
+    } else {
+      report = vscode.Uri.joinPath(projDir, "report", artifact || "index.html");
+    }
+    const filename = path.basename(report.fsPath);
+    if (artifact) {
+      const act = await vscode.window.showInformationMessage(`${filename} generated successfully.`, "Open file", "Reveal file");
+      if (act === "Open file") await vscode.commands.executeCommand("vscode.open", report);
+      else if (act === "Reveal file") await vscode.commands.executeCommand("revealFileInOS", report);
+      return;
+    }
     const act = await vscode.window.showInformationMessage("Report generated successfully.", "Open report", "Reveal folder");
     if (act === "Open report") await vscode.commands.executeCommand("vscode.open", report);
     else if (act === "Reveal folder") await vscode.commands.executeCommand("revealFileInOS", report);
@@ -105,6 +139,12 @@ async function generateReport(ctx: vscode.ExtensionContext, projDir: vscode.Uri)
     const detail = String(err?.stderr || err?.stdout || err?.message || err).trim();
     vscode.window.showErrorMessage(detail ? `Report generation failed: ${detail}` : "Report generation failed.");
   }
+}
+
+async function runReportCommand(ctx: vscode.ExtensionContext, artifact?: "traceability.csv" | "traceability.json" | "sbom") {
+  const u = await find();
+  if (!u) { vscode.window.showWarningMessage("No EmbedRisk project (04-dfd/dfd.json) found."); return; }
+  await generateReport(ctx, vscode.Uri.joinPath(u, "..", ".."), artifact);
 }
 
 async function scaffoldProject(dir: vscode.Uri, name: string, slug: string) {
@@ -171,7 +211,7 @@ async function openLayer(target: number) {
   if (!dfd.nodes.some((n) => n.layer === target)) {
     const create = await vscode.window.showInformationMessage(`Layer ${target} has no components yet. Create it?`, "Create", "Cancel");
     if (create !== "Create") return;
-    dfd.nodes.push({ id: `N-L${target}-1`, label: `New component (L${target})`, type: "process", layer: target, parent: dfd.nodes[0]?.id ?? null });
+    dfd.nodes.push({ id: nextId("N-", dfd.nodes.map((n) => n.id)), label: `New component (L${target})`, type: "process", layer: target, parent: dfd.nodes[0]?.id ?? null });
     await vscode.workspace.fs.writeFile(u, encodeJson(dfd));
   }
   layer = target;
@@ -182,6 +222,9 @@ async function openLayer(target: number) {
 }
 
 export function activate(ctx: vscode.ExtensionContext) {
+  registerValidationDiagnostics(ctx);
+  registerDfdOverview(ctx);
+  registerDashboard(ctx);
   const attackTreeEditor = new AttackTreeEditor(ctx.extensionUri);
   const useCaseEditor = new UseCaseEditor(ctx.extensionUri);
   const openWebappCommand = async () => {
@@ -216,18 +259,19 @@ export function activate(ctx: vscode.ExtensionContext) {
   };
 
   ctx.subscriptions.push(
+    vscode.commands.registerCommand("embedrisk.dfdOverviewOpen", (target: number) => openLayer(target)),
     vscode.commands.registerCommand("embedrisk.dfdToDrawio", () => openLayer(layer)),
     vscode.commands.registerCommand("embedrisk.dfdLayerDown", () => openLayer(layer + 1)),
     vscode.commands.registerCommand("embedrisk.dfdLayerUp", () => openLayer(Math.max(1, layer - 1))),
-    vscode.commands.registerCommand("embedrisk.report", async () => {
-      const u = await find();
-      if (!u) { vscode.window.showWarningMessage("No EmbedRisk project (04-dfd/dfd.json) found."); return; }
-      const projDir = vscode.Uri.joinPath(u, "..", "..");
-      await generateReport(ctx, projDir);
-    }),
+    vscode.commands.registerCommand("embedrisk.report", () => runReportCommand(ctx)),
+    vscode.commands.registerCommand("embedrisk.exportTraceabilityCsv", () => runReportCommand(ctx, "traceability.csv")),
+    vscode.commands.registerCommand("embedrisk.exportTraceabilityJson", () => runReportCommand(ctx, "traceability.json")),
+    vscode.commands.registerCommand("embedrisk.exportSbom", () => runReportCommand(ctx, "sbom")),
+    vscode.commands.registerCommand("embedrisk.gettingStarted", () =>
+      vscode.commands.executeCommand("workbench.action.openWalkthrough", "npaulat.embedrisk#embedrisk.gettingStarted", false)),
     vscode.commands.registerCommand("embedrisk.newProject", createProjectCommand),
     vscode.commands.registerCommand("embedrisk.openWebapp", openWebappCommand),
-    vscode.commands.registerCommand("embedrisk.wizard", () => openWizard(ctx)),
+    vscode.commands.registerCommand("embedrisk.wizard", (focusThreatId?: string) => openWizard(ctx, focusThreatId)),
     vscode.commands.registerCommand("embedrisk.kbBrowse", () => openKbBrowser(ctx)),
     vscode.commands.registerCommand("embedrisk.dfdNative", async () => {
       const u = await find();
@@ -253,7 +297,7 @@ export function activate(ctx: vscode.ExtensionContext) {
       const countNodes = (n: any): number => 1 + (n.children || []).reduce((s: number, c: any) => s + countNodes(c), 0);
       const openTree = async (id?: string) => { attackTreeEditor.pendingTreeId = id; await vscode.commands.executeCommand("vscode.openWith", file, "embedrisk.attackTree"); };
 
-      // Create a new tree, first asking which threat it models (so it carries the threat prefix).
+      // Create a new tree, first asking which threat it models (linked via threatRef/threatRefs).
       const createForThreat = async () => {
         const threats = await readThreats();
         const items: any[] = threats.map((t: any) => ({ label: t.id, description: t.title, t }));
@@ -262,9 +306,8 @@ export function activate(ctx: vscode.ExtensionContext) {
         if (!pick) return;
         const t = (pick as any).t;
         const d = await readDoc();
-        const ids = new Set(d.trees.map((x: any) => x.id));
-        const base = t ? "AT-" + t.id : "AT"; let id = base; let n = 1; while (ids.has(id)) id = `${base}-${++n}`;
-        d.trees.push({ id, title: t ? t.title : "New attack goal", threatRef: t ? t.id : "", root: { id: "n1", kind: "goal", label: t ? t.title : "Attack goal", gate: "OR", children: [{ id: "n2", kind: "step", label: "Attacker step 1", access: 3, skill: 2, cost: {}, children: [] }] } });
+        const id = nextId("AT", d.trees.map((x: any) => x.id));
+        d.trees.push({ id, title: t ? t.title : "New attack goal", ...(t ? { threatRef: t.id } : {}), threatRefs: t ? [t.id] : [], root: { id: "n1", kind: "goal", label: t ? t.title : "Attack goal", gate: "OR", children: [{ id: "n2", kind: "step", label: "Attacker step 1", access: 3, skill: 2, cost: {}, children: [] }] } });
         attackTreeEditor.pendingTreeId = id; // set before writing so the new tree is focused whether or not the editor is already open
         await writeDoc(d);
         await vscode.commands.executeCommand("vscode.openWith", file, "embedrisk.attackTree");
@@ -275,13 +318,17 @@ export function activate(ctx: vscode.ExtensionContext) {
       const doc0 = await readDoc();
       const threatTitle = (ref: string) => ((threats.find((x: any) => x.id === ref) || {}).title) || "";
       const NEW: any = { label: "$(add) New attack tree\u2026", alwaysShow: true };
-      const build = (d: any) => [NEW, ...d.trees.map((t: any) => ({
-        label: (t.threatRef ? "$(target) " + t.threatRef + " \u00b7 " : "") + (t.title || t.id),
-        description: t.id,
-        detail: (t.threatRef ? threatTitle(t.threatRef) + "  \u00b7  " : "") + countNodes(t.root) + " node(s)",
-        treeId: t.id,
-        buttons: [{ iconPath: new vscode.ThemeIcon("trash"), tooltip: "Delete this attack tree" }],
-      }))];
+      const build = (d: any) => [NEW, ...d.trees.map((t: any) => {
+        const refs: string[] = AtModel.threatRefsOf(t);
+        const titles = refs.map(threatTitle).filter(Boolean).join(", ");
+        return {
+          label: (refs.length ? "$(target) " + refs.join(", ") + " \u00b7 " : "") + (t.title || t.id),
+          description: t.id,
+          detail: (titles ? titles + "  \u00b7  " : "") + countNodes(t.root) + " node(s)",
+          treeId: t.id,
+          buttons: [{ iconPath: new vscode.ThemeIcon("trash"), tooltip: "Delete this attack tree" }],
+        };
+      })];
       const qp = vscode.window.createQuickPick();
       qp.title = "Attack trees";
       qp.ignoreFocusOut = true;
@@ -318,6 +365,34 @@ export function activate(ctx: vscode.ExtensionContext) {
       } catch (err: any) {
         const detail = String(err?.stderr || err?.stdout || err?.message || err).trim();
         vscode.window.showErrorMessage(detail ? `Knowledge-base import failed: ${detail}` : "Knowledge-base import failed.");
+      }
+    }),
+    vscode.commands.registerCommand("embedrisk.kbRemove", async () => {
+      const root = importedKbRoot(ctx);
+      try {
+        const result = await removeImportedCatalogue(root.fsPath, {
+          list: async () => (await pathExists(root)
+            ? await vscode.workspace.fs.readDirectory(root)
+            : []).map(([name, type]) => ({
+            name,
+            isDirectory: Boolean(type & vscode.FileType.Directory),
+            isSymbolicLink: Boolean(type & vscode.FileType.SymbolicLink),
+          })),
+          choose: async (names) => (await vscode.window.showQuickPick(names, {
+            placeHolder: "Select an imported knowledge base to remove",
+          })),
+          confirm: async (name) => (await vscode.window.showWarningMessage(
+            `Remove imported knowledge base '${name}' and all its files?`,
+            { modal: true },
+            "Remove"
+          )) === "Remove",
+          remove: async (target) => vscode.workspace.fs.delete(vscode.Uri.file(target), { recursive: true, useTrash: true }),
+        });
+        if (result.status === "empty") vscode.window.showWarningMessage("No imported knowledge bases to remove.");
+        if (result.status === "removed") vscode.window.showInformationMessage(`Removed imported knowledge base '${result.name}'.`);
+      } catch (err: any) {
+        const detail = String(err?.message || err).trim();
+        vscode.window.showErrorMessage(detail ? `Knowledge-base removal failed: ${detail}` : "Knowledge-base removal failed.");
       }
     }),
     vscode.window.registerCustomEditorProvider("embedrisk.dfdNative", new NativeDfdEditor(ctx.extensionUri), { webviewOptions: { retainContextWhenHidden: true } }),

@@ -2,35 +2,194 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "version": "1.0",
   "title": "TRA Risk Scheme",
-  "description": "Practical impact/likelihood scheme combining a Bug Bar impact rubric, an attacker-grounded likelihood rubric (1-5), and a 5x5 matrix. Inspired by Fockel/Phoenix Contact (Bug Bar + CVSS), Loepz 5x5 matrix, and CRA/IEC 62443 expectations.",
+  "description": "Practical impact/likelihood scheme combining a Bug Bar impact rubric (max C/I/A/Safety) with a decomposed likelihood = Exposure x Exploitability (interview participant P11), on a 5x5 matrix. Inspired by Fockel/Phoenix Contact (Bug Bar + CVSS), Loepz 5x5 matrix, and CRA/IEC 62443 expectations.",
   "likelihood": {
     "scale": [
-      { "score": 1, "label": "Very Low", "desc": "Physical access plus rare expertise needed; mature controls; no known path." },
-      { "score": 2, "label": "Low", "desc": "Local access and specialist skill; controls present; limited public knowledge." },
-      { "score": 3, "label": "Medium", "desc": "Adjacent/local access, moderate skill; partial controls; known technique." },
-      { "score": 4, "label": "High", "desc": "Remote or easy local access, common skill; weak controls; public exploit/tooling." },
-      { "score": 5, "label": "Very High", "desc": "Remote, low skill, scalable; no effective control; trivial or automated." }
+      {
+        "score": 1,
+        "label": "Very Low",
+        "desc": "Physical access plus rare expertise needed; mature controls; no known path."
+      },
+      {
+        "score": 2,
+        "label": "Low",
+        "desc": "Local access and specialist skill; controls present; limited public knowledge."
+      },
+      {
+        "score": 3,
+        "label": "Medium",
+        "desc": "Adjacent/local access, moderate skill; partial controls; known technique."
+      },
+      {
+        "score": 4,
+        "label": "High",
+        "desc": "Remote or easy local access, common skill; weak controls; public exploit/tooling."
+      },
+      {
+        "score": 5,
+        "label": "Very High",
+        "desc": "Remote, low skill, scalable; no effective control; trivial or automated."
+      }
     ],
-    "factors": ["attacker capability", "required access", "exploitability", "existing control maturity"]
+    "factors": [
+      "exposure",
+      "exploitability"
+    ],
+    "factorScale": {
+      "exposure": [
+        {
+          "score": 1,
+          "label": "Physical (open enclosure)"
+        },
+        {
+          "score": 2,
+          "label": "Local (on site)"
+        },
+        {
+          "score": 3,
+          "label": "Adjacent / fieldbus"
+        },
+        {
+          "score": 4,
+          "label": "Remote (authenticated)"
+        },
+        {
+          "score": 5,
+          "label": "Remote (unauthenticated)"
+        }
+      ],
+      "exploitability": [
+        {
+          "score": 1,
+          "label": "Very hard (nation-state)"
+        },
+        {
+          "score": 2,
+          "label": "Hard (specialist)"
+        },
+        {
+          "score": 3,
+          "label": "Moderate"
+        },
+        {
+          "score": 4,
+          "label": "Easy"
+        },
+        {
+          "score": 5,
+          "label": "Trivial / automated"
+        }
+      ]
+    },
+    "derivation": "Likelihood = round(sqrt(Exposure x Exploitability)) mapped to 1-5; Risk = Likelihood x Impact on the 5x5 matrix. This realises interview participant P11's Exposure/Exploitability/Impact intuition (P11 found a single coarse likelihood insufficient) while keeping the familiar matrix. Exposure = attack-surface reachability of the entry interface (higher = more reachable); Exploitability = ease of exploitation once reached (higher = easier). The referenced attacker profile is a feasibility GATE, not an averaged term: the threat's required attacker capability is (6 - exploitability), expressed on the same 1-5 capability scale as the attacker profile, and the attacker's own capability must meet or exceed it (equivalently capability + exploitability >= 6); its access must also be proximate enough for the exposure. Control maturity is excluded because controls act on the residual risk, not the inherent likelihood (avoids double-counting)."
   },
   "impact": {
     "scale": [
-      { "score": 1, "label": "Negligible", "desc": "No safety effect; minor data exposure; self-recovering." },
-      { "score": 2, "label": "Minor", "desc": "Local CIA loss; nuisance; bounded process disturbance." },
-      { "score": 3, "label": "Moderate", "desc": "Process value falsification or downtime; reputational; no safety harm." },
-      { "score": 4, "label": "Major", "desc": "Loss of control/view of overfill protection; potential SIL demotion; multi-site." },
-      { "score": 5, "label": "Severe", "desc": "Safety hazard (overfill, spill); environmental/human harm; fleet-wide." }
+      {
+        "score": 1,
+        "label": "Negligible",
+        "desc": "No safety effect; minor data exposure; self-recovering."
+      },
+      {
+        "score": 2,
+        "label": "Minor",
+        "desc": "Local CIA loss; nuisance; bounded process disturbance."
+      },
+      {
+        "score": 3,
+        "label": "Moderate",
+        "desc": "Process value falsification or downtime; reputational; no safety harm."
+      },
+      {
+        "score": 4,
+        "label": "Major",
+        "desc": "Loss of control/view of overfill protection; potential SIL demotion; multi-site."
+      },
+      {
+        "score": 5,
+        "label": "Severe",
+        "desc": "Safety hazard (overfill, spill); environmental/human harm; fleet-wide."
+      }
     ],
-    "bugBarDimensions": ["confidentiality", "integrity", "availability", "safety"],
+    "bugBarDimensions": [
+      "confidentiality",
+      "integrity",
+      "availability",
+      "safety"
+    ],
     "rule": "Impact = max(C, I, A, Safety) for the worst plausible asset, defaulting to the binding safety case (PR-04)."
+  },
+  "cvss": {
+    "role": "Supplementary signal that may inform the exploitability factor of the likelihood (Fockel / Phoenix Contact, TUV-certified). Not the primary risk model.",
+    "suggestion": "exploitability is estimated from the CVSS v3 exploitability metrics (AC/PR/UI) in the vector, NOT the base score (which includes the impact sub-score and would double-count the Bug Bar impact)."
+  },
+  "attackTree": {
+    "description": "Optional per-threat attack-defense tree (Kordy et al. 2010; Jhawar et al. 2015). Gates: AND, OR, SAND (sequential AND). Defences attach as countermeasure nodes.",
+    "costFactors": [
+      {
+        "key": "time",
+        "label": "Time",
+        "weight": 0.25
+      },
+      {
+        "key": "exploitability",
+        "label": "Exploitability",
+        "weight": 0.2
+      },
+      {
+        "key": "window",
+        "label": "Window of opportunity",
+        "weight": 0.15
+      },
+      {
+        "key": "detection",
+        "label": "Detection likelihood",
+        "weight": 0.15
+      },
+      {
+        "key": "notoriety",
+        "label": "Notoriety / prior knowledge",
+        "weight": 0.1
+      },
+      {
+        "key": "prep",
+        "label": "Preparation effort",
+        "weight": 0.1
+      },
+      {
+        "key": "abort",
+        "label": "Abort risk",
+        "weight": 0.05
+      }
+    ]
   },
   "matrix": {
     "axes": "risk = likelihood x impact",
     "bands": [
-      { "name": "Low", "min": 1, "max": 5, "color": "#2e7d32" },
-      { "name": "Medium", "min": 6, "max": 11, "color": "#f9a825" },
-      { "name": "High", "min": 12, "max": 19, "color": "#ef6c00" },
-      { "name": "Critical", "min": 20, "max": 25, "color": "#c62828" }
+      {
+        "name": "Low",
+        "min": 1,
+        "max": 5,
+        "color": "#2e7d32"
+      },
+      {
+        "name": "Medium",
+        "min": 6,
+        "max": 11,
+        "color": "#f9a825"
+      },
+      {
+        "name": "High",
+        "min": 12,
+        "max": 19,
+        "color": "#ef6c00"
+      },
+      {
+        "name": "Critical",
+        "min": 20,
+        "max": 25,
+        "color": "#c62828"
+      }
     ]
   }
 }

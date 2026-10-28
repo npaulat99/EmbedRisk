@@ -1,0 +1,327 @@
+{
+  "countermeasures": [
+    {
+      "id": "CM-1",
+      "title": "Harden HART Maintenance-level write authentication to HMI-equivalent strength",
+      "description": "Implement the HART (IF-2) write-authentication mechanism required by REQC003: a credential mechanism at least as strong as the local HMI's role-credential model (AS-2), with rate-limiting/lockout equivalent to AS-12. Closes the still-open choice of exact HART authentication mechanism to a concrete, testable minimum bar rather than leaving it undefined.",
+      "type": "preventive",
+      "addresses": [
+        {
+          "threat": "T-5",
+          "residualLikelihood": 1,
+          "residualImpact": 3
+        }
+      ],
+      "components": [
+        "C-3"
+      ],
+      "iec62443Ref": "IEC 62443-4-2 CR 1.1 / CR 1.11",
+      "status": "planned",
+      "selected": true,
+      "responsibility": "product"
+    },
+    {
+      "id": "CM-2",
+      "title": "Local confirmation / write-protect gate for remote Modbus RTU configuration writes",
+      "description": "Implements a product-level gate on Modbus RTU (IF-3) writes to operational configuration registers: a local HMI confirmation step, or a physical/soft write-protect toggle, so a device on the shared bus cannot silently apply configuration changes without local acknowledgement. Deployment-level bus segmentation (AS-6, REQC001) remains a complementary compensating control.",
+      "type": "preventive",
+      "addresses": [
+        {
+          "threat": "T-18",
+          "residualLikelihood": 1,
+          "residualImpact": 3
+        }
+      ],
+      "components": [
+        "C-3",
+        "C-4"
+      ],
+      "iec62443Ref": "IEC 62443-4-2 CR 3.1 / CR 7.6",
+      "status": "planned",
+      "selected": true,
+      "ticketUrl": "https://tracker.rl100.test/browse/RLSEC-118",
+      "negativeEffects": [
+        "Adds a local-confirmation step to remote/scripted commissioning workflows that previously applied Modbus configuration writes without any on-device interaction."
+      ],
+      "responsibility": "product"
+    },
+    {
+      "id": "CM-3",
+      "title": "Firmware update-time signature and version/anti-rollback verification",
+      "description": "The existing, already-implemented update-time mitigation (AS-3): every incoming firmware image is checked for a valid cryptographic signature and a version that is not older than the currently installed one before it is applied, preventing straightforward malicious or rollback updates via IF-4/IF-5.",
+      "type": "preventive",
+      "addresses": [
+        {
+          "threat": "T-13",
+          "residualLikelihood": 1,
+          "residualImpact": 3
+        }
+      ],
+      "components": [
+        "C-3"
+      ],
+      "iec62443Ref": "IEC 62443-4-2 CR 3.4",
+      "status": "planned",
+      "selected": true,
+      "ticketUrl": "https://tracker.rl100.test/browse/RLSEC-042",
+      "responsibility": "product"
+    },
+    {
+      "id": "CM-4",
+      "title": "Local HMI PIN attempt lockout with increasing retry delay",
+      "description": "The existing, already-implemented HMI protection (AS-12): a limited number of consecutive failed PIN attempts, increasing retry delay after repeated failures, and temporary lockout after excessive failures, satisfying REQC002.",
+      "type": "preventive",
+      "addresses": [
+        {
+          "threat": "T-14",
+          "residualLikelihood": 1,
+          "residualImpact": 3
+        }
+      ],
+      "components": [
+        "C-4",
+        "C-3"
+      ],
+      "iec62443Ref": "IEC 62443-4-2 CR 1.11",
+      "status": "planned",
+      "selected": true,
+      "ticketUrl": "https://tracker.rl100.test/browse/RLSEC-051",
+      "responsibility": "product"
+    },
+    {
+      "id": "CM-5",
+      "title": "Mandatory fuzz / malformed-input testing gate for protocol parsers",
+      "description": "REQC005's release-blocking test requirement: HART, Modbus RTU, and Ethernet service-interface parsers are exercised with fuzz/malformed-input testing before each release, with crashes, hangs, or undefined behavior treated as release-blocking defects (tracked in 09-defects if found).",
+      "type": "preventive",
+      "addresses": [
+        {
+          "threat": "T-19",
+          "residualLikelihood": 1,
+          "residualImpact": 3
+        }
+      ],
+      "components": [
+        "C-3"
+      ],
+      "iec62443Ref": "IEC 62443-4-1 SVV-1 / SVV-3",
+      "status": "planned",
+      "selected": true,
+      "negativeEffects": [
+        "Availability risk from a parser crash/hang remains open until this test gate is executed and passed; the watchdog (CM-8) already bounds the safety-impact dimension in the meantime."
+      ],
+      "responsibility": "product"
+    },
+    {
+      "id": "CM-6",
+      "title": "TLS 1.2+ implementation with tested certificate/hostname validation",
+      "description": "REQC004's concrete minimum bar for the Ethernet service interface (IF-4): TLS 1.2 or higher, device-unique certificate/key provisioned at manufacturing, non-deprecated cipher suites only, and certificate/hostname validation logic covered by dedicated test cases before release.",
+      "type": "preventive",
+      "addresses": [
+        {
+          "threat": "T-21",
+          "residualLikelihood": 1,
+          "residualImpact": 3
+        }
+      ],
+      "components": [
+        "C-3",
+        "C-7"
+      ],
+      "iec62443Ref": "IEC 62443-4-2 CR 4.1 / CR 4.3",
+      "status": "planned",
+      "selected": true,
+      "responsibility": "product"
+    },
+    {
+      "id": "CM-7",
+      "title": "Force default-credential change on first commissioning boot",
+      "description": "A product-level fix for T-8: require the Ethernet service interface's default credentials to be changed before the device leaves initial commissioning mode, rather than relying on procedural user-guide guidance (REQC001) alone. Not selected for the current product version; retained as a documented alternative should the accepted residual risk on T-8 later need to be revisited.",
+      "type": "preventive",
+      "addresses": [
+        {
+          "threat": "T-8",
+          "residualLikelihood": 1,
+          "residualImpact": 2
+        }
+      ],
+      "components": [
+        "C-3"
+      ],
+      "iec62443Ref": "IEC 62443-4-2 CR 1.5",
+      "status": "proposed",
+      "selected": false,
+      "negativeEffects": [
+        "Adds a mandatory commissioning-flow step (forced credential change) that increases first-boot complexity and support-desk burden for lost/forgotten credentials.",
+        "Not selected for v1; T-8 remains accepted on the existing procedural control instead."
+      ],
+      "responsibility": "product"
+    },
+    {
+      "id": "CM-8",
+      "title": "Independent watchdog forces a fail-safe reset on firmware hang/crash/deadlock",
+      "description": "The existing, already-decided design assumption (AS-18): an independent hardware watchdog detects a firmware hang, crash, task deadlock, or other loss of application control, resets the device, and forces the analog output to the defined fail-safe fault current during the reset/restart sequence rather than holding a stale value. This is what allows T-19's safety-impact dimension to be rated 1 instead of the worst case.",
+      "type": "corrective",
+      "addresses": [
+        {
+          "threat": "T-19",
+          "residualLikelihood": 1,
+          "residualImpact": 3
+        }
+      ],
+      "components": [
+        "C-2",
+        "C-3",
+        "C-5"
+      ],
+      "iec62443Ref": "IEC 62443-4-2 CR 7.1",
+      "status": "planned",
+      "selected": true,
+      "ticketUrl": "https://tracker.rl100.test/browse/RLSEC-067",
+      "responsibility": "product"
+    },
+    {
+      "id": "CM-10",
+      "title": "Document plant perimeter-security responsibility in the user guide",
+      "description": "REQC001's requirement: the user guide must state the plant owner's/integrator's responsibility to physically secure the perimeter (loop wiring, RS-485 bus membership, tank/process area access) for the threats where the RL-100 itself cannot enforce protection (T-1, T-2, T-7, T-17). The user guide has not yet been drafted.",
+      "type": "organizational",
+      "addresses": [
+        {
+          "threat": "T-1"
+        },
+        {
+          "threat": "T-2"
+        },
+        {
+          "threat": "T-7"
+        },
+        {
+          "threat": "T-17"
+        }
+      ],
+      "iec62443Ref": "IEC 62443-4-1 SUM-2",
+      "status": "planned",
+      "selected": true,
+      "responsibility": "shared"
+    },
+    {
+      "id": "CM-9",
+      "title": "MCU JTAG/SWD production lockdown (readout protection) with controlled manufacturer recovery procedure",
+      "description": "REQC006's requirement, grounded in AS-17: JTAG/SWD disabled or access-protected (RDP) in production firmware, with any factory-debug/recovery state requiring Manufacturer-support-level authorization (AS-1) and re-lock before the unit leaves manufacturer control. Narrows the debug-port bypass path for T-13 and the key-extraction path for T-11, and also narrows T-22's debug-access bypass route against the bootloader's write-protection (AS-19); T-12's external-flash chip-off vector is a separate physical attack path not addressed by this control.",
+      "type": "preventive",
+      "addresses": [
+        {
+          "threat": "T-11",
+          "residualLikelihood": 0,
+          "residualImpact": 3
+        },
+        {
+          "threat": "T-13",
+          "residualLikelihood": 1,
+          "residualImpact": 3
+        },
+        {
+          "threat": "T-22",
+          "residualLikelihood": 0,
+          "residualImpact": 3
+        }
+      ],
+      "components": [
+        "C-2",
+        "C-7"
+      ],
+      "iec62443Ref": "IEC 62443-4-2 CR 3.11 / CR 7.6",
+      "status": "planned",
+      "selected": true,
+      "responsibility": "product"
+    },
+    {
+      "id": "CM-11",
+      "title": "Use validated cryptographic libraries for all cryptographic operations",
+      "description": "REQC012's requirement: firmware-signature verification, TLS on IF-4, and all other cryptographic operations use a validated, actively-maintained cryptographic library (e.g. mbedTLS, wolfSSL, or an equivalent vetted implementation), including constant-time implementations for secret-dependent comparisons, instead of a custom/in-house implementation. Reduces the likelihood that implementation-level weaknesses (timing side-channels, faulty verification logic, weak random-number generation) undermine T-13's signature check or T-21's TLS session.",
+      "type": "preventive",
+      "addresses": [
+        {
+          "threat": "T-13",
+          "residualLikelihood": 1,
+          "residualImpact": 3
+        },
+        {
+          "threat": "T-21",
+          "residualLikelihood": 1,
+          "residualImpact": 3
+        }
+      ],
+      "components": [
+        "C-3",
+        "C-7"
+      ],
+      "iec62443Ref": "IEC 62443-4-2 CR 4.3",
+      "status": "planned",
+      "selected": true,
+      "responsibility": "product"
+    },
+    {
+      "id": "CM-12",
+      "title": "Resource-limiting and load/resource-exhaustion testing gate for protocol services",
+      "description": "REQC013's requirement: HART, Modbus RTU, and Ethernet service-interface handling enforce resource limits (max concurrent connections, request-rate limiting, bounded per-connection buffer/state), exercised with a dedicated load/resource-exhaustion test gate before release, with resource exhaustion, hangs, or crashes under sustained load treated as release-blocking defects.",
+      "type": "preventive",
+      "addresses": [
+        {
+          "threat": "T-19",
+          "residualLikelihood": 1,
+          "residualImpact": 3
+        }
+      ],
+      "components": [
+        "C-3"
+      ],
+      "iec62443Ref": "IEC 62443-4-2 CR 7.1 / CR 7.2",
+      "status": "planned",
+      "selected": true,
+      "negativeEffects": [
+        "Availability risk from resource exhaustion remains open until this control and its test gate are implemented and passed; the watchdog (CM-8) already bounds the safety-impact dimension in the meantime."
+      ],
+      "responsibility": "product"
+    },
+    {
+      "id": "CM-13",
+      "title": "Replay protection (nonce/timestamp) on authenticated protocol writes",
+      "description": "REQC014's requirement: authenticated write-capable protocol interfaces (HART IF-2 per REQC003, and any future networked configuration interface) bind each authenticated write to a nonce or timestamp so a captured legitimate write cannot be replayed later to reproduce its effect.",
+      "type": "preventive",
+      "addresses": [
+        {
+          "threat": "T-5"
+        },
+        {
+          "threat": "T-18",
+          "residualLikelihood": 1,
+          "residualImpact": 3
+        }
+      ],
+      "components": [
+        "C-3"
+      ],
+      "iec62443Ref": "IEC 62443-4-2 CR 3.1 RE(1)",
+      "status": "planned",
+      "selected": true,
+      "responsibility": "product"
+    },
+    {
+      "id": "CM-14",
+      "title": "Documented key-management policy for firmware code-signing and bootloader provisioning",
+      "description": "REQC007's requirement: firmware code-signing keys are generated, stored, and used under a documented key-management policy (e.g. HSM-backed, access restricted to named roles, dual control for key use, logged signing events) at manufacturing/provisioning, so the bootloader's root-of-trust material (AS-19) and AS-3's signature check are not undermined by weak protection of the signing key itself.",
+      "type": "organizational",
+      "addresses": [
+        {
+          "threat": "T-22",
+          "residualLikelihood": 0,
+          "residualImpact": 3
+        }
+      ],
+      "iec62443Ref": "IEC 62443-4-1 SM-9",
+      "status": "planned",
+      "selected": true,
+      "responsibility": "product"
+    }
+  ]
+}

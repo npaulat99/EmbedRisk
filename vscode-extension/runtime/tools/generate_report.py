@@ -33,6 +33,14 @@ read = lambda p: json.loads((base / p).read_text(encoding="utf8"))
 scheme = json.loads((root / ".assets/knowledge-base/risk-scheme.json").read_text(encoding="utf8"))
 
 project = read("01-project-description/project.json")
+_DEFAULT_STEPS = {
+    "02-assumptions": "02-assumptions/assumptions.json",
+    "03-system-assets": "03-system-assets/system.json",
+    "04-dfd": "04-dfd/dfd.json",
+    "06-threats": "06-threats/threats.json",
+    "08-countermeasures": "08-countermeasures/countermeasures.json",
+}
+project["steps"] = {**_DEFAULT_STEPS, **(project.get("steps") if isinstance(project.get("steps"), dict) else {})}
 ass = read(project["steps"]["02-assumptions"])
 sys_def = read(project["steps"]["03-system-assets"])
 threats = read(project["steps"]["06-threats"])["threats"]
@@ -71,21 +79,25 @@ def dfd_svg(dfd, layer=1):
     return (f"<svg width='720' height='400' xmlns='http://www.w3.org/2000/svg'><defs><marker id='a' markerWidth='8' markerHeight='8' refX='7' refY='3' orient='auto'><path d='M0,0L7,3L0,6' fill='#666'/></marker></defs>{''.join(out)}</svg>")
 
 def band(r):
+    if r <= 0:
+        return {"name": "None", "min": 0, "max": 0, "color": "#6b7280"}
     return next((b for b in scheme["matrix"]["bands"] if b["min"] <= r <= b["max"]), scheme["matrix"]["bands"][0])
 
 def residual(t):
-    links = [a for c in cms for a in c["addresses"] if a["threat"] == t["id"]]
-    if not links:
-        return t["likelihood"], t["impact"]
-    # Single most-protective control (lowest residual product). Never combine the best likelihood
-    # from one control with the best impact from another (Mauw & Oostdijk 2005; ISO/IEC 27005).
-    best, best_score = (t["likelihood"], t["impact"]), None
-    for a in links:
-        rl = a.get("residualLikelihood", t["likelihood"]); ri = a.get("residualImpact", t["impact"])
-        s = (rl or 0) * (ri or 0)
-        if best_score is None or s < best_score:
-            best_score, best = s, (rl, ri)
-    return best
+    # Mirrors webapp/server/src/risk.js: unfeasible -> 0/0; only selected countermeasures count;
+    # likelihood and impact minima are taken independently across links.
+    if t.get("status") == "unfeasible":
+        return 0, 0
+    l, i = t["likelihood"], t["impact"]
+    for c in cms:
+        if c.get("selected") is False:
+            continue
+        for a in c.get("addresses") or []:
+            if a.get("threat") == t["id"]:
+                rl = a.get("residualLikelihood"); ri = a.get("residualImpact")
+                l = min(l, t["likelihood"] if rl is None else rl)
+                i = min(i, t["impact"] if ri is None else ri)
+    return l, i
 
 ids = {c["id"] for c in sys_def["components"]}
 tids = {t["id"] for t in threats}
@@ -147,19 +159,24 @@ for inst, sname in [(project, "tra-project"), (ass, "assumptions"), (sys_def, "s
     except Exception as ex:
         issues.append(f"schema [{sname}] {ex}")
 
+def cell(l, i, v):
+    b = band(v)
+    return f"{l}x{i}=<b style='color:{b['color']}'>{v} {b['name']}</b>"
+
 rows = ""
 for t in threats:
-    r = t["likelihood"] * t["impact"]; rl, ri = residual(t); rr = rl * ri
+    unf = t.get("status") == "unfeasible"; na = "<b>n/a (unfeasible)</b>"
+    r = 0 if t.get("status") == "unfeasible" else t["likelihood"] * t["impact"]; rl, ri = residual(t); rr = rl * ri
     classification = [
         f"<b>Classification:</b> {html_lib.escape(str(t.get('classification') or '—'), quote=True)}",
         f"<b>Responsibility:</b> {html_lib.escape(str(t.get('responsibility') or '—'), quote=True)}",
     ]
     if t.get("deploymentConstraints"):
         classification.append(f"<b>Deployment constraints:</b> {html_lib.escape(str(t['deploymentConstraints']), quote=True)}")
-    rows += f"<tr><td>{html_lib.escape(str(t['id']), quote=True)}</td><td>{html_lib.escape(str(t['title']), quote=True)}</td><td>{html_lib.escape(''.join(t['stride']), quote=True)}</td><td>{'<br>'.join(classification)}</td><td>{t['likelihood']}x{t['impact']}=<b style='color:{band(r)['color']}'>{r} {band(r)['name']}</b></td><td>{rl}x{ri}=<b style='color:{band(rr)['color']}'>{rr} {band(rr)['name']}</b></td><td>{html_lib.escape(str(t['status']), quote=True)}</td></tr>"
+    rows += f"<tr><td>{html_lib.escape(str(t['id']), quote=True)}</td><td>{html_lib.escape(str(t['title']), quote=True)}</td><td>{html_lib.escape(''.join(t['stride']), quote=True)}</td><td>{'<br>'.join(classification)}</td><td>{na if unf else cell(t['likelihood'], t['impact'], r)}</td><td>{na if unf else cell(rl, ri, rr)}</td><td>{html_lib.escape(str(t['status']), quote=True)}</td></tr>"
 
 assets = "".join(f"<li>{a['name']} (C{a['objectives']['confidentiality']}/I{a['objectives']['integrity']}/A{a['objectives']['availability']}/S{a['objectives']['safety']})</li>" for a in sys_def["assets"])
-atk = "".join(f"<li><b>{a['name']}</b> cap {a['capability']}, {a['access']}: {a['text']}</li>" for a in ass["attacker"])
+atk = "".join(f"<li><b>{html_lib.escape(str(a.get('name','')), quote=True)}</b> cap {html_lib.escape(str(a.get('capability','—')), quote=True)}, {html_lib.escape(str(a.get('access','—')), quote=True)}: {html_lib.escape(str(a.get('text','')), quote=True)}</li>" for a in ass["attacker"])
 cmrows = "".join(f"<li><b>{c['id']}</b> {c['title']} → {', '.join(a['threat'] for a in c['addresses'])} ({c.get('status','')})</li>" for c in cms)
 
 def _esc(s):
@@ -181,13 +198,22 @@ try:
 except Exception:
     trees = []
 trees_html = ""
+def _tree_threat_refs(tr):
+    # De-duplicated union of threatRefs[] and legacy threatRef (same rule as the webapp and attacktree-model.js threatRefsOf).
+    refs = tr.get("threatRefs")
+    refs = list(refs) if isinstance(refs, list) else []
+    if tr.get("threatRef"):
+        refs.append(tr.get("threatRef"))
+    return list(dict.fromkeys(r for r in refs if isinstance(r, str) and r))
+
 for tr in trees:
-    tref = tr.get("threatRef")
-    if tref and tref not in tids:
-        issues.append(f"Attack tree '{tr.get('id')}' references unknown threat '{tref}'.")
+    trefs = _tree_threat_refs(tr)
+    for tref in trefs:
+        if tref not in tids:
+            issues.append(f"Attack tree '{tr.get('id')}' references unknown threat '{tref}'.")
     heading = _esc(tr.get("title", tr.get("id", "")))
-    if tref:
-        heading += f" &mdash; {tref}"
+    if trefs:
+        heading += f" &mdash; {_esc(', '.join(trefs))}"
     trees_html += f"<h3>{heading}</h3>{('<ul><li>' + _tree_ul(tr['root']) + '</li></ul>') if tr.get('root') else ''}"
 trees_section = f"<h2>Attack trees</h2>{trees_html}" if trees_html else ""
 

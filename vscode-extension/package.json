@@ -2,7 +2,7 @@
   "name": "embedrisk",
   "displayName": "EmbedRisk — Threat & Risk Assessment",
   "description": "Guided Threat & Risk Assessment for embedded OT field devices: a layered DFD editor, STRIDE threats, attack-defence trees and reports. The VS Code companion to the EmbedRisk web app (shared JSON project format).",
-  "version": "0.3.4",
+  "version": "0.4.0",
   "publisher": "npaulat",
   "repository": {
     "type": "git",
@@ -31,6 +31,11 @@
   "contributes": {
     "commands": [
       {
+        "command": "embedrisk.gettingStarted",
+        "title": "Getting started walkthrough",
+        "category": "EmbedRisk"
+      },
+      {
         "command": "embedrisk.newProject",
         "title": "New Project",
         "category": "EmbedRisk"
@@ -53,6 +58,11 @@
       {
         "command": "embedrisk.kbImport",
         "title": "Import knowledge base (git)",
+        "category": "EmbedRisk"
+      },
+      {
+        "command": "embedrisk.kbRemove",
+        "title": "Remove imported knowledge base",
         "category": "EmbedRisk"
       },
       {
@@ -89,6 +99,121 @@
         "command": "embedrisk.report",
         "title": "Generate report",
         "category": "EmbedRisk"
+      },
+      {
+        "command": "embedrisk.exportTraceabilityCsv",
+        "title": "Export traceability (CSV)",
+        "category": "EmbedRisk"
+      },
+      {
+        "command": "embedrisk.exportTraceabilityJson",
+        "title": "Export traceability (JSON)",
+        "category": "EmbedRisk"
+      },
+      {
+        "command": "embedrisk.exportSbom",
+        "title": "Export SBOM",
+        "category": "EmbedRisk"
+      },
+      {
+        "command": "embedrisk.dfdOverviewRefresh",
+        "title": "Refresh DFD overview",
+        "category": "EmbedRisk",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "embedrisk.dashboardRefresh",
+        "title": "Refresh dashboard",
+        "category": "EmbedRisk",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "embedrisk.dfdOverviewOpen",
+        "title": "Open DFD overview layer",
+        "category": "EmbedRisk"
+      }
+    ],
+    "walkthroughs": [
+      {
+        "id": "embedrisk.gettingStarted",
+        "title": "Get started with EmbedRisk",
+        "description": "Learn the EmbedRisk threat & risk assessment workflow inside VS Code.",
+        "steps": [
+          {
+            "id": "project",
+            "title": "Set up a project",
+            "description": "Create a self-contained TRA project folder (01-project-description … 09-defects) and describe the device scope, intended use and security-level target.\n[New Project](command:embedrisk.newProject)",
+            "media": {
+              "markdown": "media/walkthrough/project.md"
+            },
+            "completionEvents": [
+              "onCommand:embedrisk.newProject"
+            ]
+          },
+          {
+            "id": "navigation",
+            "title": "Work through the steps",
+            "description": "The guided wizard follows the methodology left to right: assumptions, system & assets, DFD, use cases, threats, attack trees, countermeasures, requirements and review. Revisit any step — a TRA is iterative.\n[Open guided wizard](command:embedrisk.wizard)",
+            "media": {
+              "markdown": "media/walkthrough/navigation.md"
+            },
+            "completionEvents": [
+              "onCommand:embedrisk.wizard"
+            ]
+          },
+          {
+            "id": "dfd",
+            "title": "Model the data flow diagram",
+            "description": "Draw components, data flows and trust boundaries on layered DFDs. Drill into a component with Ctrl+Alt+Down and back up with Ctrl+Alt+Up.\n[Open DFD canvas](command:embedrisk.dfdNative)",
+            "media": {
+              "markdown": "media/walkthrough/dfd.md"
+            },
+            "completionEvents": [
+              "onCommand:embedrisk.dfdNative"
+            ]
+          },
+          {
+            "id": "threats",
+            "title": "Identify STRIDE threats",
+            "description": "Derive Spoofing, Tampering, Repudiation, Information-disclosure, Denial-of-service and Elevation-of-privilege threats from the DFD, link them to assets and refine them with attack trees.\n[New attack tree for a threat](command:embedrisk.newAttackTree)",
+            "media": {
+              "markdown": "media/walkthrough/threats.md"
+            },
+            "completionEvents": [
+              "onCommand:embedrisk.newAttackTree"
+            ]
+          },
+          {
+            "id": "risk",
+            "title": "Rate risk and plan countermeasures",
+            "description": "Rate likelihood × impact, compare against the acceptable-risk threshold and map countermeasures to threats. Validation findings appear in the Problems panel.\n[Open guided wizard](command:embedrisk.wizard)",
+            "media": {
+              "markdown": "media/walkthrough/risk.md"
+            }
+          },
+          {
+            "id": "reports",
+            "title": "Generate reports and exports",
+            "description": "Produce the TRA report and export traceability (CSV/JSON) or an SBOM from the open project.\n[Generate report](command:embedrisk.report)",
+            "media": {
+              "markdown": "media/walkthrough/reports.md"
+            },
+            "completionEvents": [
+              "onCommand:embedrisk.report"
+            ]
+          },
+          {
+            "id": "settings",
+            "title": "Tune project settings",
+            "description": "Choose the risk-scoring method, cost-factor weights, likelihood thresholds, acceptable risk, rigorous mode and report content in VS Code settings.\n[Open EmbedRisk settings](command:workbench.action.openSettings?%5B%22embedrisk.project%22%5D)",
+            "media": {
+              "markdown": "media/walkthrough/settings.md"
+            },
+            "completionEvents": [
+              "onSettingChanged:embedrisk.project.riskScoringMethod"
+            ]
+          }
+        ]
       }
     ],
     "keybindings": [
@@ -101,6 +226,123 @@
         "key": "ctrl+alt+up"
       }
     ],
+    "configuration": {
+      "title": "EmbedRisk",
+      "properties": {
+        "embedrisk.project.riskScoringMethod": {
+          "type": "string",
+          "enum": [
+            "cost-based",
+            "exposure-exploitability-impact"
+          ],
+          "default": "cost-based",
+          "scope": "resource",
+          "description": "Project risk-scoring method."
+        },
+        "embedrisk.project.costFactorWeights": {
+          "type": "object",
+          "default": {
+            "time": 0.25,
+            "exploitability": 0.2,
+            "window": 0.15,
+            "detection": 0.15,
+            "notoriety": 0.1,
+            "prep": 0.1,
+            "abort": 0.05
+          },
+          "scope": "resource",
+          "description": "Project cost-factor weights. Values should total 1.00.",
+          "properties": {
+            "time": { "type": "number", "minimum": 0, "maximum": 1 },
+            "exploitability": { "type": "number", "minimum": 0, "maximum": 1 },
+            "window": { "type": "number", "minimum": 0, "maximum": 1 },
+            "detection": { "type": "number", "minimum": 0, "maximum": 1 },
+            "notoriety": { "type": "number", "minimum": 0, "maximum": 1 },
+            "prep": { "type": "number", "minimum": 0, "maximum": 1 },
+            "abort": { "type": "number", "minimum": 0, "maximum": 1 }
+          }
+        },
+        "embedrisk.project.accessProbabilities": {
+          "type": "object",
+          "default": {
+            "1": 0.9,
+            "2": 0.7,
+            "3": 0.5,
+            "4": 0.3,
+            "5": 0.1
+          },
+          "scope": "resource",
+          "description": "Project probability of obtaining each required access level.",
+          "properties": {
+            "1": { "type": "number", "minimum": 0.05, "maximum": 1 },
+            "2": { "type": "number", "minimum": 0.05, "maximum": 1 },
+            "3": { "type": "number", "minimum": 0.05, "maximum": 1 },
+            "4": { "type": "number", "minimum": 0.05, "maximum": 1 },
+            "5": { "type": "number", "minimum": 0.05, "maximum": 1 }
+          }
+        },
+        "embedrisk.project.likelihoodProbabilityThresholds": {
+          "type": "object",
+          "default": {
+            "2": 0.3,
+            "3": 0.5,
+            "4": 0.7,
+            "5": 0.9
+          },
+          "scope": "resource",
+          "description": "Lower probability bounds for likelihood levels L2 through L5.",
+          "properties": {
+            "2": { "type": "number", "minimum": 0.01, "maximum": 1 },
+            "3": { "type": "number", "minimum": 0.01, "maximum": 1 },
+            "4": { "type": "number", "minimum": 0.01, "maximum": 1 },
+            "5": { "type": "number", "minimum": 0.01, "maximum": 1 }
+          }
+        },
+        "embedrisk.project.acceptableRisk": {
+          "type": "number",
+          "default": 12,
+          "minimum": 0,
+          "maximum": 25,
+          "scope": "resource",
+          "description": "Acceptable residual-risk threshold; warnings appear above this value."
+        },
+        "embedrisk.project.rigorousMode": {
+          "type": "boolean",
+          "default": false,
+          "scope": "resource",
+          "description": "Require Bug Bar dimensions, exposure/exploitability, and a named rater on every threat."
+        },
+        "embedrisk.project.reportOptions.includeStrideBoundaryAnalysis": {
+          "type": "boolean",
+          "default": false,
+          "scope": "resource",
+          "description": "Include STRIDE-per-trust-boundary tables in reports."
+        }
+      }
+    },
+    "views": {
+      "explorer": [
+        {
+          "id": "embedrisk.dashboard",
+          "name": "EmbedRisk Dashboard",
+          "when": "workspaceFolderCount > 0"
+        },
+        {
+          "id": "embedrisk.dfdOverview",
+          "name": "EmbedRisk DFD Overview",
+          "when": "workspaceFolderCount > 0"
+        }
+      ]
+    },
+    "menus": {
+      "commandPalette": [
+        { "command": "embedrisk.dfdOverviewOpen", "when": "false" }
+      ],
+      "view/title": [
+        { "command": "embedrisk.dashboardRefresh", "when": "view == embedrisk.dashboard", "group": "navigation" },
+        { "command": "embedrisk.dfdOverviewRefresh", "when": "view == embedrisk.dfdOverview", "group": "navigation" }
+      ]
+    },
     "customEditors": [
       {
         "viewType": "embedrisk.dfdNative",
@@ -157,7 +399,9 @@
     "@types/node": "^20.0.0",
     "@types/vscode": "^1.85.0",
     "@vscode/vsce": "^3.9.2",
+    "ajv": "^8.20.0",
     "esbuild": "^0.28.1",
+    "jsdom": "^30.1.3",
     "typescript": "^5.5.0"
   },
   "overrides": {

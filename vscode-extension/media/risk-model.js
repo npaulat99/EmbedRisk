@@ -12,34 +12,37 @@
   function bandsOf(scheme) {
     return scheme && scheme.matrix && scheme.matrix.bands && scheme.matrix.bands.length ? scheme.matrix.bands : DEFAULT_BANDS;
   }
+  /* A zero likelihood or impact means the threat is not possible — risk 0, its own band. */
+  var NONE_BAND = { name: "None", min: 0, max: 0, color: "#6b7280" };
   function band(score, scheme) {
+    if (score <= 0) return NONE_BAND;
     var bands = bandsOf(scheme);
     return bands.find(function (b) { return score >= b.min && score <= b.max; }) || bands[0];
   }
 
-  /* Residual [likelihood, impact] across all countermeasure links.
-     Pick the SINGLE most-protective control (lowest residual product). Never combine the best
-     likelihood from one control with the best impact from another (Mauw & Oostdijk 2005;
-     ISO/IEC 27005 residual semantics) — that yields a residual no single control achieves. */
+  /* Residual [likelihood, impact] across all selected countermeasure links (selected === false is skipped).
+     All applied controls are in effect simultaneously, so an attacker must overcome the strongest one on
+     each axis: the residual likelihood is the LOWEST residual likelihood any single control achieves (the
+     most protective control dominates), and likewise for impact. Unfeasible threats have no residual. */
   function residual(threat, cms) {
+    if (threat.status === "unfeasible") return [0, 0];
     var links = [];
     (cms || []).forEach(function (c) {
+      if (c.selected === false) return;
       (c.addresses || []).forEach(function (a) { if (a.threat === threat.id) links.push(a); });
     });
     if (!links.length) return [threat.likelihood, threat.impact];
-    var best = [threat.likelihood, threat.impact];
-    var bestScore = Infinity;
+    var rl = threat.likelihood;
+    var ri = threat.impact;
     links.forEach(function (a) {
-      var rl = a.residualLikelihood == null ? threat.likelihood : a.residualLikelihood;
-      var ri = a.residualImpact == null ? threat.impact : a.residualImpact;
-      var s = (rl || 0) * (ri || 0);
-      if (s < bestScore) { bestScore = s; best = [rl, ri]; }
+      rl = Math.min(rl, a.residualLikelihood == null ? threat.likelihood : a.residualLikelihood);
+      ri = Math.min(ri, a.residualImpact == null ? threat.impact : a.residualImpact);
     });
-    return best;
+    return [rl, ri];
   }
 
   function riskOf(threat, cms, scheme) {
-    var initial = (threat.likelihood || 0) * (threat.impact || 0);
+    var initial = threat.status === "unfeasible" ? 0 : (threat.likelihood || 0) * (threat.impact || 0);
     var r = residual(threat, cms);
     var res = (r[0] || 0) * (r[1] || 0);
     return {
@@ -50,6 +53,30 @@
       residualLikelihood: r[0],
       residualImpact: r[1],
     };
+  }
+
+  /* Read-only matrix, ordered like the webapp: impact descending, likelihood ascending.
+     Off-grid values are deliberately omitted, never clamped or written back. */
+  function matrix(threats, cms, scheme, acceptableRisk, mode) {
+    var threshold = typeof acceptableRisk === "number" ? acceptableRisk : 12;
+    var ids = {}, cells = [];
+    (threats || []).forEach(function (t) {
+      if (t.status === "unfeasible") return;
+      var r = riskOf(t, cms, scheme);
+      var l = mode === "initial" ? t.likelihood : r.residualLikelihood;
+      var i = mode === "initial" ? t.impact : r.residualImpact;
+      (ids[l + "-" + i] = ids[l + "-" + i] || []).push(t.id);
+    });
+    for (var i = 5; i >= 1; i--) {
+      for (var l = 1; l <= 5; l++) {
+        var score = l * i, acceptable = score <= threshold;
+        cells.push({ likelihood: l, impact: i, score: score, band: band(score, scheme),
+          ids: ids[l + "-" + i] || [],
+          boundaryTop: i < 5 && acceptable !== (l * (i + 1) <= threshold),
+          boundaryRight: l < 5 && acceptable !== ((l + 1) * i <= threshold) });
+      }
+    }
+    return { cells: cells, bands: bandsOf(scheme), threshold: threshold };
   }
 
   /* Bug Bar: impact is the worst plausible dimension (max of C/I/A/Safety). */
@@ -230,7 +257,7 @@
     return cvss3BaseScore(vector);
   }
 
-  var api = { DEFAULT_BANDS: DEFAULT_BANDS, bandsOf: bandsOf, band: band, residual: residual, riskOf: riskOf, deriveImpact: deriveImpact, deriveLikelihood: deriveLikelihood, bandClass: bandClass, cvss3BaseScore: cvss3BaseScore, cvss4BaseScore: cvss4BaseScore, cvssBaseScore: cvssBaseScore, cvssExploitability: cvssExploitability, exposureFromInterface: exposureFromInterface };
+  var api = { matrix: matrix, DEFAULT_BANDS: DEFAULT_BANDS, bandsOf: bandsOf, band: band, residual: residual, riskOf: riskOf, deriveImpact: deriveImpact, deriveLikelihood: deriveLikelihood, bandClass: bandClass, cvss3BaseScore: cvss3BaseScore, cvss4BaseScore: cvss4BaseScore, cvssBaseScore: cvssBaseScore, cvssExploitability: cvssExploitability, exposureFromInterface: exposureFromInterface };
   g.RiskModel = api;
   if (typeof module !== "undefined" && module.exports) module.exports = api;
 })(typeof window !== "undefined" ? window : globalThis);

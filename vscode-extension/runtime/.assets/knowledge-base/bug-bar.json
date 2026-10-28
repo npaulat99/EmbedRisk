@@ -1,0 +1,133 @@
+{
+    "$schema": "https://thesis.local/tra/schema/bug-bar.schema.json",
+    "version": "1.0",
+    "title": "Bug Bar — impact rating reference",
+    "description": "Four-dimensional impact rubric (Confidentiality, Integrity, Availability, Safety) for embedded OT field devices, after Fockel et al. / Phoenix Contact. Rate each affected dimension 1-5 using the worked scenarios; the threat impact is the maximum across dimensions. Edit this file (it lives in the shared knowledge base) to adapt the scenarios to your product class; commit and share it so a whole department rates consistently.",
+    "rule": "Impact = max(Confidentiality, Integrity, Availability, Safety) for the worst plausible affected asset. Safety dominates where a safety case is binding.",
+    "dimensions": [
+        {
+            "key": "confidentiality",
+            "label": "Confidentiality",
+            "levels": [
+                {
+                    "score": 1,
+                    "label": "Negligible",
+                    "scenario": "Only non-sensitive data exposed (e.g. device model, firmware version)."
+                },
+                {
+                    "score": 2,
+                    "label": "Minor",
+                    "scenario": "Local configuration or diagnostic data exposed; no credentials or process secrets."
+                },
+                {
+                    "score": 3,
+                    "label": "Moderate",
+                    "scenario": "Process values or measurement history exposed; limited business-sensitive disclosure."
+                },
+                {
+                    "score": 4,
+                    "label": "Major",
+                    "scenario": "Commissioning credentials, keys or recipe/parameter sets exposed for one device."
+                },
+                {
+                    "score": 5,
+                    "label": "Severe",
+                    "scenario": "Fleet-wide key material or a shared secret exposed, enabling mass compromise."
+                }
+            ]
+        },
+        {
+            "key": "integrity",
+            "label": "Integrity",
+            "levels": [
+                {
+                    "score": 1,
+                    "label": "Negligible",
+                    "scenario": "Cosmetic or self-correcting change; no effect on measurement or control."
+                },
+                {
+                    "score": 2,
+                    "label": "Minor",
+                    "scenario": "Bounded, detectable parameter change that operators readily notice and revert."
+                },
+                {
+                    "score": 3,
+                    "label": "Moderate",
+                    "scenario": "Measurement value or configuration falsified within plausible range; process disturbance."
+                },
+                {
+                    "score": 4,
+                    "label": "Major",
+                    "scenario": "Undetected falsification that can defeat a protection function on one site; firmware tamper."
+                },
+                {
+                    "score": 5,
+                    "label": "Severe",
+                    "scenario": "Persistent, undetectable manipulation (e.g. signed-update bypass) deployable across the fleet."
+                }
+            ]
+        },
+        {
+            "key": "availability",
+            "label": "Availability",
+            "levels": [
+                {
+                    "score": 1,
+                    "label": "Negligible",
+                    "scenario": "Momentary glitch; device self-recovers with no operational effect."
+                },
+                {
+                    "score": 2,
+                    "label": "Minor",
+                    "scenario": "Single device needs a manual restart; fail-safe value reported meanwhile."
+                },
+                {
+                    "score": 3,
+                    "label": "Moderate",
+                    "scenario": "Loss of measurement/view for one device for an extended period; manual workaround needed."
+                },
+                {
+                    "score": 4,
+                    "label": "Major",
+                    "scenario": "Repeated or fleet-affecting outage; loss of view of a protection-relevant function."
+                },
+                {
+                    "score": 5,
+                    "label": "Severe",
+                    "scenario": "Sustained denial of a safety-relevant function that forces a hazardous plant state."
+                }
+            ]
+        },
+        {
+            "key": "safety",
+            "label": "Safety",
+            "levels": [
+                {
+                    "score": 1,
+                    "label": "Negligible",
+                    "scenario": "No credible path to any safety effect."
+                },
+                {
+                    "score": 2,
+                    "label": "Minor",
+                    "scenario": "Theoretical safety relevance only; multiple independent barriers remain."
+                },
+                {
+                    "score": 3,
+                    "label": "Moderate",
+                    "scenario": "Contributes to a hazard only in combination with another independent failure."
+                },
+                {
+                    "score": 4,
+                    "label": "Major",
+                    "scenario": "Can demote or disable a protection function (e.g. SIL demotion); harm possible on one site."
+                },
+                {
+                    "score": 5,
+                    "label": "Severe",
+                    "scenario": "Directly enables a safety hazard (overfill, spill, fire) with environmental or human harm; fleet-wide."
+                }
+            ]
+        }
+    ]
+}

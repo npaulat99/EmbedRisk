@@ -1,5 +1,9 @@
 import assert from 'node:assert/strict';
-import { deriveVisibleInterfaceIds, flowBelongsToLayerContext, isDeviceBoundaryInterfaceFlow, isParentChildNodeFlow } from '../client/src/components/dfd/layerVisibility.js';
+import * as webappLayerVisibility from '../client/src/components/dfd/layerVisibility.js';
+let { deriveVisibleInterfaceIds, flowBelongsToLayerContext, isDeviceBoundaryInterfaceFlow, isParentChildNodeFlow } = webappLayerVisibility;
+
+export function runLayerVisibilityTests(api = webappLayerVisibility) {
+    ({ deriveVisibleInterfaceIds, flowBelongsToLayerContext, isDeviceBoundaryInterfaceFlow, isParentChildNodeFlow } = api);
 
 function baseFixture() {
     const components = [
@@ -133,11 +137,6 @@ function testExplicitHandoffMakesInterfaceVisible() {
     );
 }
 
-testDeviceBoundaryExceptionAppliesOnlyToRootDeviceLayer();
-testL2DeviceBoundaryShowsExternalInterfaceFlow();
-testL3DoesNotShowDescendantInterfaceWithoutContextFlow();
-testExplicitHandoffMakesInterfaceVisible();
-
 function testParentChildNodeFlowNeverBelongsToAnyLayer() {
     const fixture = baseFixture();
     // A flow directly between a container node and its own nested child (e.g. MCU -> Firmware)
@@ -172,6 +171,12 @@ function testParentChildNodeFlowNeverBelongsToAnyLayer() {
     );
 }
 
-testParentChildNodeFlowNeverBelongsToAnyLayer();
+    testDeviceBoundaryExceptionAppliesOnlyToRootDeviceLayer();
+    testL2DeviceBoundaryShowsExternalInterfaceFlow();
+    testL3DoesNotShowDescendantInterfaceWithoutContextFlow();
+    testExplicitHandoffMakesInterfaceVisible();
+    testParentChildNodeFlowNeverBelongsToAnyLayer();
+}
 
+runLayerVisibilityTests();
 console.log('dfd layer visibility tests passed');

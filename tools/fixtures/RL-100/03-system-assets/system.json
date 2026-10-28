@@ -1,0 +1,346 @@
+{
+  "components": [
+    {
+      "id": "DEV",
+      "name": "RL-100",
+      "kind": "device",
+      "parent": null,
+      "layer": 1
+    },
+    {
+      "id": "C-1",
+      "name": "Radar front-end & signal processing",
+      "kind": "hardware",
+      "parent": "DEV",
+      "layer": 2
+    },
+    {
+      "id": "C-2",
+      "name": "MCU (STM32H7)",
+      "kind": "hardware",
+      "parent": "DEV",
+      "layer": 2,
+      "provenance": "STMicroelectronics"
+    },
+    {
+      "id": "C-4",
+      "name": "Local HMI",
+      "kind": "hardware",
+      "parent": "DEV",
+      "layer": 2
+    },
+    {
+      "id": "C-5",
+      "name": "Power management",
+      "kind": "hardware",
+      "parent": "DEV",
+      "layer": 2
+    },
+    {
+      "id": "C-6",
+      "name": "External QSPI flash",
+      "kind": "hardware",
+      "parent": "DEV",
+      "layer": 2
+    },
+    {
+      "id": "C-3",
+      "name": "Firmware / RTOS",
+      "kind": "software",
+      "parent": "C-2",
+      "layer": 3
+    },
+    {
+      "id": "C-7",
+      "name": "Secure key storage",
+      "kind": "hardware",
+      "parent": "C-2",
+      "layer": 3,
+      "provenance": "STMicroelectronics",
+      "description": "Hardware-backed key storage capability built into the MCU (AS-9); holds cryptographic key material used for firmware-signature verification and, once defined, IF-4 session authentication."
+    }
+  ],
+  "interfaces": [
+    {
+      "id": "IF-1",
+      "name": "4-20 mA loop",
+      "component": "C-3",
+      "category": "external",
+      "exposure": "physical",
+      "protocol": "4-20mA"
+    },
+    {
+      "id": "IF-2",
+      "name": "HART",
+      "component": "C-3",
+      "category": "external",
+      "exposure": "physical",
+      "protocol": "HART"
+    },
+    {
+      "id": "IF-3",
+      "name": "Modbus RTU/RS-485",
+      "component": "C-3",
+      "category": "network",
+      "exposure": "adjacent",
+      "protocol": "Modbus RTU"
+    },
+    {
+      "id": "IF-4",
+      "name": "Ethernet service interface",
+      "component": "C-3",
+      "category": "network",
+      "exposure": "local",
+      "protocol": "TCP/IP",
+      "tag": "ETH"
+    },
+    {
+      "id": "IF-5",
+      "name": "USB-C service interface",
+      "component": "C-3",
+      "category": "external",
+      "exposure": "physical",
+      "protocol": "USB",
+      "tag": "USB-C"
+    },
+    {
+      "id": "IF-6",
+      "name": "Local HMI (buttons/display)",
+      "component": "C-4",
+      "category": "user",
+      "exposure": "physical",
+      "tag": "HMI"
+    },
+    {
+      "id": "IF-7",
+      "name": "JTAG/SWD debug interface",
+      "component": "C-2",
+      "category": "external",
+      "exposure": "physical",
+      "protocol": "SWD/JTAG",
+      "tag": "JTAG"
+    }
+  ],
+  "trustBoundaries": [
+    {
+      "id": "TB-1",
+      "name": "Device housing",
+      "members": [
+        "DEV"
+      ]
+    },
+    {
+      "id": "TB-2",
+      "name": "MCU secure key storage",
+      "members": [
+        "C-7"
+      ]
+    }
+  ],
+  "assets": [
+    {
+      "id": "AS-A1",
+      "name": "Radar front-end & signal path",
+      "type": "physical-process",
+      "components": [
+        "C-1"
+      ],
+      "objectives": {
+        "confidentiality": 0,
+        "integrity": 3,
+        "availability": 3,
+        "safety": 3
+      }
+    },
+    {
+      "id": "AS-A2",
+      "name": "MCU platform + firmware/RTOS",
+      "type": "function",
+      "components": [
+        "C-2",
+        "C-3"
+      ],
+      "objectives": {
+        "confidentiality": 1,
+        "integrity": 3,
+        "availability": 3,
+        "safety": 3
+      }
+    },
+    {
+      "id": "AS-A3",
+      "name": "4-20 mA analog output",
+      "type": "physical-process",
+      "components": [
+        "C-3"
+      ],
+      "objectives": {
+        "confidentiality": 0,
+        "integrity": 3,
+        "availability": 3,
+        "safety": 3
+      }
+    },
+    {
+      "id": "AS-A4",
+      "name": "HART channel",
+      "type": "function",
+      "components": [
+        "C-3"
+      ],
+      "objectives": {
+        "confidentiality": 1,
+        "integrity": 2,
+        "availability": 1,
+        "safety": 2
+      }
+    },
+    {
+      "id": "AS-A5",
+      "name": "Modbus RTU/RS-485 interface",
+      "type": "function",
+      "components": [
+        "C-3"
+      ],
+      "objectives": {
+        "confidentiality": 1,
+        "integrity": 2,
+        "availability": 2,
+        "safety": 2
+      }
+    },
+    {
+      "id": "AS-A6",
+      "name": "Ethernet service interface",
+      "type": "function",
+      "components": [
+        "C-3"
+      ],
+      "objectives": {
+        "confidentiality": 2,
+        "integrity": 2,
+        "availability": 1,
+        "safety": 1
+      }
+    },
+    {
+      "id": "AS-A7",
+      "name": "USB-C service interface",
+      "type": "function",
+      "components": [
+        "C-3"
+      ],
+      "objectives": {
+        "confidentiality": 2,
+        "integrity": 2,
+        "availability": 1,
+        "safety": 2
+      }
+    },
+    {
+      "id": "AS-A8",
+      "name": "Local HMI",
+      "type": "function",
+      "components": [
+        "C-4"
+      ],
+      "objectives": {
+        "confidentiality": 0,
+        "integrity": 2,
+        "availability": 1,
+        "safety": 2
+      }
+    },
+    {
+      "id": "AS-A9",
+      "name": "Power management",
+      "type": "physical-process",
+      "components": [
+        "C-5"
+      ],
+      "objectives": {
+        "confidentiality": 0,
+        "integrity": 1,
+        "availability": 3,
+        "safety": 3
+      }
+    },
+    {
+      "id": "AS-A10",
+      "name": "Firmware image / update mechanism",
+      "type": "firmware",
+      "components": [
+        "C-6",
+        "C-3"
+      ],
+      "storage": "External QSPI flash",
+      "objectives": {
+        "confidentiality": 1,
+        "integrity": 3,
+        "availability": 1,
+        "safety": 3
+      }
+    },
+    {
+      "id": "AS-A11",
+      "name": "Event/diagnostic log data",
+      "type": "data",
+      "components": [
+        "C-6",
+        "C-3"
+      ],
+      "storage": "External QSPI flash (circular buffer)",
+      "objectives": {
+        "confidentiality": 1,
+        "integrity": 2,
+        "availability": 1,
+        "safety": 0
+      }
+    },
+    {
+      "id": "AS-A12",
+      "name": "Calibration/configuration data",
+      "type": "config",
+      "components": [
+        "C-2",
+        "C-3"
+      ],
+      "storage": "Internal MCU flash/NVM (dedicated configuration area)",
+      "objectives": {
+        "confidentiality": 1,
+        "integrity": 3,
+        "availability": 2,
+        "safety": 3
+      }
+    },
+    {
+      "id": "AS-A13",
+      "name": "Cryptographic key material",
+      "type": "credential",
+      "components": [
+        "C-7"
+      ],
+      "storage": "STM32H7 internal secure key storage (specific mechanism to be confirmed, Q-23)",
+      "objectives": {
+        "confidentiality": 3,
+        "integrity": 3,
+        "availability": 1,
+        "safety": 2
+      }
+    },
+    {
+      "id": "AS-A14",
+      "name": "User/role credentials",
+      "type": "credential",
+      "components": [
+        "C-3"
+      ],
+      "objectives": {
+        "confidentiality": 2,
+        "integrity": 2,
+        "availability": 0,
+        "safety": 1
+      }
+    }
+  ]
+}
