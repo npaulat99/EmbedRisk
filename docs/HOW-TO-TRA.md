@@ -86,6 +86,8 @@ Output: clear model boundary and assessment goal.
 
 Document attacker profiles and environmental assumptions. Avoid generic attackers only; describe realistic access and capability.
 
+The target SL-C selects the managed attacker profile; see [Target SL-C and the modelled attacker](../README.md#target-sl-c-and-the-modelled-attacker).
+
 Output: explicit threat plausibility basis.
 
 ### Step 03: System assets
@@ -164,6 +166,7 @@ Start with these, then go deeper only as needed:
 - Threat Modeling Manifesto: https://www.threatmodelingmanifesto.org
 - Adam Shostack (resources and articles): https://shostack.org/resources/
 - IEC 62443 overview (ISA): https://www.isa.org/standards-and-publications/isa-standards/isa-iec-62443-series-of-standards
+- Attacker scale used by EmbedRisk: [Target SL-C and the modelled attacker](../README.md#target-sl-c-and-the-modelled-attacker)
 
 ## 7. Suggested operating rhythm
 

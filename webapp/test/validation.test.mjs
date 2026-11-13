@@ -210,6 +210,42 @@ function testLikelihoodThresholdValidation() {
     assert.ok(warnings.includes('Likelihood probability thresholds must be strictly increasing from L2 through L5 and within 0.01 to 1.00.'));
 }
 
+function slcProject(level, capability, requiredSkill) {
+    const project = baseProject();
+    const id = `ATK-SLC-${level}`;
+    project.project = { slTarget: `SL-C ${level}`, riskScoringMethod: 'cost-based' };
+    project.assumptions.attacker = [{ id, name: 'Managed', capability }];
+    project.threats.threats.push({
+        id: 'T-1', title: 'Cost threat', stride: ['T'], components: ['C-1'], assets: ['AS-1'], attackerRef: id,
+        likelihood: 1, impact: 3, requiredSkill, requiredAccess: 3, status: 'open',
+    });
+    return validate(project);
+}
+
+function testActorScaleValidation() {
+    const profileWarning = (issues) => issues.some((i) => i.key === 'slc-attacker-profile');
+    const overCapability = (issues) => issueMessages(issues, 'warning').some((m) => m.includes('required skill exceeds'));
+    const legacyKeys = (issues) => issues.filter((i) => i.key.startsWith('legacy-actor-level:')).map((i) => i.key);
+
+    let issues = slcProject(4, 4, 4);
+    assert.ok(!profileWarning(issues));
+    assert.ok(!overCapability(issues));
+    assert.deepEqual(legacyKeys(issues), []);
+
+    issues = slcProject(4, 5, 5);
+    assert.ok(!profileWarning(issues));
+    assert.ok(!overCapability(issues));
+    assert.deepEqual(legacyKeys(issues), ['legacy-actor-level:ATK-SLC-4', 'legacy-actor-level:T-1']);
+
+    assert.ok(overCapability(slcProject(3, 3, 4)));
+    assert.ok(!overCapability(slcProject(3, 3, 3)));
+
+    const project = baseProject();
+    project.attackTrees.trees.push({ id: 'AT-1', root: { id: 'N-1', children: [{ id: 'N-2', skill: 5 }] } });
+    assert.deepEqual(validate(project).filter((i) => i.key.startsWith('legacy-actor-level:')).map((i) => i.key), ['legacy-actor-level:AT-1:N-2']);
+}
+
+testActorScaleValidation();
 testClassificationNoticeAndTransferRequirementWarning();
 testDeploymentConstraintsRuleSkipsAcceptedOrTransferredAndFlagsOpen();
 testContradictoryProductVulnerabilityClassification();

@@ -3,13 +3,13 @@
 // and the threat -> requirement -> control chain). Severity is 'error' | 'warning' | 'notice';
 // notices (e.g. an intentionally standalone requirement) can be accepted via project.acceptedNotices.
 import { residual } from './risk.js';
+import { managedSlcAttacker, normalizeActorLevel } from '../../shared/attackerScale.js';
 
 const arr = (x) => (Array.isArray(x) ? x : []);
 const PROX = { remote: 1, adjacent: 2, local: 3, physical: 4 };
 const reqProx = (e) => (e >= 4 ? 1 : e === 3 ? 2 : e === 2 ? 3 : 4);
 const ID_PATTERN = /^[A-Za-z0-9 _\-:.]+$/;
 const DEFAULT_ACCEPTABLE_RISK = 12;
-const SLC_CAPABILITY = { 1: 1, 2: 2, 3: 3, 4: 5 };
 const COST_WEIGHT_KEYS = ['time', 'exploitability', 'window', 'detection', 'notoriety', 'prep', 'abort'];
 const DEFAULT_COST_WEIGHTS = { time: 0.25, exploitability: 0.2, window: 0.15, detection: 0.15, notoriety: 0.1, prep: 0.1, abort: 0.05 };
 
@@ -68,8 +68,9 @@ export function validate({ project = {}, assumptions = {}, system = {}, threats 
     if (!attackers.length) add('warning', 'No attacker assumptions (required to ground the likelihood assessment).', 'no-attacker');
     if (selectedSlc) {
         const expectedId = `ATK-SLC-${selectedSlc}`;
-        if (attackers.length !== 1 || attackers[0]?.id !== expectedId || attackers[0]?.capability !== SLC_CAPABILITY[selectedSlc])
-            add('warning', `SL-C ${selectedSlc} requires the managed attacker profile '${expectedId}' (capability ${SLC_CAPABILITY[selectedSlc]}).`, 'slc-attacker-profile');
+        const expectedCapability = managedSlcAttacker(selectedSlc).capability;
+        if (attackers.length !== 1 || attackers[0]?.id !== expectedId || normalizeActorLevel(attackers[0]?.capability) !== expectedCapability)
+            add('warning', `SL-C ${selectedSlc} requires the managed attacker profile '${expectedId}' (capability ${expectedCapability}).`, 'slc-attacker-profile');
     }
     const tbIds = new Set(arr(system.trustBoundaries).map((b) => b.id));
     const allIds = [
@@ -115,7 +116,7 @@ export function validate({ project = {}, assumptions = {}, system = {}, threats 
         const exploit = t.likelihoodFactors?.exploitability;
         if (atk && typeof exposure === 'number' && (PROX[atk.access] ?? 4) < reqProx(exposure))
             add('warning', `${t.id}: attacker ${atk.id} (${atk.access}) is not proximate enough to reach an exposure-${exposure} surface.`);
-        if (t.likelihood >= 3 && atk && typeof atk.capability === 'number' && typeof exploit === 'number' && atk.capability + exploit < 6)
+        if (t.likelihood >= 3 && atk && typeof atk.capability === 'number' && typeof exploit === 'number' && normalizeActorLevel(atk.capability) + exploit < 6)
             add('notice', `${t.id}: likelihood may be over-stated based on attacker ${atk.id}'s capability. Accept if this is intentional.`, `capability-gate:${t.id}`);
         if (costBased) {
             if (typeof t.requiredSkill !== 'number' || typeof t.requiredAccess !== 'number' || !t.costFactors)
@@ -130,7 +131,7 @@ export function validate({ project = {}, assumptions = {}, system = {}, threats 
                 add('warning', `${t.id}: cost-based scoring requires a rationale for each difficulty dimension.`);
             if (typeof t.costLikelihoodProposal === 'number' && t.likelihood !== t.costLikelihoodProposal)
                 add('notice', `${t.id}: manually selected likelihood (${t.likelihood}) differs from the calculated cost-based proposal (${t.costLikelihoodProposal}).`, `cost-likelihood-override:${t.id}:${t.costLikelihoodProposal}`);
-            if (selectedSlc && typeof t.requiredSkill === 'number' && t.requiredSkill > SLC_CAPABILITY[selectedSlc] && t.status !== 'unfeasible')
+            if (selectedSlc && typeof t.requiredSkill === 'number' && normalizeActorLevel(t.requiredSkill) > managedSlcAttacker(selectedSlc).capability && t.status !== 'unfeasible')
                 add('warning', `${t.id}: required skill exceeds the SL-C ${selectedSlc} attacker capability and should be marked unfeasible.`);
         }
         if (t.status === 'accepted' && (!t.acceptedBy || !t.acceptanceRationale || !t.reviewDate))
@@ -251,6 +252,17 @@ export function validate({ project = {}, assumptions = {}, system = {}, threats 
         const refs = [...new Set([...arr(tr.threatRefs), ...(tr.threatRef ? [tr.threatRef] : [])])];
         for (const ref of refs)
             if (!tIds.has(ref)) add('error', `Attack tree '${tr.id}' references unknown threat '${ref}'.`);
+    }
+    const legacyNotice = (id, key) => add('notice', `${id} uses legacy level 5, read as threat actor 4. Re-save to update.`, `legacy-actor-level:${key}`);
+    for (const a of attackers) if (a.capability === 5) legacyNotice(a.id, a.id);
+    for (const t of threatList) if (t.requiredSkill === 5) legacyNotice(t.id, t.id);
+    for (const tr of arr(attackTrees.trees)) {
+        const visit = (node) => {
+            if (!node) return;
+            if (node.skill === 5) legacyNotice(`${tr.id}/${node.id}`, `${tr.id}:${node.id}`);
+            arr(node.children).forEach(visit);
+        };
+        visit(tr.root);
     }
 
     const accepted = new Set(Array.isArray(project.acceptedNotices) ? project.acceptedNotices : []);

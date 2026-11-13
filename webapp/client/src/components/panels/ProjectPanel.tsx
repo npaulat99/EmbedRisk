@@ -102,6 +102,7 @@ export default function ProjectPanel() {
     const setView = useStore((s) => s.setView);
     const activeId = useStore((s) => s.activeId);
     const p = data.project;
+    const slcAttacker = attackerForSlc(p.slTarget);
     const set = (patch: any) => save('project', { ...p, ...patch });
     const setDevice = (patch: any) => set({ device: { ...(p.device || {}), ...patch } });
     const setScope = (patch: any) => set({ scope: { ...(p.scope || {}), ...patch } });
@@ -328,11 +329,18 @@ export default function ProjectPanel() {
                             <option value="whitebox">White-box — full internals</option>
                         </select>
                     </Field>
-                    <Field label="Target Security Level" hint="Sets the built-in SL-C attacker profile for this project.">
+                    <Field label="Target Security Level" hint="Selects the managed threat-actor profile used for feasibility.">
                         <select value={slcLevel(p.slTarget) || ''} onChange={(e) => e.target.value && setSlc(Number(e.target.value))}>
                             <option value="">Select SL-C level</option>
                             {[1, 2, 3, 4].map((level) => <option key={level} value={level}>SL-C {level}</option>)}
                         </select>
+                        {slcAttacker && (
+                            <div className="card" style={{ marginTop: 8 }}>
+                                <b>{slcAttacker.name}</b>
+                                <p style={{ margin: '4px 0' }}>{slcAttacker.text}</p>
+                                <p className="hint" style={{ margin: 0 }}>Capability {slcAttacker.capability} · Resources: {slcAttacker.resources} · Motivation: {slcAttacker.motivation}</p>
+                            </div>
+                        )}
                     </Field>
                     <Field label="Status">
                         <select value={p.status || 'draft'} onChange={(e) => set({ status: e.target.value })}>

@@ -2,6 +2,7 @@
 // Grounded in notes/topics/attack-trees.typ and bewertung.typ (cost factor weights,
 // access/skill aggregation) and Kordy et al. (AND/OR) + Jhawar et al. (SAND).
 import type { AdCost, AdGate, AdKind, AdNode } from '../types';
+import { ACTOR_LEVELS, actorLevelLabel, normalizeActorLevel } from '@shared/attackerScale.js';
 
 export const COST_FACTORS: { k: keyof AdCost; label: string; weight: number }[] = [
     { k: 'time', label: 'Time effort', weight: 0.25 },
@@ -60,7 +61,8 @@ export interface AdMetrics {
 
 const hasCostAssessment = (cost?: AdCost) => COST_FACTORS.some((factor) => typeof cost?.[factor.k] === 'number');
 const assessedStepProb = (cost: AdCost | undefined, weights?: CostWeights) => hasCostAssessment(cost) ? stepProb(cost, weights) : 1;
-const level = (value: unknown) => typeof value === 'number' && value >= 1 && value <= 5 ? value : 0;
+const accessLevel = (value: unknown) => typeof value === 'number' && value >= 1 && value <= 5 ? value : 0;
+const skillLevel = (value: unknown) => typeof value === 'number' && value >= 1 && value <= 5 ? normalizeActorLevel(value) as number : 0;
 
 /**
  * Bottom-up evaluation returning the attacker's success probability of the *cheapest* path
@@ -90,8 +92,8 @@ export function evaluate(node: AdNode, cmById?: Map<string, { status?: string }>
     const assessedNode = leafAttackStep || residualEntity;
     const assessmentCost = residualEntity ? node.residualCost : node.cost;
     let selfProb = assessedNode ? assessedStepProb(assessmentCost, weights) : 1;
-    let selfSkill = assessedNode ? level(node.skill) : 0;
-    let selfAccess = assessedNode ? level(node.access) : 0;
+    let selfSkill = assessedNode ? skillLevel(node.skill) : 0;
+    let selfAccess = assessedNode ? accessLevel(node.access) : 0;
 
     // Residual assessments modify only a leaf attack step. Structural AND/OR/SAND nodes aggregate
     // their child paths first; applying a low-probability vulnerability to an OR container would
@@ -102,8 +104,8 @@ export function evaluate(node: AdNode, cmById?: Map<string, { status?: string }>
     if (vulnerabilityResiduals.length) {
         const selected = vulnerabilityResiduals.reduce((best, child) => assessedStepProb(child.residualCost, weights) > assessedStepProb(best.residualCost, weights) ? child : best);
         selfProb = assessedStepProb(selected.residualCost, weights);
-        selfSkill = level(selected.skill);
-        selfAccess = level(selected.access);
+        selfSkill = skillLevel(selected.skill);
+        selfAccess = accessLevel(selected.access);
     }
 
     let skillReq: number;
@@ -202,15 +204,9 @@ export const accessProbability = (access: number, probabilities?: Partial<Record
     const value = probabilities?.[Math.round(access) as 1 | 2 | 3 | 4 | 5] ?? DEFAULT_ACCESS_PROBABILITIES[Math.round(access)] ?? 0.05;
     return Math.max(0.05, Math.min(1, value));
 };
-export const SKILL_OPTS: [number, string][] = [
-    [1, 'Script kiddie'],
-    [2, 'Experienced hacker'],
-    [3, 'Security engineer'],
-    [4, 'Expert team'],
-    [5, 'Nation-state'],
-];
+export const SKILL_OPTS: [number, string][] = ACTOR_LEVELS.map((entry) => [entry.level, entry.description]);
 export const accessLabel = (n: number) => ACCESS_OPTS.find(([v]) => v === Math.round(n))?.[1] || '–';
-export const skillLabel = (n: number) => SKILL_OPTS.find(([v]) => v === Math.round(n))?.[1] || '–';
+export const skillLabel = (n: number) => actorLevelLabel(n);
 
 /** A fresh node of the given kind, with sensible defaults (steps get access/skill/cost; structural
  *  nodes get a default gate). Attack and defence nodes are created the same way. */

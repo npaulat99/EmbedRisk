@@ -114,6 +114,30 @@ The risk method uses:
 - impact dimensions across Confidentiality, Integrity, Availability, and Safety,
 - attacker-profile-grounded assumptions to reduce subjective scoring.
 
+## Target SL-C and the modelled attacker
+
+Selecting target SL-C *n* sets the single managed attacker profile `ATK-SLC-n` with capability *n*; all threats reference it.
+
+Attacker capability, a threat's required capability (`requiredSkill`) and the capability of an attack-tree step share one 4-level threat-actor scale. A threat whose required capability exceeds the profile's capability is marked unfeasible (L0) in cost-based scoring. In matrix mode the capability is only used for the plausibility notice.
+
+| Level | Threat actor (draft EN IEC 62443-4-1:2018/prAA:2026) | SL-C *n* assumption (draft EN IEC 62443-4-2:2019/prAA:2026) |
+| --- | --- | --- |
+| 1 | Casual or coincidental violation | Reduces at minimum the risk of casual or coincidental misuse |
+| 2 | Intentional violation using simple means with low resources, generic skills and low motivation | Reduces at minimum the risk of misuse by entities using simple means with low resources, generic skills and low motivation |
+| 3 | Intentional violation using sophisticated means with moderate resources, ACS specific skills and moderate motivation | Reduces at minimum the risk of misuse by entities using sophisticated means with moderate resources, ACS specific skills and moderate motivation |
+| 4 | Intentional violation using sophisticated means with extended resources, ACS specific skills and high motivation | Reduces at minimum the risk of misuse |
+
+The supplied SL 4 sentence has no actor characteristics, so the actor 4 text from 4-1 is used for level 4.
+
+This mapping is a modelling choice for feasibility. It does not claim conformity, certification, or an achieved security level (SL-A).
+
+Legacy compatibility: a persisted level 5 is read as level 4.
+
+References:
+
+- Published baseline: [ISA/IEC 62443 series](https://www.isa.org/standards-and-publications/isa-standards/isa-iec-62443-series-of-standards), [62443-4-1:2018](https://www.isa.org/products/ansi-isa-62443-4-1-2018-security-for-industrial-au), [62443-4-2](https://www.isa.org/products/ansi-isa-62443-4-2-2018-security-for-industrial-au) (2018/2019 editions, not the 2026 drafts).
+- Draft amendments, not published text: EN IEC 62443-4-1:2018/prAA:2026 and EN IEC 62443-4-2:2019/prAA:2026.
+
 ## Knowledge base
 
 The repository-level examples in [knowledge-base/](knowledge-base/) are intended as starter content. Teams should adapt and extend them with product-specific attacker assumptions, threat patterns, and approved controls.

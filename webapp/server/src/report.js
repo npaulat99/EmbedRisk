@@ -10,6 +10,7 @@ import { loadScheme, band, residual } from './risk.js';
 import { validate } from './validate.js';
 import { kbVersion } from './git.js';
 import { routeAround, roundedPath, labelPtOnPolyline, borderPoint } from '../../shared/dfdEngine.js';
+import { normalizeActorLevel, actorLevelLabel } from '../../shared/attackerScale.js';
 
 const esc = (s) =>
     String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
@@ -687,7 +688,7 @@ export async function buildReport(id) {
     const atk = (assumptions.attacker || [])
         .map((a) => {
             const cited = (assumptionCitedBy.get(a.id) || []).map((tid) => `<a href='#threat-${esc(tid)}' class='mono'>${esc(tid)}</a>`).join(', ');
-            return `<li id='${esc(assumptionAnchor(a.id))}'><span class='mono'><b>${esc(a.id)}</b></span> · <b>${esc(a.name)}</b> (cap ${a.capability}, ${esc(a.access)}): ${esc(a.text || '')}${cited ? `<br><span style='font-size:11px;color:#4d5a6d'>cited by: ${cited}</span>` : ''}</li>`;
+            return `<li id='${esc(assumptionAnchor(a.id))}'><span class='mono'><b>${esc(a.id)}</b></span> · <b>${esc(a.name)}</b> (capability ${normalizeActorLevel(a.capability)} · ${esc(actorLevelLabel(a.capability))}, ${esc(a.access)}): ${esc(a.text || '')}${cited ? `<br><span style='font-size:11px;color:#4d5a6d'>cited by: ${cited}</span>` : ''}</li>`;
         })
         .join('');
     const assets = (system.assets || [])

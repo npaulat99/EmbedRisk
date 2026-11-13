@@ -509,10 +509,11 @@ ok("defence residual assessment retains configured access and skill", defenceMet
 // Compare against the actual webapp evaluator without adding a runtime dependency to the model.
 const esbuild = require(path.join(root, "vscode-extension/node_modules/esbuild"));
 const referenceModule = { exports: {} };
-require("node:vm").runInNewContext(esbuild.transformSync(
-  fs.readFileSync(path.join(root, "webapp/client/src/lib/attackTree.ts"), "utf8"),
-  { loader: "ts", format: "cjs" },
-).code, { module: referenceModule });
+require("node:vm").runInNewContext(esbuild.buildSync({
+  entryPoints: [path.join(root, "webapp/client/src/lib/attackTree.ts")],
+  bundle: true, write: false, format: "cjs", platform: "node",
+  alias: { "@shared": path.join(root, "webapp/shared") },
+}).outputFiles[0].text, { module: referenceModule });
 const reference = referenceModule.exports;
 const timeOnly = { ...all(0), time: 1 }, exploitOnly = { ...all(0), exploitability: 1 };
 const weightCases = [undefined, null, {}, { time: 2 }, timeOnly, exploitOnly, all(0),
@@ -551,6 +552,7 @@ vm.runInNewContext(esbuild.transformSync(
   { loader: "ts", format: "cjs" },
 ).code, {
   module: calculatorModule, useStore: (selector) => selector(calculatorState),
+  normalizeActorLevel: require(path.join(root, "vscode-extension/media/attacker-scale.js")).normalizeActorLevel,
   stepProb: reference.stepProb, accessProbability: reference.accessProbability, likelihoodFromProb: reference.likelihoodFromProb,
 });
 function compareThreat(threat, patch, project, attacker, model = ThreatModel) {
@@ -622,7 +624,7 @@ const savedThreat = freezeThreatInput({
 });
 const savedSnapshot = JSON.stringify(savedThreat);
 const savedProject = freezeThreatInput({ costFactorWeights: { time: 2 }, accessProbabilities: { 2: 0.8 } });
-const savedAttacker = freezeThreatInput({ capability: 4 });
+const savedAttacker = freezeThreatInput({ capability: 3 });
 const emptyThreat = Object.freeze({});
 ThreatModel.calculate(emptyThreat);
 assert.deepStrictEqual(emptyThreat, {});
@@ -659,7 +661,7 @@ assert.notStrictEqual(accepted.likelihood, savedThreat.likelihood);
 ok("reads preserve accepted likelihood/absent fields; explicit immutable updates retain metadata and honor clears/nullish patches", true);
 
 const threatBrowser = { window: {} };
-for (const filename of ["attacktree-model.js", "threat-model.js"]) {
+for (const filename of ["attacker-scale.js", "attacktree-model.js", "threat-model.js"]) {
   vm.runInNewContext(fs.readFileSync(path.join(root, "vscode-extension/media", filename), "utf8"), threatBrowser);
 }
 for (const patch of patches) compareThreat(savedThreat, patch, savedProject, savedAttacker, threatBrowser.window.ThreatModel);
@@ -701,11 +703,11 @@ for (const weights of weightCases) {
 }
 ok("weighted evaluation matches webapp gates, recursive paths, residual min/max, ties and legacy modifiers", true);
 assert.deepStrictEqual(AtModel.evaluate(weightedOr, {}, timeOnly),
-  { prob: 1, skillReq: 5, accessReq: 1, defenses: 0, vulns: 0 });
+  { prob: 1, skillReq: 4, accessReq: 1, defenses: 0, vulns: 0 });
 assert.deepStrictEqual(AtModel.evaluate(weightedOr, {}, exploitOnly),
   { prob: 1, skillReq: 1, accessReq: 5, defenses: 0, vulns: 0 });
 ok("OR selects both axes from the weighted winning path and keeps first path on ties",
-  AtModel.evaluate(weightedOr, {}, all(0)).skillReq === 5);
+  AtModel.evaluate(weightedOr, {}, all(0)).skillReq === 4);
 
 const aggregationFixture = JSON.parse(fs.readFileSync(path.join(root, "tools/fixtures/attack-tree-aggregation.json"), "utf8"));
 const aggregationById = Object.fromEntries(aggregationFixture.trees.map((fixture) => [fixture.id, fixture]));
@@ -714,7 +716,7 @@ ok("fixture OR chooses critical vulnerability vector", fixtureOr.prob === 1 && f
 const fixtureAnd = AtModel.evaluate(aggregationById["AT-TEST-AND"].root, {});
 ok("fixture AND multiplies and takes max requirements", Math.abs(fixtureAnd.prob - 0.32) < 1e-9 && fixtureAnd.accessReq === 4 && fixtureAnd.skillReq === 3);
 const fixtureSand = AtModel.evaluate(aggregationById["AT-TEST-SAND"].root, {});
-ok("fixture SAND multiplies and takes max requirements", Math.abs(fixtureSand.prob - 0.32) < 1e-9 && fixtureSand.accessReq === 5 && fixtureSand.skillReq === 5);
+ok("fixture SAND multiplies and takes max requirements", Math.abs(fixtureSand.prob - 0.32) < 1e-9 && fixtureSand.accessReq === 5 && fixtureSand.skillReq === 4);
 const fixtureResidual = AtModel.evaluate(aggregationById["AT-TEST-RESIDUAL"].root, {});
 ok("fixture vulnerability overrides defence residual at leaf step", fixtureResidual.prob === 1 && fixtureResidual.accessReq === 5 && fixtureResidual.skillReq === 4);
 
@@ -1321,7 +1323,45 @@ function runDashboardTests() {
     && !provider.includes("workspace.fs.writeFile"));
 }
 
+async function runAttackerScaleTests() {
+  const web = await import("../webapp/shared/attackerScale.js");
+  const ext = require(path.join(root, "vscode-extension/media/attacker-scale.js"));
+  assert.deepStrictEqual(ext.ACTOR_LEVELS, web.ACTOR_LEVELS);
+  assert.strictEqual(ext.MAX_ACTOR_LEVEL, web.MAX_ACTOR_LEVEL);
+  for (const level of [1, 2, 3, 4]) assert.deepStrictEqual(ext.managedSlcAttacker(level), web.managedSlcAttacker(level));
+  ok("attacker scale: ACTOR_LEVELS and managedSlcAttacker(1..4) identical in webapp and extension", true);
+
+  const slcModule = { exports: {} };
+  vm.runInNewContext(esbuild.buildSync({
+    entryPoints: [path.join(root, "webapp/client/src/lib/slc.ts")],
+    bundle: true, write: false, format: "cjs", platform: "node",
+    alias: { "@shared": path.join(root, "webapp/shared") },
+  }).outputFiles[0].text, { module: slcModule });
+  const { syncThreatFeasibility, SLC_ATTACKERS } = slcModule.exports;
+  for (const level of [1, 2, 3, 4]) {
+    assert.deepStrictEqual(JSON.parse(JSON.stringify(SLC_ATTACKERS[level])), web.managedSlcAttacker(level));
+    for (const skill of [1, 2, 3, 4]) {
+      const expectedFeasible = skill <= level;
+      const extResult = ThreatModel.calculate({ requiredSkill: skill }, {}, ext.managedSlcAttacker(level));
+      assert.strictEqual(extResult.feasible, expectedFeasible, `extension SL-C ${level} skill ${skill}`);
+      assert.strictEqual(ThreatModel.applyUpdate({ status: "open" }, { requiredSkill: skill }, {}, ext.managedSlcAttacker(level)).status,
+        expectedFeasible ? "open" : "unfeasible", `extension applyUpdate SL-C ${level} skill ${skill}`);
+      assert.strictEqual(syncThreatFeasibility({ requiredSkill: skill, status: "open" }, level).status,
+        expectedFeasible ? "open" : "unfeasible", `webapp SL-C ${level} skill ${skill}`);
+    }
+    // Legacy 5 is read as 4; access 5 is a separate scale and stays 5.
+    const legacyFeasible = level === 4;
+    assert.strictEqual(ThreatModel.calculate({ requiredSkill: 5 }, {}, ext.managedSlcAttacker(level)).feasible, legacyFeasible);
+    assert.strictEqual(syncThreatFeasibility({ requiredSkill: 5, status: "open" }, level).status, legacyFeasible ? "open" : "unfeasible");
+    assert.strictEqual(ThreatModel.calculate({ requiredSkill: 4 }, {}, { capability: 5 }).feasible, true);
+    assert.strictEqual(ThreatModel.calculate({ requiredSkill: 5 }, {}, { capability: 5 }).feasible, true);
+  }
+  assert.strictEqual(ThreatModel.accessProbability(5), 0.1);
+  ok("attacker scale: SL-C 1..4 x requiredSkill 1..4 boundary matrix, legacy 5 as 4, access 5 unchanged", true);
+}
+
 runImportedKbTests()
+  .then(() => runAttackerScaleTests())
   .then(() => runDfdOverviewTests())
   .then(() => runDashboardTests())
   .then(() => checkWebappParity())

@@ -104,11 +104,11 @@
   "attacker": [
     {
       "id": "ATK-SLC-2",
-      "name": "Threat Actor 2: Simple Intentional Attacks",
+      "name": "Threat Actor 2: Intentional violation using simple means",
       "capability": 2,
-      "motivation": "Intentional attack using simple means",
-      "resources": "Low resources, general IT knowledge, low motivation",
-      "text": "SL-C 2 attacker profile managed by EmbedRisk."
+      "motivation": "Low",
+      "resources": "Simple means, low resources, generic skills",
+      "text": "Intentional violation using simple means with low resources, generic skills and low motivation"
     }
   ]
 }

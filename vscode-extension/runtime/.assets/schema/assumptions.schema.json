@@ -4,40 +4,114 @@
   "title": "Assumptions",
   "description": "Documented assumptions. Attacker assumptions are mandatory because they ground the likelihood assessment.",
   "type": "object",
-  "required": ["device", "system", "environment", "operational", "attacker"],
+  "required": [
+    "device",
+    "system",
+    "environment",
+    "operational",
+    "attacker"
+  ],
   "properties": {
-    "device": { "type": "array", "items": { "$ref": "#/$defs/assumption" } },
-    "system": { "type": "array", "items": { "$ref": "#/$defs/assumption" } },
-    "environment": { "type": "array", "items": { "$ref": "#/$defs/assumption" } },
-    "operational": { "type": "array", "items": { "$ref": "#/$defs/assumption" } },
+    "device": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/assumption"
+      }
+    },
+    "system": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/assumption"
+      }
+    },
+    "environment": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/assumption"
+      }
+    },
+    "operational": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/assumption"
+      }
+    },
     "attacker": {
       "type": "array",
       "minItems": 1,
-      "items": { "$ref": "#/$defs/attackerProfile" }
+      "items": {
+        "$ref": "#/$defs/attackerProfile"
+      }
     }
   },
   "$defs": {
     "assumption": {
       "type": "object",
-      "required": ["id", "text"],
+      "required": [
+        "id",
+        "text"
+      ],
       "properties": {
-        "id": { "type": "string" },
-        "text": { "type": "string" },
-        "rationale": { "type": "string" },
-        "confidence": { "type": "string", "enum": ["low", "medium", "high"] }
+        "id": {
+          "type": "string"
+        },
+        "text": {
+          "type": "string"
+        },
+        "rationale": {
+          "type": "string"
+        },
+        "confidence": {
+          "type": "string",
+          "enum": [
+            "low",
+            "medium",
+            "high"
+          ]
+        }
       }
     },
     "attackerProfile": {
       "type": "object",
-      "required": ["id", "name", "capability", "access", "motivation"],
+      "required": [
+        "id",
+        "name",
+        "capability",
+        "access",
+        "motivation"
+      ],
       "properties": {
-        "id": { "type": "string" },
-        "name": { "type": "string", "description": "e.g. opportunistic, insider, nation-state" },
-        "capability": { "type": "integer", "minimum": 1, "maximum": 5 },
-        "access": { "type": "string", "enum": ["remote", "adjacent", "local", "physical"] },
-        "motivation": { "type": "string" },
-        "resources": { "type": "string" },
-        "text": { "type": "string" }
+        "id": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string",
+          "description": "e.g. Threat Actor 2: Intentional violation using simple means"
+        },
+        "capability": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 5,
+          "description": "Threat actor level 1-4 (EN IEC 62443-4-1 prAA draft); legacy 5 is read as 4."
+        },
+        "access": {
+          "type": "string",
+          "enum": [
+            "remote",
+            "adjacent",
+            "local",
+            "physical"
+          ]
+        },
+        "motivation": {
+          "type": "string"
+        },
+        "resources": {
+          "type": "string"
+        },
+        "text": {
+          "type": "string"
+        }
       }
     }
   }

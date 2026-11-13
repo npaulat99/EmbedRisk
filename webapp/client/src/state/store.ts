@@ -9,6 +9,7 @@
 import { create } from 'zustand';
 import type { LaunchConfig, ProjectData, ProjectSummary, RiskScheme, StepKey, ViewKey } from '../types';
 import { tutorialStorageKey } from '../tutorial/tutorialData';
+import { attackerForSlc } from '../lib/slc';
 
 const norm = (v: string | null | undefined) => String(v || '').toLowerCase().replace(/[^a-z0-9]+/g, '');
 const isPlaceholderComponentName = (label: string | undefined) => {
@@ -488,6 +489,12 @@ export const useStore = create<Store>((set, get) => ({
     async selectProject(id) {
         const data = await getJSON<ProjectData>(`/api/projects/${id}`);
         set({ activeId: id, data, dfdPath: [], selectedNodeId: null, selectedEdgeId: null, ucDiagramId: null, ucSelection: null });
+        const canonical = attackerForSlc(data.project?.slTarget);
+        const stored = data.assumptions?.attacker;
+        if (canonical && stored?.length === 1 && stored[0].id === canonical.id) {
+            const differs = (['name', 'capability', 'motivation', 'resources', 'text'] as const).some((key) => stored[0][key] !== canonical[key]);
+            if (differs) get().save('assumptions', { ...data.assumptions, attacker: [{ ...stored[0], ...canonical }] });
+        }
         clearHistory();
         subscribe(id);
     },

@@ -17,6 +17,7 @@ import { registerDashboard } from "./dashboard";
 
 // Isomorphic CommonJS webview model, reused here for the shared threatRefs/threatRef read rule.
 const AtModel = require("../media/attacktree-model.js");
+const { managedSlcAttacker } = require("../media/attacker-scale.js") as { managedSlcAttacker: (level: number) => unknown };
 // Shared webapp-compatible id scheme (prefix + lowest free number), from the isomorphic DFD model.
 const { nextId } = require("../media/dfd-model.js") as { nextId: (prefix: string, ids: unknown[]) => string };
 const { removeImportedCatalogue } = require("../media/imported-kb.js") as {
@@ -177,7 +178,7 @@ async function scaffoldProject(dir: vscode.Uri, name: string, slug: string) {
   };
   const assumptions = {
     device: [], system: [], environment: [], operational: [],
-    attacker: [{ id: "ATK-SLC-2", name: "Threat Actor 2: Simple Intentional Attacks", capability: 2, motivation: "Intentional attack using simple means", resources: "Low resources, general IT knowledge, low motivation", text: "SL-C 2 attacker profile managed by EmbedRisk." }]
+    attacker: [managedSlcAttacker(2)]
   };
   const system = {
     components: [{ id: "C-DEV", name, kind: "device", layer: 1, parent: null, trustZone: "device", provenance: "own" }],
@@ -374,10 +375,10 @@ export function activate(ctx: vscode.ExtensionContext) {
           list: async () => (await pathExists(root)
             ? await vscode.workspace.fs.readDirectory(root)
             : []).map(([name, type]) => ({
-            name,
-            isDirectory: Boolean(type & vscode.FileType.Directory),
-            isSymbolicLink: Boolean(type & vscode.FileType.SymbolicLink),
-          })),
+              name,
+              isDirectory: Boolean(type & vscode.FileType.Directory),
+              isSymbolicLink: Boolean(type & vscode.FileType.SymbolicLink),
+            })),
           choose: async (names) => (await vscode.window.showQuickPick(names, {
             placeHolder: "Select an imported knowledge base to remove",
           })),
