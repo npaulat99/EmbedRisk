@@ -858,14 +858,78 @@ async function checkWebappParity() {
   threats.forEach((t, i) => {
     const ext = RiskModel.riskOf(t, cms, scheme);
     const web = webapp[i];
-    // webapp/server computeRisk does not zero the initial risk of unfeasible threats (the client's riskOf does),
-    // so initial parity is only checked for feasible threats; RiskModel follows the client.
-    if (t.status !== "unfeasible") {
-      ok("parity initial " + t.id, ext.initial === web.initial && ext.initialBand.name === web.initialBand.name);
-    }
+    ok("parity initial " + t.id, ext.initial === web.initial && ext.initialBand.name === web.initialBand.name);
     ok("parity residual " + t.id, ext.residual === web.residual && ext.residualBand.name === web.residualBand.name);
     ok("parity residual L/I " + t.id, ext.residualLikelihood === web.residualLikelihood && ext.residualImpact === web.residualImpact);
   });
+}
+
+async function runRiskGoldenTests() {
+  const { pathToFileURL } = require("node:url");
+  const fixtureDir = path.join(root, "tools/fixtures/RL-100");
+  const readFixture = (file) => JSON.parse(fs.readFileSync(path.join(fixtureDir, file), "utf8"));
+  const golden = JSON.parse(fs.readFileSync(path.join(root, "tools/fixtures/risk-golden.json"), "utf8"));
+  const project = readFixture("01-project-description/project.json");
+  const threats = readFixture("06-threats/threats.json").threats;
+  const cms = readFixture("08-countermeasures/countermeasures.json").countermeasures;
+  const scheme = JSON.parse(fs.readFileSync(path.join(root, "webapp/.assets/knowledge-base/risk-scheme.json"), "utf8"));
+  const serverRisk = await import(pathToFileURL(path.join(root, "webapp/server/src/risk.js")));
+  const serverReport = await import(pathToFileURL(path.join(root, "webapp/server/src/report.js")));
+  const serverValidation = await import(pathToFileURL(path.join(root, "webapp/server/src/validate.js")));
+  const riskSignature = (rows) => rows.map((row) => {
+    const initialBand = typeof row.initialBand === "string" ? row.initialBand : row.initialBand.name;
+    const residualBand = typeof row.residualBand === "string" ? row.residualBand : row.residualBand.name;
+    const residualAxes = row.residualLikelihood == null ? "" : `${row.residualLikelihood}x${row.residualImpact}=`;
+    return `${row.id || row.threat}:${row.initial}/${initialBand}>${residualAxes}${row.residual}/${residualBand}`;
+  });
+  const system = readFixture("03-system-assets/system.json");
+  const serverTrace = serverReport.buildTraceability({
+    system,
+    threats,
+    requirements: readFixture("05-requirements/requirements.json").requirements,
+    countermeasures: cms,
+    scheme,
+  });
+  const reportTemp = fs.mkdtempSync(path.join(os.tmpdir(), "embedrisk-risk-golden-"));
+  let runtimeTrace;
+  try {
+    const projectCopy = path.join(reportTemp, "RL-100");
+    fs.cpSync(fixtureDir, projectCopy, { recursive: true });
+    execFileSync(process.execPath, [path.join(root, "vscode-extension/runtime/tools/generate-report.mjs"), projectCopy], {
+      cwd: root,
+      stdio: "pipe",
+    });
+    runtimeTrace = JSON.parse(fs.readFileSync(path.join(projectCopy, "report/traceability.json"), "utf8"));
+  } finally {
+    fs.rmSync(reportTemp, { recursive: true, force: true });
+  }
+
+  const matrixSignature = (mode) => RiskModel.matrix(threats, cms, scheme, project.acceptableRisk, mode).cells
+    .map((cell) => `${cell.likelihood},${cell.impact}:${cell.score}:${cell.band.name}:${cell.ids.join("+")}`);
+  const exposureDerivation = threats.map((threat) =>
+    `${threat.id}:${RiskModel.deriveLikelihood(threat.likelihoodFactors)}x${RiskModel.deriveImpact(threat.impactDimensions)}`);
+  const validationInput = {
+    project: { acceptableRisk: 0 },
+    assumptions: { attacker: [{ id: "A1", access: "remote", capability: 3 }] },
+    system: { components: [{ id: "C1" }] },
+    threats: { threats: [{ id: "GOLD-RISK", likelihood: 3, impact: 5, stride: ["S"], components: ["C1"] }] },
+    requirements: { requirements: [{ id: "R1", derivedFromThreat: ["GOLD-RISK"] }] },
+  };
+  const validationMessages = serverValidation.validate(validationInput)
+    .filter((issue) => /risk|likelihood/i.test(issue.message))
+    .map(({ severity, message, key }) => ({ severity, message, key }));
+
+  ok("risk golden: RL-100 server risk scores and bands", JSON.stringify(riskSignature(serverRisk.computeRisk(scheme, threats, cms))) === JSON.stringify(golden.risk));
+  ok("risk golden: server report risk columns", JSON.stringify(riskSignature(serverTrace)) === JSON.stringify(golden.report));
+  ok("risk golden: runtime report risk columns", JSON.stringify(riskSignature(runtimeTrace)) === JSON.stringify(golden.report));
+  ok("risk golden: exposure-derived RL-100 criteria", JSON.stringify(exposureDerivation) === JSON.stringify(golden.exposureDerivation));
+  ok("risk golden: all initial matrix cells", JSON.stringify(matrixSignature("initial")) === JSON.stringify(golden.matrixInitial));
+  ok("risk golden: all residual matrix cells", JSON.stringify(matrixSignature("residual")) === JSON.stringify(golden.matrixResidual));
+  ok("risk golden: deterministic risk validation message", JSON.stringify(validationMessages) === JSON.stringify(golden.validation));
+
+  const unfeasible = serverRisk.computeRisk(scheme, [{ id: "UNFEASIBLE", likelihood: 4, impact: 5, status: "unfeasible" }], [])[0];
+  ok("risk golden: unfeasible threats have zero initial and residual risk", unfeasible.initial === 0
+    && unfeasible.initialBand.name === "None" && unfeasible.residual === 0 && unfeasible.residualBand.name === "None");
 }
 
 function runDfdEngineTests() {
@@ -1372,6 +1436,7 @@ runImportedKbTests()
   .then(() => runDfdOverviewTests())
   .then(() => runDashboardTests())
   .then(() => checkWebappParity())
+  .then(() => runRiskGoldenTests())
   .then(() => runValidationCoreTests())
   .then(() => runValidationDiagnosticsTests())
   .then(async () => {

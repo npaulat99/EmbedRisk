@@ -33,7 +33,7 @@ export function residual(threat, cms) {
 
 export function computeRisk(s, threats, cms) {
     return threats.map((t) => {
-        const initial = (t.likelihood || 0) * (t.impact || 0);
+        const initial = t.status === 'unfeasible' ? 0 : (t.likelihood || 0) * (t.impact || 0);
         const [rl, ri] = residual(t, cms);
         const res = (rl || 0) * (ri || 0);
         return {
