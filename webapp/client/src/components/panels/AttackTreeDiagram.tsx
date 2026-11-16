@@ -14,10 +14,10 @@ import {
     GATES,
     ADD_KINDS,
     ACCESS_OPTS,
-    SKILL_OPTS,
     accessLabel,
     skillLabel,
 } from '../../lib/attackTree';
+import { ACTOR_LEVELS, actorLevelOption, normalizeActorLevel } from '@shared/attackerScale.js';
 import BugBarImpactSelector from '../BugBarImpactSelector';
 import type { AdGate, AdKind, AdNode, AttackTree } from '../../types';
 
@@ -141,7 +141,7 @@ export default function AttackTreeDiagram({ tree, ops }: { tree: AttackTree; ops
                                 >
                                     <div className="adt-node-kind">{KIND_LABEL[node.kind]}</div>
                                     <div className="adt-node-label" onDoubleClick={() => setEditingId(node.id)}>{node.label}</div>
-                                    {showMetrics && <div className="adt-node-sub">{node.kind === 'countermeasure' && cm ? `${cm.id} · ` : ''}acc {metrics.accessReq || '–'} · skill {metrics.skillReq || '–'} · {Math.round(metrics.prob * 100)}%</div>}
+                                    {showMetrics && <div className="adt-node-sub">{node.kind === 'countermeasure' && cm ? `${cm.id} · ` : ''}acc {metrics.accessReq || '–'} · {skillLabel(metrics.skillReq)} · {Math.round(metrics.prob * 100)}%</div>}
                                 </div>
                             </foreignObject>
                         );
@@ -246,7 +246,7 @@ function NodeAssessmentOverlay({
                 <div className="adderived">
                     <span className="dtag">{metricsLabel} probability <b>{Math.round(metrics.prob * 100)}%</b></span>
                     <span className="dtag">{metricsLabel} access <b>{metrics.accessReq || '–'} · {accessLabel(metrics.accessReq)}</b></span>
-                    <span className="dtag">{metricsLabel} skill <b>{metrics.skillReq || '–'} · {skillLabel(metrics.skillReq)}</b></span>
+                    <span className="dtag">{metricsLabel} capability <b>{skillLabel(metrics.skillReq)}</b></span>
                 </div>
 
                 {directAssessment && (
@@ -256,11 +256,11 @@ function NodeAssessmentOverlay({
                                 <option key={v} value={v}>{v} · {l}</option>
                             ))}
                         </select></label>
-                        <label className="minifield" style={{ width: 220 }}><span>Required skill</span><select className="inp" value={node.skill ?? 2} onChange={(e) => ops.upd(node.id, { skill: Number(e.target.value) })}>
-                            {SKILL_OPTS.map(([v, l]) => (
-                                <option key={v} value={v}>{v} · {l}</option>
+                        <label className="minifield" style={{ width: 220 }}><span>Required capability (threat actor)</span><select className="inp" style={{ width: '100%', maxWidth: '100%', textOverflow: 'ellipsis' }} value={normalizeActorLevel(node.skill ?? 2)} onChange={(e) => ops.upd(node.id, { skill: Number(e.target.value) })}>
+                            {ACTOR_LEVELS.map(({ level }) => (
+                                <option key={level} value={level}>{actorLevelOption(level)}</option>
                             ))}
-                        </select></label>
+                        </select><span className="hint">{ACTOR_LEVELS.find((l) => l.level === normalizeActorLevel(node.skill ?? 2))?.description}</span></label>
                     </div>
                 )}
                 {isStep && !hasAttackChildren && <CostAssessment title="Step difficulty assessment" cost={node.cost} rationales={node.costRationales} onChange={(cost, costRationales) => ops.upd(node.id, { cost, costRationales })} />}

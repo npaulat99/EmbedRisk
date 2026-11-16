@@ -232,13 +232,6 @@ export const IMPACT_LEVELS: [number, string][] = [
     [4, 'Major'],
     [5, 'Severe'],
 ];
-export const CAPABILITY_LEVELS: [number, string][] = [
-    [1, 'Novice'],
-    [2, 'Skilled amateur'],
-    [3, 'Professional'],
-    [4, 'Specialist team'],
-    [5, 'Nation-state / APT'],
-];
 export const OBJECTIVE_LEVELS: [number, string][] = [
     [0, 'None'],
     [1, 'Very low'],

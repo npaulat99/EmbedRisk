@@ -10,6 +10,7 @@ import { DEFAULT_ACCEPTABLE_RISK } from '../types';
 import { ID_PATTERN, idCollisions } from './ids';
 import { residual } from './risk';
 import { costWeightTotal } from './attackTree';
+import { normalizeActorLevel } from '@shared/attackerScale.js';
 
 export type IssueSeverity = 'error' | 'warning' | 'notice';
 export interface Issue {
@@ -95,7 +96,7 @@ export function validate(data: ProjectData): Issue[] {
         const exploit = t.likelihoodFactors?.exploitability;
         if (atk && typeof exposure === 'number' && (PROX[atk.access] ?? 4) < reqProx(exposure))
             add('warning', `${t.id}: attacker ${atk.id} (${atk.access}) is not proximate enough to reach an exposure-${exposure} surface.`);
-        if (t.likelihood >= 3 && atk && typeof atk.capability === 'number' && typeof exploit === 'number' && atk.capability + exploit < 6)
+        if (t.likelihood >= 3 && atk && typeof atk.capability === 'number' && typeof exploit === 'number' && normalizeActorLevel(atk.capability) + exploit < 6)
             add('notice', `${t.id}: likelihood may be over-stated based on attacker ${atk.id}'s capability. Accept if this is intentional.`, `capability-gate:${t.id}`);
         if (costBased) {
             const costKeys = ['time', 'exploitability', 'window', 'detection', 'notoriety', 'prep', 'abort'] as const;

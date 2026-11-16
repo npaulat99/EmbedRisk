@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useStore, uid } from '../../state/store';
 import { Field, TagSelect, useFocus, useEditMode, EditBackBar, ScaleSelect, LIKELIHOOD_LEVELS, IMPACT_LEVELS, RiskPill, Jump, HelpButton, confirmDelete, IdInput } from '../common';
 import { band } from '../../lib/risk';
+import { actorLevelLabel } from '@shared/attackerScale.js';
 import RiskCalculator from './RiskCalculator';
 import ThreatCmImportExport from '../ThreatCmImportExport';
 import type { Countermeasure, Requirement } from '../../types';
@@ -17,7 +18,7 @@ export default function CountermeasuresPanel() {
     const reqs = data.requirements?.requirements || [];
     const attackers = data.assumptions.attacker || [];
     const ifaceOpts = (data.system.interfaces || []).map((itf) => ({ value: itf.id, label: `${itf.name}${itf.protocol ? ` (${itf.protocol})` : ''}` }));
-    const attackerOpts = attackers.map((a) => ({ value: a.id, label: `${a.name} (cap ${a.capability}, ${a.access})` }));
+    const attackerOpts = attackers.map((a) => ({ value: a.id, label: `${a.name} (${actorLevelLabel(a.capability)}, ${a.access})` }));
     const focusId = useFocus('countermeasures');
     const { editingId, setEditingId } = useEditMode(focusId);
     const threatOpts = threats.map((t) => ({ value: t.id, label: `${t.id} · ${t.title}` }));

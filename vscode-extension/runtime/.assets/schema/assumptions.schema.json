@@ -32,8 +32,8 @@
       "required": ["id", "name", "capability", "access", "motivation"],
       "properties": {
         "id": { "type": "string" },
-        "name": { "type": "string", "description": "e.g. opportunistic, insider, nation-state" },
-        "capability": { "type": "integer", "minimum": 1, "maximum": 5 },
+        "name": { "type": "string", "description": "e.g. Threat Actor 2: Intentional violation using simple means" },
+        "capability": { "type": "integer", "minimum": 1, "maximum": 5, "description": "Threat actor level 1-4 (EN IEC 62443-4-1 prAA draft); legacy 5 is read as 4." },
         "access": { "type": "string", "enum": ["remote", "adjacent", "local", "physical"] },
         "motivation": { "type": "string" },
         "resources": { "type": "string" },

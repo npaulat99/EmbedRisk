@@ -216,11 +216,26 @@ function importedIdPrefix(id: any, fallback: string): string {
   return match?.[1] || fallback;
 }
 
+const AttackerScale = require("../media/attacker-scale.js") as {
+  normalizeActorLevel: (value: any) => any;
+  managedSlcAttacker: (level: number) => { id: string; name: string; capability: number; motivation: string; resources: string; text: string };
+};
+
 function managedSlcAttacker(sl: string) {
   const level = Math.max(1, Math.min(4, Number(String(sl).replace(/\D/g, "")) || 2));
-  const capability = ({ 1: 1, 2: 2, 3: 3, 4: 5 } as Record<number, number>)[level];
-  const names = ["", "Casual or Coincidental Violation", "Simple Intentional Attacks", "Sophisticated ACS Attacks", "State-Sponsored/Professional Attacks"];
-  return { id: `ATK-SLC-${level}`, name: `Threat Actor ${level}: ${names[level]}`, capability, motivation: "Managed by the selected SL-C level", resources: "Managed SL-C attacker profile", text: `SL-C ${level} attacker profile managed by EmbedRisk.` };
+  return AttackerScale.managedSlcAttacker(level);
+}
+
+// Rewrites a stored managed ATK-SLC profile to the canonical content when it differs.
+async function syncManagedAttacker(proj: vscode.Uri) {
+  const project = await rdRaw(proj, "01-project-description/project.json", {});
+  const assumptions = await rdRaw(proj, "02-assumptions/assumptions.json", null);
+  if (!assumptions || !Array.isArray(assumptions.attacker) || assumptions.attacker.length !== 1) return;
+  const canonical = managedSlcAttacker(project.slTarget);
+  const stored = assumptions.attacker[0];
+  if (!stored || stored.id !== canonical.id) return;
+  const differs = ["name", "capability", "motivation", "resources", "text"].some((key) => stored[key] !== (canonical as any)[key]);
+  if (differs) await write(proj, "02-assumptions/assumptions.json", { ...assumptions, attacker: [{ ...stored, ...canonical }] });
 }
 
 function cleanProjectList(items: string[]) {
@@ -267,10 +282,12 @@ export async function openWizard(ctx: vscode.ExtensionContext, focusThreatId?: s
   const riskUri = panel.webview.asWebviewUri(vscode.Uri.joinPath(media, "risk-model.js"));
   const attackTreeUri = panel.webview.asWebviewUri(vscode.Uri.joinPath(media, "attacktree-model.js"));
   const threatUri = panel.webview.asWebviewUri(vscode.Uri.joinPath(media, "threat-model.js"));
+  const scaleUri = panel.webview.asWebviewUri(vscode.Uri.joinPath(media, "attacker-scale.js"));
   const logoUri = panel.webview.asWebviewUri(vscode.Uri.joinPath(media, "embedrisk-logo.svg"));
   const nonce = String(Math.random()).slice(2);
   const csp = `default-src 'none'; img-src ${panel.webview.cspSource}; style-src ${panel.webview.cspSource} 'unsafe-inline'; script-src 'nonce-${nonce}' ${panel.webview.cspSource};`;
-  panel.webview.html = shell(cssUri, riskUri, attackTreeUri, threatUri, logoUri, csp, nonce);
+  panel.webview.html = shell(cssUri, riskUri, scaleUri, attackTreeUri, threatUri, logoUri, csp, nonce);
+  await syncManagedAttacker(f.proj);
 
   const sendInit = async () => panel.webview.postMessage({ cmd: "init", data: await buildData(f.proj), focusThreatId, bugBar: await rdRaw(ctx.extensionUri, "runtime/.assets/knowledge-base/bug-bar.json", null), scheme: await rdRaw(ctx.extensionUri, "runtime/.assets/knowledge-base/risk-scheme.json", null) });
   const counts = async () => (await buildData(f.proj)).counts;
@@ -543,7 +560,7 @@ export async function openWizard(ctx: vscode.ExtensionContext, focusThreatId?: s
       const prev = await rdRaw(f.proj, "02-assumptions/assumptions.json", {});
       const doc = {
         ...prev,
-        attacker: attacker.map((p: any) => ({ ...p, capability: Math.max(1, Math.min(5, +p.capability || 2)) })),
+        attacker: attacker.map((p: any) => ({ ...p, capability: Math.max(1, Math.min(4, +p.capability || 2)) })),
         device: a.device || [], system: a.system || [], environment: a.environment || [], operational: a.operational || [],
       };
       await write(f.proj, "02-assumptions/assumptions.json", doc);
@@ -678,7 +695,7 @@ export async function openWizard(ctx: vscode.ExtensionContext, focusThreatId?: s
           const assumptions = await rdRaw(f.proj, "02-assumptions/assumptions.json", {});
           await write(f.proj, "02-assumptions/assumptions.json", { ...assumptions, attacker: [attacker] });
           const threatDoc = await rdRaw(f.proj, "06-threats/threats.json", { threats: [] });
-          await write(f.proj, "06-threats/threats.json", { ...threatDoc, threats: (threatDoc.threats || []).map((threat: any) => ({ ...threat, attackerRef: attacker.id, status: typeof threat.requiredSkill === "number" && threat.requiredSkill > attacker.capability ? "unfeasible" : threat.status === "unfeasible" ? "open" : threat.status })) });
+          await write(f.proj, "06-threats/threats.json", { ...threatDoc, threats: (threatDoc.threats || []).map((threat: any) => ({ ...threat, attackerRef: attacker.id, status: typeof threat.requiredSkill === "number" && AttackerScale.normalizeActorLevel(threat.requiredSkill) > AttackerScale.normalizeActorLevel(attacker.capability) ? "unfeasible" : threat.status === "unfeasible" ? "open" : threat.status })) });
         }
         if (Array.isArray(d.threats)) {
           const threatDoc = await rdRaw(f.proj, "06-threats/threats.json", { threats: [] });
@@ -715,7 +732,7 @@ export async function openWizard(ctx: vscode.ExtensionContext, focusThreatId?: s
   }, undefined, ctx.subscriptions);
 }
 
-function shell(cssUri: vscode.Uri, riskUri: vscode.Uri, attackTreeUri: vscode.Uri, threatUri: vscode.Uri, logoUri: vscode.Uri, csp: string, nonce: string): string {
+function shell(cssUri: vscode.Uri, riskUri: vscode.Uri, scaleUri: vscode.Uri, attackTreeUri: vscode.Uri, threatUri: vscode.Uri, logoUri: vscode.Uri, csp: string, nonce: string): string {
   return `<!doctype html><html><head><meta charset="utf8"><meta http-equiv="Content-Security-Policy" content="${csp}">
 <link rel="stylesheet" href="${cssUri}">
 <style>
@@ -757,7 +774,8 @@ function shell(cssUri: vscode.Uri, riskUri: vscode.Uri, attackTreeUri: vscode.Ur
         <div class="row">
           <div class="field" style="flex:2"><label>Device name</label><input class="inp" id="p-name"></div>
           <div class="field"><label>SL target</label>
-            <select class="inp" id="p-sl"><option>SL1</option><option>SL2</option><option>SL3</option><option>SL4</option></select></div>
+            <select class="inp" id="p-sl"><option>SL1</option><option>SL2</option><option>SL3</option><option>SL4</option></select>
+            <div id="p-sl-card"></div><span class="hint">Selects the managed threat-actor profile used for feasibility.</span></div>
           <div class="field"><label>Risk scoring</label><select class="inp" id="p-risk"><option value="exposure-exploitability-impact">Exposure x Exploitability x Impact</option><option value="cost-based">Cost-based</option></select></div>
           <div class="field"><label>Scope mode</label>
             <select class="inp" id="p-mode"><option>blackbox</option><option>graybox</option><option>whitebox</option></select></div>
@@ -864,11 +882,12 @@ function shell(cssUri: vscode.Uri, riskUri: vscode.Uri, attackTreeUri: vscode.Ur
   </div>
 </div>
 <script nonce="${nonce}" src="${riskUri}"></script>
+<script nonce="${nonce}" src="${scaleUri}"></script>
 <script nonce="${nonce}" src="${attackTreeUri}"></script>
 <script nonce="${nonce}" src="${threatUri}"></script>
 <script nonce="${nonce}">
 (function(){
-const vs=acquireVsCodeApi(), R=window.RiskModel||{
+const vs=acquireVsCodeApi(), AS=window.EmbedRiskAttackerScale, R=window.RiskModel||{
   bandClass:function(n){return String(n||'').toLowerCase();},
   residual:function(t,cms){
     if(t.status==='unfeasible')return [0,0];
@@ -886,7 +905,7 @@ const vs=acquireVsCodeApi(), R=window.RiskModel||{
 };
 const STRIDE=[['S','Spoofing'],['T','Tampering'],['R','Repudiation'],['I','Info disclosure'],['D','Denial of service'],['E','Elevation']];
 const T_STATUS=[['open','Open'],['mitigated','Mitigated'],['accepted','Accepted'],['transferred','Transferred'],['unfeasible','Unfeasible']];
-const SKILL_OPTS=[[1,'Script kiddie'],[2,'Experienced hacker'],[3,'Security engineer'],[4,'Expert team'],[5,'Nation-state']];
+const SKILL_OPTS=AS.ACTOR_LEVELS.map(function(l){return [l.level,l.description];});
 const COST_ACCESS_OPTS=[[1,'Remote (unauth.)'],[2,'Remote (auth.)'],[3,'Adjacent / fieldbus'],[4,'Local (on site)'],[5,'Physical (open enclosure)']];
 const COST_FACTORS=[
   ['time','Time effort',['Minutes','Hours','Days','Weeks','Months+']],
@@ -1052,6 +1071,7 @@ function renderProject(p){
   var fmtSel=$('#p-sbom-format');if(fmtSel)fmtSel.value=sbom.format||'cyclonedx';
   showSbomFields(sbomMode);
   var urlInp=$('#p-sbom-url-inp');if(urlInp)urlInp.value=sbom.url||'';
+  renderSlCard();
 }
 function bugBarSelector(dims,dAttr,dimAttr){
   var dimensions=bugBar&&bugBar.dimensions||[];
@@ -1118,7 +1138,12 @@ function calcBlock(dims,fac,cv,dAttr,dimAttr,facAttr,cvssAttr,seedAct){
     '</div>'+
   '</details>';
 }
-function selectedAttacker(){return {capability:({SL1:1,SL2:2,SL3:3,SL4:5})[project.sl]||2};}
+function selectedAttacker(){return AS.managedSlcAttacker(parseInt(String(project.sl).replace(/[^0-9]/g,''),10))||AS.managedSlcAttacker(2);}
+function renderSlCard(){
+  var el=$('#p-sl-card');if(!el)return;
+  var a=selectedAttacker();
+  el.innerHTML='<div class="hint"><b>'+esc(a.name)+'</b><br>'+esc(a.text)+'<br>Resources: '+esc(a.resources)+' · Motivation: '+esc(a.motivation)+' · Capability: '+esc(AS.actorLevelLabel(a.capability))+'</div>';
+}
 function costWarning(t,proposal){
   var accepted=t.likelihood??3;
   return (accepted!==proposal?'Accepted likelihood L'+accepted+' differs from calculated proposal L'+proposal+'. ':'')+
@@ -1126,15 +1151,15 @@ function costWarning(t,proposal){
 }
 function costSummary(t){
   var result=window.ThreatModel.calculate(t,project,selectedAttacker());
-  return '<div class="grid2"><div>Calculated vector probability: <b data-cost-probability>'+ (result.probability*100).toFixed(1)+'%</b></div>'+
+  return '<p class="hint">'+esc((SKILL_OPTS[AS.normalizeActorLevel(t.requiredSkill||1)-1]||['',''])[1])+'</p><div class="grid2"><div>Calculated vector probability: <b data-cost-probability>'+ (result.probability*100).toFixed(1)+'%</b></div>'+
     '<div>Proposed matrix likelihood: <b data-cost-proposal>L'+result.proposal+' · '+['None','Very low','Low','Moderate','High','Very high'][result.proposal]+'</b></div></div>'+
-    (!result.feasible?'<p class="hint warnmark">Required skill exceeds the selected SL-C attacker capability ('+selectedAttacker().capability+'); proposal is unfeasible (L0). Edit skill/access to accept.</p>':'')+
+    (!result.feasible?'<p class="hint warnmark">Required capability exceeds the selected SL-C attacker ('+esc(AS.actorLevelLabel(selectedAttacker().capability))+', '+esc(selectedAttacker().name)+'); proposal is unfeasible (L0). Edit capability/access to accept.</p>':'')+
     '<p class="hint warnmark" data-cost-warning data-proposal="'+result.proposal+'">'+esc(costWarning(t,result.proposal))+'</p>';
 }
 function costBlock(t,i){
   return '<div style="margin-top:8px"><b>Bug Bar impact</b><div class="bbselect">'+bugBarSelector(t.impactDimensions||{},'data-i='+i,'data-dim')+'</div></div>'+
     '<div style="margin-top:8px"><b>Cost-based likelihood</b><div class="grid2">'+
-    [['requiredSkill','Required skill',SKILL_OPTS,t.requiredSkill||1],['requiredAccess','Required access',COST_ACCESS_OPTS,t.requiredAccess||3]].map(function(f){
+    [['requiredSkill','Required capability (threat actor)',SKILL_OPTS,AS.normalizeActorLevel(t.requiredSkill||1)],['requiredAccess','Required access',COST_ACCESS_OPTS,t.requiredAccess||3]].map(function(f){
       return '<label class="field">'+f[1]+'<select class="inp" data-i='+i+' data-cost="'+f[0]+'">'+optTags(f[2].map(function(o){return [o[0],o[0]+' · '+o[1]];}),f[3])+'</select></label>';
     }).join('')+'</div><div class="grid2">'+COST_FACTORS.map(function(f){
       return '<div class="field"><label>'+f[1]+'<select class="inp" data-i='+i+' data-cost="costFactors" data-cost-key="'+f[0]+'">'+
@@ -1192,7 +1217,7 @@ function renderThreats(){
     var primaryIface=(system.interfaces||[]).find(function(f){return f.id===primaryIfaceId;});
     var seedAct=primaryIface?'data-act="seedExp" data-i='+i+' title="Seed from '+esc(primaryIface.name)+'"':'';
     var moreDetails='<div class="grid3" style="margin-top:8px">'+
-      '<div class="field"><label>SL-C attacker</label><span class="hint">'+esc(project.sl)+' · capability '+selectedAttacker().capability+'</span></div>'+
+      '<div class="field"><label>SL-C attacker</label><span class="hint">'+esc(project.sl)+' · '+esc(selectedAttacker().name)+' · '+esc(AS.actorLevelLabel(selectedAttacker().capability))+'</span></div>'+
       '<div class="field"><label>Interfaces / vectors</label>'+
         '<div class="chips">'+(system.interfaces||[]).map(function(itf){return chip(itf.tag||itf.name,(t.interfaceRefs||[]).indexOf(itf.id)>=0,'data-act="tIface" data-i='+i+' data-val="'+esc(itf.id)+'"',itf.protocol||itf.category||'');}).join('')+
         (!(system.interfaces||[]).length?'<span class="hint">Define in step 03 first.</span>':'')+
@@ -1621,7 +1646,7 @@ document.addEventListener('input',function(e){
   if(t.id==='p-name'){project.name=t.value;$('#devname').textContent=t.value?('· '+t.value):'';return;}
   if(t.id==='p-type'||t.id==='p-version'||t.id==='p-modelReference'){project[t.id.slice(2)]=t.value;return;}
   if(t.id==='p-projectBranchUrl'||t.id==='p-kbUrl'){project[t.id.slice(2)]=t.value;return;}
-  if(t.id==='p-sl'){project.sl=t.value;renderThreats();return;}
+  if(t.id==='p-sl'){project.sl=t.value;renderSlCard();renderThreats();return;}
   if(t.id==='p-risk'){project.riskScoringMethod=t.value;renderThreats();return;}
   if(t.id==='p-mode'){project.mode=t.value;return;}
   if(t.id==='p-bnd'){project.boundary=t.value;return;}

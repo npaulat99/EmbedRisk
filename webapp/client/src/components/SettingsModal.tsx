@@ -7,6 +7,7 @@ import { DEFAULT_ACCEPTABLE_RISK } from '../types';
 import { Field } from './common';
 import { accessProbability, costWeightTotal, COST_FACTORS, DEFAULT_LIKELIHOOD_PROBABILITY_THRESHOLDS, likelihoodFromProb, stepProb } from '../lib/attackTree';
 import { deriveImpact } from '../lib/risk';
+import { normalizeActorLevel } from '@shared/attackerScale.js';
 
 export default function SettingsModal() {
     const data = useStore((s) => s.data);
@@ -32,7 +33,7 @@ export default function SettingsModal() {
         const attacker = data.assumptions.attacker?.[0];
         save('threats', {
             threats: data.threats.threats.map((threat) => {
-                const unfeasible = !!attacker && typeof threat.requiredSkill === 'number' && threat.requiredSkill > attacker.capability;
+                const unfeasible = !!attacker && typeof threat.requiredSkill === 'number' && (normalizeActorLevel(threat.requiredSkill) as number) > (normalizeActorLevel(attacker.capability) as number);
                 const probability = unfeasible ? 0 : accessProbability(threat.requiredAccess ?? 3, nextAccessProbabilities) * stepProb(threat.costFactors, nextWeights);
                 const impact = deriveImpact(threat.impactDimensions) ?? threat.impact ?? 0;
                 const proposal = likelihoodFromProb(probability, nextThresholds);

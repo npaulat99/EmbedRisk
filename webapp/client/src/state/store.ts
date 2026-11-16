@@ -9,6 +9,7 @@
 import { create } from 'zustand';
 import type { LaunchConfig, ProjectData, ProjectSummary, RiskScheme, StepKey, ViewKey } from '../types';
 import { tutorialStorageKey } from '../tutorial/tutorialData';
+import { alignedManagedAttacker } from '../lib/slc';
 
 const norm = (v: string | null | undefined) => String(v || '').toLowerCase().replace(/[^a-z0-9]+/g, '');
 const isPlaceholderComponentName = (label: string | undefined) => {
@@ -488,6 +489,8 @@ export const useStore = create<Store>((set, get) => ({
     async selectProject(id) {
         const data = await getJSON<ProjectData>(`/api/projects/${id}`);
         set({ activeId: id, data, dfdPath: [], selectedNodeId: null, selectedEdgeId: null, ucDiagramId: null, ucSelection: null });
+        const aligned = alignedManagedAttacker(data.project?.slTarget, data.assumptions?.attacker);
+        if (aligned) get().save('assumptions', { ...data.assumptions, attacker: [aligned] });
         clearHistory();
         subscribe(id);
     },

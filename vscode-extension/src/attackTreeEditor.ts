@@ -12,6 +12,7 @@ export class AttackTreeEditor implements vscode.CustomTextEditorProvider {
     const media = vscode.Uri.joinPath(this.extUri, "media");
     panel.webview.options = { enableScripts: true, localResourceRoots: [media] };
     const modelUri = panel.webview.asWebviewUri(vscode.Uri.joinPath(media, "attacktree-model.js"));
+    const scaleUri = panel.webview.asWebviewUri(vscode.Uri.joinPath(media, "attacker-scale.js"));
     const cssUri = panel.webview.asWebviewUri(vscode.Uri.joinPath(media, "tra-ui.css"));
     const logoUri = panel.webview.asWebviewUri(vscode.Uri.joinPath(media, "embedrisk-logo.svg"));
     const nonce = String(Math.random()).slice(2);
@@ -37,7 +38,7 @@ export class AttackTreeEditor implements vscode.CustomTextEditorProvider {
       await doc.save(); // persist immediately so a new / edited tree is never lost when the editor closes
     };
 
-    panel.webview.html = this.html(modelUri, cssUri, logoUri, csp, nonce);
+    panel.webview.html = this.html(modelUri, scaleUri, cssUri, logoUri, csp, nonce);
     const sub = vscode.workspace.onDidChangeTextDocument((e) => {
       if (e.document.uri.toString() === doc.uri.toString() && e.document.getText() !== lastText) post();
       if (e.document.uri.toString() === projectUri.toString()) {
@@ -53,7 +54,7 @@ export class AttackTreeEditor implements vscode.CustomTextEditorProvider {
     });
   }
 
-  private html(modelUri: vscode.Uri, cssUri: vscode.Uri, logoUri: vscode.Uri, csp: string, nonce: string): string {
+  private html(modelUri: vscode.Uri, scaleUri: vscode.Uri, cssUri: vscode.Uri, logoUri: vscode.Uri, csp: string, nonce: string): string {
     return `<!doctype html><html><head><meta charset="utf8"><meta http-equiv="Content-Security-Policy" content="${csp}">
 <link rel="stylesheet" href="${cssUri}">
 <style>
@@ -100,13 +101,14 @@ body{display:flex;flex-direction:column}
   <aside id="insp"></aside>
 </div>
 <div id="ov"><div id="ovbox"><div id="ovlabel"></div><input id="ovinput"><div class="r"><button class="btn" id="ovcancel">Cancel</button><button class="btn primary" id="ovok">OK</button></div></div></div>
+<script nonce="${nonce}" src="${scaleUri}"></script>
 <script nonce="${nonce}" src="${modelUri}"></script>
 <script nonce="${nonce}">
 const M=AtModel, vs=acquireVsCodeApi();
 const KINDS=['goal','step','substep','category','countermeasure','vulnerability'];
 const ADD_KINDS=['step','substep','category','countermeasure','vulnerability'];
 const ACCESS=[[1,'Remote (unauth.)'],[2,'Remote (auth.)'],[3,'Adjacent / fieldbus'],[4,'Local (on site)'],[5,'Physical (enclosure)']];
-const SKILL=[[1,'Script kiddie'],[2,'Experienced hacker'],[3,'Security engineer'],[4,'Expert team'],[5,'Nation-state']];
+const SKILL=EmbedRiskAttackerScale.ACTOR_LEVELS.map(function(l){return [l.level,l.description];});
 const COST_LEVELS={
   time:[[1,'Minutes'],[2,'Hours'],[3,'Days'],[4,'Weeks'],[5,'Months+']],
   notoriety:[[1,'Public'],[2,'Known'],[3,'Limited'],[4,'Internal'],[5,'Unknown']],
@@ -146,7 +148,7 @@ function drawCanvas(){
   var r=M.render(t,focus);
   cv.setAttribute('width',Math.max(r.width,400));cv.setAttribute('height',Math.max(r.height,180));cv.innerHTML=r.svg;
   var m=M.evaluate(t.root,cmMap(),costFactorWeights);
-  $('metrics').textContent='success ≈ '+Math.round(m.prob*100)+'% · suggests likelihood '+M.likelihoodFromProb(m.prob)+' · access '+m.accessReq+' · skill '+m.skillReq+' · '+m.defenses+' defence(s)';
+  $('metrics').textContent='success ≈ '+Math.round(m.prob*100)+'% · suggests likelihood '+M.likelihoodFromProb(m.prob)+' · access '+m.accessReq+' · skill '+EmbedRiskAttackerScale.actorLevelLabel(m.skillReq)+' · '+m.defenses+' defence(s)';
 }
 function renderTreeSel(){
   $('treesel').innerHTML=doc.trees.map(function(t,i){var refs=M.threatRefsOf(t);var pfx=refs.length?(refs.join(', ')+' \u00b7 '):'';return '<option value="'+i+'"'+(i===ti?' selected':'')+'>'+esc(pfx+(t.title||t.id))+'</option>';}).join('')||'<option>(no trees)</option>';
@@ -168,7 +170,7 @@ function renderInspector(){
   if(structural)html+='<div class="field"><label>Gate (children combine)</label><select class="inp" id="in-gate">'+M.GATES.map(function(gt){return '<option'+((n.gate||'AND')===gt?' selected':'')+'>'+gt+'</option>';}).join('')+'</select></div>';
   if(isStep){
     html+='<div class="field"><label>Required access</label><select class="inp" id="in-access">'+opt(ACCESS,n.access||3)+'</select></div>';
-    html+='<div class="field"><label>Required skill</label><select class="inp" id="in-skill">'+opt(SKILL,n.skill||2)+'</select></div>';
+    html+='<div class="field"><label>Required capability (threat actor)</label><select class="inp" id="in-skill">'+opt(SKILL,EmbedRiskAttackerScale.normalizeActorLevel(n.skill||2))+'</select><span class="hint">'+esc((SKILL[EmbedRiskAttackerScale.normalizeActorLevel(n.skill||2)-1]||['',''])[1])+'</span></div>';
     html+='<div class="field"><label>Cost factors</label><div class="costgrid">'+M.COST_FACTORS.map(function(f){var v=(n.cost||{})[f.k];return '<label class="hint">'+esc(f.label)+'<select class="inp" data-cost="'+f.k+'"><option value="">–</option>'+(COST_LEVELS[f.k]||[]).map(function(o){return '<option value="'+o[0]+'"'+(+v===o[0]?' selected':'')+'>'+o[0]+' · '+esc(o[1])+'</option>';}).join('')+'</select></label>';}).join('')+'</div></div>';
   }
   if(n.kind==='countermeasure')html+='<div class="field"><label>Linked countermeasure</label><select class="inp" id="in-cmref"><option value="">(link CM…)</option>'+cms.map(function(c){return '<option value="'+esc(c.id)+'"'+(n.countermeasureRef===c.id?' selected':'')+'>'+esc(c.id)+' · '+esc(c.title)+'</option>';}).join('')+'</select></div>';
@@ -211,7 +213,7 @@ $('insp').addEventListener('change',function(e){var t=tree();if(!t)return;var n=
   else if(el.id==='in-kind'){M.setKind(t.root,n.id,el.value);persist();draw();}
   else if(el.id==='in-gate'){n.gate=el.value;persist();drawCanvas();}
   else if(el.id==='in-access'){n.access=+el.value;persist();drawCanvas();}
-  else if(el.id==='in-skill'){n.skill=+el.value;persist();drawCanvas();}
+  else if(el.id==='in-skill'){n.skill=+el.value;persist();draw();}
   else if(el.id==='in-cmref'){if(el.value)n.countermeasureRef=el.value;else delete n.countermeasureRef;persist();drawCanvas();}
   else if(el.dataset.cost){n.cost=n.cost||{};if(el.value==='')delete n.cost[el.dataset.cost];else n.cost[el.dataset.cost]=+el.value;persist();drawCanvas();}
 });

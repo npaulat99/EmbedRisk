@@ -969,6 +969,33 @@ async function checkThreatCostPersistence(h, mod) {
   console.log("  Threat cost persistence: both save paths, omission/null/empty/zero, metadata, reopen and history passed.");
 }
 
+async function checkManagedAttackerSync(h, mod) {
+  const projectFile = path.join(projectDir, "01-project-description/project.json");
+  const asmRel = "02-assumptions/assumptions.json", asmFile = path.join(projectDir, asmRel);
+  const originals = [projectFile, asmFile].map((p) => [p, h.readText(p)]);
+  const reopen = async () => { h.close(); await mod.openWizard(ctx); h.openDom(); await h.settle(); };
+  const asmWrites = (from) => h.writes.slice(from).filter((w) => w.path === asmFile).length;
+  const legacy = { id: "ATK-SLC-4", name: "Threat Actor 4: State-Sponsored/Professional Attacks", capability: 5,
+    motivation: "Intentional highly sophisticated attack", resources: "Extensive resources, deep ACS expertise, very high motivation",
+    text: "SL-C 4 attacker profile managed by EmbedRisk.", access: "remote", futureMetadata: { keep: true } };
+  const envelope = { ...JSON.parse(originals[1][1]), futureEnvelope: ["keep"] };
+  const canonical = require(path.join(extDir, "media/attacker-scale.js")).managedSlcAttacker(4);
+  h.overlay.set(projectFile, JSON.stringify({ ...JSON.parse(originals[0][1]), slTarget: "SL4" }));
+  h.overlay.set(asmFile, JSON.stringify({ ...envelope, attacker: [legacy] }));
+  await reopen();
+  assert.deepStrictEqual(lastWriteJson(h, asmRel), { ...envelope, attacker: [{ ...legacy, ...canonical }] }, "legacy managed profile was not realigned on open");
+  let start = h.writes.length;
+  await reopen();
+  assert.strictEqual(asmWrites(start), 0, "an aligned managed profile must not be rewritten");
+  h.overlay.set(asmFile, JSON.stringify({ ...envelope, attacker: [{ ...legacy, id: "ATK-CUSTOM" }] }));
+  start = h.writes.length;
+  await reopen();
+  assert.strictEqual(asmWrites(start), 0, "a non-managed profile must not be rewritten");
+  for (const [p, text] of originals) h.overlay.set(p, text);
+  await reopen();
+  console.log("  Managed SL-C attacker: legacy profile realigned on open, idempotent, custom profiles untouched passed.");
+}
+
 async function checkThreatCostControls(h, mod) {
   const file = path.join(projectDir, "06-threats/threats.json");
   const projectFile = path.join(projectDir, "01-project-description/project.json");
@@ -1015,7 +1042,7 @@ async function checkThreatCostControls(h, mod) {
     assert.strictEqual(rationale.value, "");
   }
   for (const [key, labels] of [
-    ["requiredSkill", ["Script kiddie", "Experienced hacker", "Security engineer", "Expert team", "Nation-state"]],
+    ["requiredSkill", require(path.join(extDir, "media/attacker-scale.js")).ACTOR_LEVELS.map((l) => l.description)],
     ["requiredAccess", ["Remote (unauth.)", "Remote (auth.)", "Adjacent / fieldbus", "Local (on site)", "Physical (open enclosure)"]],
   ]) assert.deepStrictEqual(Array.from(h.must(cost(key)).options, (o) => o.textContent), labels.map((label, i) => `${i + 1} · ${label}`));
   preview("30.0%", "L2 · Low");
@@ -1024,8 +1051,8 @@ async function checkThreatCostControls(h, mod) {
   h.setValue(field("title"), "Unrelated edit");
   await persist({ ...bare, title: "Unrelated edit" });
   h.click("#undoBtn"); await persist(bare); // Defaults must not become saved cost fields.
-  h.setValue(cost("requiredSkill"), "5");
-  await persist({ ...bare, requiredSkill: 5, status: "unfeasible", likelihood: 0, costLikelihood: 0, costLikelihoodProposal: 0 });
+  h.setValue(cost("requiredSkill"), "4");
+  await persist({ ...bare, requiredSkill: 4, status: "unfeasible", likelihood: 0, costLikelihood: 0, costLikelihoodProposal: 0 });
   preview("0.0%", "L0 · None");
 
   const configured = { ...project, riskScoringMethod: "cost-based",
@@ -1081,9 +1108,9 @@ async function checkThreatCostControls(h, mod) {
   expected = { ...expected, requiredAccess: 1, status: "open", likelihood: 2, costLikelihood: 0.1, costLikelihoodProposal: 2 };
   await persist(expected); preview("10.0%", "L2 · Low");
   h.setValue("#p-sl", "SL4");
-  h.setValue(cost("requiredSkill"), "5");
-  expected = { ...expected, requiredSkill: 5 };
-  await persist(expected); preview("10.0%", "L2 · Low"); // SL4 capability is 5, not 4.
+  h.setValue(cost("requiredSkill"), "4");
+  expected = { ...expected, requiredSkill: 4 };
+  await persist(expected); preview("10.0%", "L2 · Low"); // SL4 capability is 4.
   h.setValue(field("likelihood"), "0"); expected = { ...expected, likelihood: 0 };
   assert.ok(h.must("[data-cost-warning]").textContent.includes("saved proposal L2"));
   await persist(expected);
@@ -1781,6 +1808,7 @@ async function wizard(h) {
   h.deliverToHost(legacySave);
   await h.settle();
   assert.deepStrictEqual(lastWriteJson(h, projectPath), expectedLegacySave, "older save messages must preserve omitted fields");
+  await checkManagedAttackerSync(h, mod);
   await checkSystemFields(h, mod);
   await checkAssetSummaries(h, mod);
   await checkRequirementDerivation(h, mod);

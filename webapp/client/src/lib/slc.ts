@@ -1,11 +1,9 @@
 import type { AttackerProfile, Threat } from '../types';
+import { ACTOR_LEVELS, managedSlcAttacker, normalizeActorLevel } from '@shared/attackerScale.js';
 
-export const SLC_ATTACKERS: Record<number, AttackerProfile> = {
-    1: { id: 'ATK-SLC-1', name: 'Threat Actor 1: Casual or Coincidental Violation', capability: 1, motivation: 'Unintentional or accidental misconduct', resources: 'Normal operation and routine handling', text: 'SL-C 1 attacker profile managed by EmbedRisk.' },
-    2: { id: 'ATK-SLC-2', name: 'Threat Actor 2: Simple Intentional Attacks', capability: 2, motivation: 'Intentional attack using simple means', resources: 'Low resources, general IT knowledge, low motivation', text: 'SL-C 2 attacker profile managed by EmbedRisk.' },
-    3: { id: 'ATK-SLC-3', name: 'Threat Actor 3: Sophisticated ACS Attacks', capability: 3, motivation: 'Intentional sophisticated ACS attack', resources: 'Moderate resources, specific ACS expertise, moderate motivation', text: 'SL-C 3 attacker profile managed by EmbedRisk.' },
-    4: { id: 'ATK-SLC-4', name: 'Threat Actor 4: State-Sponsored/Professional Attacks', capability: 5, motivation: 'Intentional highly sophisticated attack', resources: 'Extensive resources, deep ACS expertise, very high motivation', text: 'SL-C 4 attacker profile managed by EmbedRisk.' },
-};
+export const SLC_ATTACKERS: Record<number, AttackerProfile> = Object.fromEntries(
+    ACTOR_LEVELS.map(({ level }) => [level, managedSlcAttacker(level) as AttackerProfile]),
+);
 
 export function slcLevel(value?: string): number | null {
     const match = /(?:SL(?:-C)?\s*)?([1-4])/i.exec(value || '');
@@ -17,8 +15,17 @@ export function attackerForSlc(value?: string): AttackerProfile | null {
     return level ? SLC_ATTACKERS[level] : null;
 }
 
+// The stored managed profile realigned to the canonical content, or null when no rewrite is needed.
+export function alignedManagedAttacker(slTarget: string | undefined, attackers: AttackerProfile[] | undefined): AttackerProfile | null {
+    const canonical = attackerForSlc(slTarget);
+    const stored = attackers?.length === 1 ? attackers[0] : undefined;
+    if (!canonical || !stored || stored.id !== canonical.id) return null;
+    const differs = (['name', 'capability', 'motivation', 'resources', 'text'] as const).some((key) => stored[key] !== canonical[key]);
+    return differs ? { ...stored, ...canonical } : null;
+}
+
 export function syncThreatFeasibility(threat: Threat, capability: number): Threat {
     if (typeof threat.requiredSkill !== 'number') return threat;
-    if (threat.requiredSkill > capability) return { ...threat, status: 'unfeasible' };
+    if (normalizeActorLevel(threat.requiredSkill)! > normalizeActorLevel(capability)!) return { ...threat, status: 'unfeasible' };
     return threat.status === 'unfeasible' ? { ...threat, status: 'open' } : threat;
 }

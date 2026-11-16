@@ -5,7 +5,8 @@
 import { useState } from 'react';
 import { useStore, uid } from '../../state/store';
 import { TagSelect, Field, HelpButton, confirmDelete, IdInput } from '../common';
-import { evaluate, COST_FACTOR_LEVELS, COST_FACTORS, updateNode, addChild, removeNode, moveChild, adId, KIND_LABEL, likelihoodFromProb, newNode, GATES, ADD_KINDS, ACCESS_OPTS, SKILL_OPTS, accessLabel, skillLabel, accessProbability } from '../../lib/attackTree';
+import { evaluate, COST_FACTOR_LEVELS, COST_FACTORS, updateNode, addChild, removeNode, moveChild, adId, KIND_LABEL, likelihoodFromProb, newNode, GATES, ADD_KINDS, ACCESS_OPTS, accessLabel, skillLabel, accessProbability } from '../../lib/attackTree';
+import { ACTOR_LEVELS, actorLevelOption, normalizeActorLevel } from '@shared/attackerScale.js';
 import { deriveImpact } from '../../lib/risk';
 import AttackTreeDiagram from './AttackTreeDiagram';
 import type { AdGate, AdKind, AdNode, AttackTree } from '../../types';
@@ -80,14 +81,15 @@ function NodeRow({ node, depth, ops }: { node: AdNode; depth: number; ops: Ops }
                         </select>
                     </label>
                     <label className="minifield" style={{ width: 172 }}>
-                        <span>Required skill</span>
-                        <select className="inp" value={node.skill ?? 2} onChange={(e) => ops.upd(node.id, { skill: Number(e.target.value) })}>
-                            {SKILL_OPTS.map(([v, l]) => (
-                                <option key={v} value={v}>
-                                    {v} · {l}
+                        <span>Required capability (threat actor)</span>
+                        <select className="inp" style={{ width: '100%', maxWidth: '100%', textOverflow: 'ellipsis' }} value={normalizeActorLevel(node.skill ?? 2)} onChange={(e) => ops.upd(node.id, { skill: Number(e.target.value) })}>
+                            {ACTOR_LEVELS.map(({ level }) => (
+                                <option key={level} value={level}>
+                                    {actorLevelOption(level)}
                                 </option>
                             ))}
                         </select>
+                        <span className="hint">{ACTOR_LEVELS.find((l) => l.level === normalizeActorLevel(node.skill ?? 2))?.description}</span>
                     </label>
                     <details className="costf">
                         <summary>cost factors</summary>
@@ -111,7 +113,7 @@ function NodeRow({ node, depth, ops }: { node: AdNode; depth: number; ops: Ops }
             {hasStructuralKids && (
                 <div className="adderived" title="Derived bottom-up from the sub-steps via the gate logic (AND/SAND = hardest sub-step, OR = easiest).">
                     <span className="dtag">required access <b>{Math.round(m.accessReq) || '–'} · {accessLabel(m.accessReq)}</b></span>
-                    <span className="dtag">required skill <b>{Math.round(m.skillReq) || '–'} · {skillLabel(m.skillReq)}</b></span>
+                    <span className="dtag">required capability <b>{skillLabel(m.skillReq)}</b></span>
                     <span className="dtag">success ≈ {Math.round(m.prob * 100)}%</span>
                     <span className="muted">derived from {node.gate} of sub-steps</span>
                 </div>
@@ -156,7 +158,7 @@ function TreeCard({ tree, view }: { tree: AttackTree; view: 'list' | 'diagram' }
 
     const m = evaluate(tree.root, new Map((data.countermeasures.countermeasures || []).map((c) => [c.id, c])), data.project.costFactorWeights);
     const vectorProbability = m.prob * accessProbability(m.accessReq, data.project.accessProbabilities);
-    const treeUnfeasible = !!attackers[0] && m.skillReq > attackers[0].capability;
+    const treeUnfeasible = !!attackers[0] && m.skillReq > (normalizeActorLevel(attackers[0].capability) as number);
     const hasSteps = (tree.root.children || []).some((c) => c.kind !== 'countermeasure' && c.kind !== 'vulnerability');
     const setThreatLinks = (next: string[]) => updTree({ threatRefs: next, threatRef: next[0] || undefined });
 
@@ -193,7 +195,7 @@ function TreeCard({ tree, view }: { tree: AttackTree; view: 'list' | 'diagram' }
             <div className="admetrics">
                 {hasSteps ? (
                     <>
-                        <span className="tag">required skill {m.skillReq || '–'}</span>
+                        <span className="tag">required capability {skillLabel(m.skillReq)}</span>
                         <span className="tag">required access {m.accessReq || '–'}</span>
                         <span className="tag">goal cost likelihood ≈ {Math.round(m.prob * 100)}%</span>
                         <span className="tag">attack-vector likelihood ≈ {Math.round(vectorProbability * 100)}%</span>
@@ -207,7 +209,7 @@ function TreeCard({ tree, view }: { tree: AttackTree; view: 'list' | 'diagram' }
                         <span className="muted" style={{ marginLeft: 8 }}>
                             feasible for:{' '}
                             {attackers
-                                .filter((a) => m.skillReq <= (a.capability || 0))
+                                .filter((a) => m.skillReq <= ((normalizeActorLevel(a.capability) as number) || 0))
                                 .map((a) => a.name)
                                 .join(', ') || 'none of the defined attackers'}
                         </span>

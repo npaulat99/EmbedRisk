@@ -176,7 +176,12 @@ for t in threats:
     rows += f"<tr><td>{html_lib.escape(str(t['id']), quote=True)}</td><td>{html_lib.escape(str(t['title']), quote=True)}</td><td>{html_lib.escape(''.join(t['stride']), quote=True)}</td><td>{'<br>'.join(classification)}</td><td>{na if unf else cell(t['likelihood'], t['impact'], r)}</td><td>{na if unf else cell(rl, ri, rr)}</td><td>{html_lib.escape(str(t['status']), quote=True)}</td></tr>"
 
 assets = "".join(f"<li>{a['name']} (C{a['objectives']['confidentiality']}/I{a['objectives']['integrity']}/A{a['objectives']['availability']}/S{a['objectives']['safety']})</li>" for a in sys_def["assets"])
-atk = "".join(f"<li><b>{html_lib.escape(str(a.get('name','')), quote=True)}</b> cap {html_lib.escape(str(a.get('capability','—')), quote=True)}, {html_lib.escape(str(a.get('access','—')), quote=True)}: {html_lib.escape(str(a.get('text','')), quote=True)}</li>" for a in ass["attacker"])
+def cap_label(v):
+    if isinstance(v, (int, float)) and not isinstance(v, bool) and v >= 1:
+        return f"capability {min(4, v)} · Threat actor {min(4, v)}"
+    return f"capability {v if v is not None else '—'}"
+
+atk = "".join(f"<li><b>{html_lib.escape(str(a.get('name','')), quote=True)}</b> {html_lib.escape(cap_label(a.get('capability')), quote=True)}, {html_lib.escape(str(a.get('access','—')), quote=True)}: {html_lib.escape(str(a.get('text','')), quote=True)}</li>" for a in ass["attacker"])
 cmrows = "".join(f"<li><b>{c['id']}</b> {c['title']} → {', '.join(a['threat'] for a in c['addresses'])} ({c.get('status','')})</li>" for c in cms)
 
 def _esc(s):

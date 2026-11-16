@@ -19,7 +19,7 @@ const HANDLE_OPTS = [
 
 const HELP: Record<string, string> = {
     project: 'Keep the boundary to one sentence. Choose the smallest modelling depth (blackbox → graybox → whitebox) that still answers your question.',
-    assumptions: 'Attacker profiles are mandatory: capability (1–5) and access (remote→physical) feed the likelihood rubric directly.',
+    assumptions: 'Attacker profiles are mandatory: capability (threat actor 1–4) and access (remote→physical) feed the likelihood rubric directly.',
     system: 'Rate each asset’s C/I/A/Safety (0–5). Impact later defaults to the worst plausible asset (max of C/I/A/Safety).',
     dfd: 'Flows that cross a trust boundary are the threat hot-spots. Drill into a process to model its internals on a deeper layer.',
     useCases: 'Optional: model actors and actions, plus misuse-case variants for abuse scenarios. Group related entities with a named grouping box. Report inclusion defaults to off.',

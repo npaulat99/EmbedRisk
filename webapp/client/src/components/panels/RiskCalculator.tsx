@@ -6,7 +6,8 @@ import { useEffect } from 'react';
 import { useStore } from '../../state/store';
 import { deriveImpact, deriveLikelihood, exposureFromInterface } from '../../lib/risk';
 import { cvssBaseScore } from '../../lib/cvss';
-import { accessProbability, ACCESS_OPTS, COST_FACTOR_LEVELS, COST_FACTORS, likelihoodFromProb, SKILL_OPTS, stepProb } from '../../lib/attackTree';
+import { accessProbability, ACCESS_OPTS, COST_FACTOR_LEVELS, COST_FACTORS, likelihoodFromProb, stepProb } from '../../lib/attackTree';
+import { ACTOR_LEVELS, actorLevelLabel, actorLevelOption, normalizeActorLevel } from '@shared/attackerScale.js';
 import BugBarImpactSelector from '../BugBarImpactSelector';
 import type { Threat } from '../../types';
 
@@ -25,8 +26,8 @@ function CostRiskCalculator({ t, upd }: { t: GuidedRiskModel; upd: (patch: any) 
     const factors = t.costFactors || {};
     const rationales = t.costRationales || {};
     const access = t.requiredAccess || 3;
-    const skill = t.requiredSkill || 1;
-    const feasible = !attacker || skill <= attacker.capability;
+    const skill = normalizeActorLevel(t.requiredSkill || 1) as number;
+    const feasible = !attacker || skill <= (normalizeActorLevel(attacker.capability) as number);
     const costProbability = stepProb(factors, weights);
     const probability = feasible ? accessProbability(access, accessProbabilities) * costProbability : 0;
     const proposal = likelihoodFromProb(probability, likelihoodThresholds);
@@ -34,7 +35,7 @@ function CostRiskCalculator({ t, upd }: { t: GuidedRiskModel; upd: (patch: any) 
         const nextFactors = patch.costFactors ?? factors;
         const nextSkill = patch.requiredSkill ?? skill;
         const nextAccess = patch.requiredAccess ?? access;
-        const status = attacker && nextSkill > attacker.capability ? 'unfeasible' : t.status === 'unfeasible' ? 'open' : t.status;
+        const status = attacker && (normalizeActorLevel(nextSkill) as number) > (normalizeActorLevel(attacker.capability) as number) ? 'unfeasible' : t.status === 'unfeasible' ? 'open' : t.status;
         const nextCostProbability = stepProb(nextFactors, weights);
         const nextProbability = status === 'unfeasible' ? 0 : accessProbability(nextAccess, accessProbabilities) * nextCostProbability;
         const nextProposal = likelihoodFromProb(nextProbability, likelihoodThresholds);
@@ -49,7 +50,7 @@ function CostRiskCalculator({ t, upd }: { t: GuidedRiskModel; upd: (patch: any) 
         <div className="calc">
             <div className="calchead">Cost-based likelihood <span className="muted">weighted attack difficulty and required access</span></div>
             <div className="grid4">
-                <label className="minifield"><span>Required skill</span><select className="inp" value={skill} onChange={(e) => update({ requiredSkill: Number(e.target.value) })}>{SKILL_OPTS.map(([value, label]) => <option key={value} value={value}>{value} · {label}</option>)}</select></label>
+                <label className="minifield"><span>Required capability (threat actor)</span><select className="inp" style={{ width: '100%', maxWidth: '100%', textOverflow: 'ellipsis' }} value={skill} onChange={(e) => update({ requiredSkill: Number(e.target.value) })}>{ACTOR_LEVELS.map(({ level }) => <option key={level} value={level}>{actorLevelOption(level)}</option>)}</select><span className="hint">{ACTOR_LEVELS.find((l) => l.level === skill)?.description}</span></label>
                 <label className="minifield"><span>Required access</span><select className="inp" value={access} onChange={(e) => update({ requiredAccess: Number(e.target.value) })}>{ACCESS_OPTS.map(([value, label]) => <option key={value} value={value}>{value} · {label}</option>)}</select></label>
                 <div className="minifield"><span>Calculated vector probability</span><b>{(probability * 100).toFixed(1)}%</b></div>
                 <div className="minifield"><span>Proposed matrix likelihood</span><b>L{proposal} · {proposal === 1 ? 'Very low' : proposal === 2 ? 'Low' : proposal === 3 ? 'Moderate' : proposal === 4 ? 'High' : proposal === 5 ? 'Very high' : 'None'}</b></div>
@@ -62,7 +63,7 @@ function CostRiskCalculator({ t, upd }: { t: GuidedRiskModel; upd: (patch: any) 
                     </div>
                 ))}
             </div>
-            {!feasible && <p className="hint warnmark">Required skill exceeds the selected SL-C attacker capability ({attacker?.capability}); this threat is marked unfeasible.</p>}
+            {!feasible && <p className="hint warnmark">Required capability exceeds the selected SL-C attacker ({attacker?.name}, {actorLevelLabel(attacker?.capability ?? 0)}); this threat is marked unfeasible.</p>}
         </div>
     );
 }
@@ -169,7 +170,7 @@ export default function RiskCalculator({
     const derivedL = deriveLikelihood(fac);
     const derivedI = deriveImpact(dims);
     const overridden = (derivedL != null && derivedL !== likelihood) || (derivedI != null && derivedI !== impact);
-    const capGate = attacker && typeof attacker.capability === 'number' && typeof fac.exploitability === 'number' && attacker.capability + fac.exploitability < 6;
+    const capGate = attacker && typeof attacker.capability === 'number' && typeof fac.exploitability === 'number' && (normalizeActorLevel(attacker.capability) as number) + fac.exploitability < 6;
 
     const ratedByRow = (
         <div className="inline" style={{ gap: 8, flexWrap: 'wrap', marginTop: 10 }}>

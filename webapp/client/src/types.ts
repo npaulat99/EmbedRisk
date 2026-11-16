@@ -303,7 +303,7 @@ export interface Threat {
     // objectively-rateable factors (both 1-5, higher = more likely). Exposure = attack-surface
     // reachability; Exploitability = ease of exploitation once the surface is reached.
     likelihoodFactors?: { exposure?: number; exploitability?: number };
-    requiredSkill?: number; // 1-5; cost-based feasibility requirement
+    requiredSkill?: number; // 1-4 (threat actor level; legacy 5 is read as 4); cost-based feasibility requirement
     requiredAccess?: number; // 1-5; cost-based access requirement
     costFactors?: AdCost; // cost-based difficulty dimensions; retained alongside legacy factors
     costRationales?: Partial<Record<keyof AdCost, string>>; // assessor rationale for each cost factor
@@ -385,7 +385,7 @@ export interface AdNode {
     label: string;
     gate?: AdGate; // combination of children, for goal/step/substep/category nodes
     access?: number; // 1-5 required access for a step, defence, or vulnerability assessment
-    skill?: number; // 1-5 required attacker skill for a step, defence, or vulnerability assessment
+    skill?: number; // 1-4 (threat actor level; legacy 5 is read as 4) required attacker capability for a step, defence, or vulnerability assessment
     cost?: AdCost;
     costRationales?: Partial<Record<keyof AdCost, string>>;
     residualCost?: AdCost; // defence/vulnerability assessment overriding the parent step cost

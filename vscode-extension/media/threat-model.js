@@ -5,6 +5,7 @@
 (function (g) {
   "use strict";
   var AtModel = typeof module !== "undefined" && module.exports ? require("./attacktree-model.js") : g.AtModel;
+  var AttackerScale = typeof module !== "undefined" && module.exports ? require("./attacker-scale.js") : g.EmbedRiskAttackerScale;
   var DEFAULT_ACCESS_PROBABILITIES = { 1: 0.9, 2: 0.7, 3: 0.5, 4: 0.3, 5: 0.1 };
 
   function accessProbability(access, probabilities) {
@@ -20,7 +21,8 @@
   // Read/propose only: never replace the accepted likelihood or fill absent saved fields.
   function calculate(threat, project, attacker) {
     project = project || {};
-    var feasible = !attacker || (threat.requiredSkill || 1) <= attacker.capability;
+    var norm = AttackerScale.normalizeActorLevel;
+    var feasible = !attacker || norm(threat.requiredSkill || 1) <= norm(attacker.capability);
     var cost = costProbability(threat.costFactors || {}, project.costFactorWeights);
     var probability = feasible ? accessProbability(threat.requiredAccess || 3, project.accessProbabilities) * cost : 0;
     return {
@@ -37,7 +39,8 @@
     var factors = patch.costFactors ?? (threat.costFactors || {});
     var skill = patch.requiredSkill ?? (threat.requiredSkill || 1);
     var access = patch.requiredAccess ?? (threat.requiredAccess || 3);
-    var status = attacker && skill > attacker.capability ? "unfeasible" : threat.status === "unfeasible" ? "open" : threat.status;
+    var norm = AttackerScale.normalizeActorLevel;
+    var status = attacker && norm(skill) > norm(attacker.capability) ? "unfeasible" : threat.status === "unfeasible" ? "open" : threat.status;
     var cost = costProbability(factors, project.costFactorWeights);
     var probability = status === "unfeasible" ? 0 : accessProbability(access, project.accessProbabilities) * cost;
     var proposal = AtModel.likelihoodFromProb(probability, project.likelihoodProbabilityThresholds);

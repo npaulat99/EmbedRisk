@@ -119,6 +119,10 @@ countermeasure -> residual risk**:
   countermeasure should lower `residualLikelihood`, not `residualImpact` (and vice versa for
   controls that reduce consequence rather than probability).
 
+## Attacker capability scale
+
+Attacker `capability`, threat `requiredSkill` and attack-tree node `skill` use the 4-level threat-actor scale (1-4); a persisted legacy 5 is read as 4. Do not write 5 into these fields.
+
 ## Do not silently default
 
 Leave a field absent (or explicitly flag it as an open question) rather than filling it with a

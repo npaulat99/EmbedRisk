@@ -32,6 +32,7 @@ function resolveProjectPath() {
 const { display: proj, base } = resolveProjectPath();
 const read = (p) => JSON.parse(readFileSync(join(base, p), "utf8"));
 const esc = (s) => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+const capLabel = (v) => (typeof v === 'number' && v >= 1 ? `capability ${Math.min(4, v)} · Threat actor ${Math.min(4, v)}` : `capability ${v ?? '—'}`);
 const ID_PATTERN = /^[A-Za-z0-9 _\-:.]+$/;
 const assumptionAnchor = (id) => `assumption-${String(id ?? '').replace(/[^A-Za-z0-9_.:-]/g, '-')}`;
 const scheme = JSON.parse(readFileSync(join(root, ".assets/knowledge-base/risk-scheme.json"), "utf8"));
@@ -185,7 +186,7 @@ const assRows = ['device', 'system', 'environment', 'operational'].map((k) => {
 }).join('');
 const atkRows = (ass.attacker || []).map((a) => {
   const cited = (assumptionCitedBy.get(a.id) || []).map((tid) => `<a href="#threat-${esc(tid)}">${esc(tid)}</a>`).join(', ');
-  return `<li id="${esc(assumptionAnchor(a.id))}"><b>${esc(a.id)}</b> · <b>${esc(a.name)}</b> cap ${a.capability}, ${esc(a.access)}: ${esc(a.text || '')}${cited ? `<br><span style="font-size:11px;color:#555">cited by: ${cited}</span>` : ''}</li>`;
+  return `<li id="${esc(assumptionAnchor(a.id))}"><b>${esc(a.id)}</b> · <b>${esc(a.name)}</b> ${esc(capLabel(a.capability))}, ${esc(a.access)}: ${esc(a.text || '')}${cited ? `<br><span style="font-size:11px;color:#555">cited by: ${cited}</span>` : ''}</li>`;
 }).join('');
 
 // SBOM (CycloneDX) from component list
