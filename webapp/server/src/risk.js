@@ -2,50 +2,49 @@
 // risk derived from the minimum residual L/I across all countermeasure links for a threat.
 import { promises as fs } from 'node:fs';
 import { riskSchemePath } from './paths.js';
+import '../../shared/riskEngine.js';
 
 let scheme = null;
+const engineCache = new WeakMap();
+function engineOf(value) {
+    const key = value && typeof value === 'object' ? value : null;
+    if (key && engineCache.has(key)) return engineCache.get(key);
+    const engine = globalThis.RiskEngine.createRiskEngine(value || {});
+    if (key) engineCache.set(key, engine);
+    return engine;
+}
+
 export async function loadScheme() {
     if (!scheme) scheme = JSON.parse(await fs.readFile(riskSchemePath, 'utf8'));
     return scheme;
 }
 
 export function band(s, r) {
-    if (r <= 0) return { name: 'None', min: 0, max: 0, color: '#6b7280' };
-    return s.matrix.bands.find((b) => r >= b.min && r <= b.max) || s.matrix.bands[0];
+    return engineOf(s).band(r);
 }
 
 /** Residual [likelihood, impact] for a threat given all selected countermeasures. */
 export function residual(threat, cms) {
-    if (threat.status === 'unfeasible') return [0, 0];
-    const links = cms.filter((c) => c.selected !== false).flatMap((c) => (c.addresses || []).filter((a) => a.threat === threat.id));
-    if (!links.length) return [threat.likelihood, threat.impact];
-    // All applied controls are in effect simultaneously, so an attacker must overcome the strongest
-    // one on each axis: the residual likelihood is the lowest residual likelihood any single control
-    // achieves (the most protective dominates), and likewise the residual impact.
-    let rl = threat.likelihood;
-    let ri = threat.impact;
-    for (const a of links) {
-        rl = Math.min(rl, a.residualLikelihood ?? threat.likelihood);
-        ri = Math.min(ri, a.residualImpact ?? threat.impact);
-    }
-    return [rl, ri];
+    return engineOf(null).residual(threat, cms);
 }
 
 export function computeRisk(s, threats, cms) {
+    const engine = engineOf(s);
     return threats.map((t) => {
-        const initial = t.status === 'unfeasible' ? 0 : (t.likelihood || 0) * (t.impact || 0);
-        const [rl, ri] = residual(t, cms);
-        const res = (rl || 0) * (ri || 0);
+        const risk = engine.riskOf(t, cms);
+        const riskBand = (likelihood, impact, score) => {
+            if (score <= 0) return { name: 'None', min: 0, max: 0, color: '#6b7280' };
+            if (engine.scheme.classification.kind === 'product-bands') return engine.band(score);
+            const level = engine.classify(likelihood, impact);
+            return { name: level.label, min: level.rank, max: level.rank, color: level.color };
+        };
         return {
             id: t.id,
             likelihood: t.likelihood,
             impact: t.impact,
-            initial,
-            initialBand: band(s, initial),
-            residualLikelihood: rl,
-            residualImpact: ri,
-            residual: res,
-            residualBand: band(s, res),
+            ...risk,
+            initialBand: riskBand(t.likelihood, t.impact, risk.initial),
+            residualBand: riskBand(risk.residualLikelihood, risk.residualImpact, risk.residual),
         };
     });
 }

@@ -12,6 +12,7 @@ export class NativeDfdEditor implements vscode.CustomTextEditorProvider {
     panel.webview.options = { enableScripts: true, localResourceRoots: [media] };
     const engineUri = panel.webview.asWebviewUri(vscode.Uri.joinPath(media, "dfd-engine.js"));
     const modelUri = panel.webview.asWebviewUri(vscode.Uri.joinPath(media, "dfd-model.js"));
+    const riskEngineUri = panel.webview.asWebviewUri(vscode.Uri.joinPath(media, "risk-engine.js"));
     const riskUri = panel.webview.asWebviewUri(vscode.Uri.joinPath(media, "risk-model.js"));
     const visibilityUri = panel.webview.asWebviewUri(vscode.Uri.joinPath(media, "layer-visibility.js"));
     const strideUri = panel.webview.asWebviewUri(vscode.Uri.joinPath(media, "stride-model.js"));
@@ -127,7 +128,7 @@ export class NativeDfdEditor implements vscode.CustomTextEditorProvider {
       await vscode.workspace.applyEdit(ed);
     };
 
-    panel.webview.html = this.html(engineUri, modelUri, riskUri, visibilityUri, strideUri, cssUri, logoUri, csp, nonce);
+    panel.webview.html = this.html(engineUri, modelUri, riskEngineUri, riskUri, visibilityUri, strideUri, cssUri, logoUri, csp, nonce);
 
     const sub = vscode.workspace.onDidChangeTextDocument((e) => {
       if (e.document.uri.toString() === doc.uri.toString() && e.document.getText() !== lastText) post();
@@ -151,7 +152,7 @@ export class NativeDfdEditor implements vscode.CustomTextEditorProvider {
     });
   }
 
-  private html(engineUri: vscode.Uri, modelUri: vscode.Uri, riskUri: vscode.Uri, visibilityUri: vscode.Uri, strideUri: vscode.Uri, cssUri: vscode.Uri, logoUri: vscode.Uri, csp: string, nonce: string): string {
+  private html(engineUri: vscode.Uri, modelUri: vscode.Uri, riskEngineUri: vscode.Uri, riskUri: vscode.Uri, visibilityUri: vscode.Uri, strideUri: vscode.Uri, cssUri: vscode.Uri, logoUri: vscode.Uri, csp: string, nonce: string): string {
     return `<!doctype html><html><head><meta charset="utf8"><meta http-equiv="Content-Security-Policy" content="${csp}">
 <link rel="stylesheet" href="${cssUri}">
 <style>
@@ -250,6 +251,7 @@ svg{display:block;margin:0 auto}
 <div id="ov"><div id="ovbox"><div id="ovlabel"></div><input id="ovinput"><div class="r"><button class="btn" id="ovcancel">Cancel</button><button class="btn primary" id="ovok">OK</button></div></div></div>
 <script nonce="${nonce}" src="${engineUri}"></script>
 <script nonce="${nonce}" src="${modelUri}"></script>
+<script nonce="${nonce}" src="${riskEngineUri}"></script>
 <script nonce="${nonce}" src="${riskUri}"></script>
 <script nonce="${nonce}" src="${visibilityUri}"></script>
 <script nonce="${nonce}" src="${strideUri}"></script>

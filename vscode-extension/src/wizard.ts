@@ -279,6 +279,7 @@ export async function openWizard(ctx: vscode.ExtensionContext, focusThreatId?: s
   const media = vscode.Uri.joinPath(ctx.extensionUri, "media");
   const panel = vscode.window.createWebviewPanel("embedriskWizard", "EmbedRisk Wizard", vscode.ViewColumn.One, { enableScripts: true, localResourceRoots: [media] });
   const cssUri = panel.webview.asWebviewUri(vscode.Uri.joinPath(media, "tra-ui.css"));
+  const riskEngineUri = panel.webview.asWebviewUri(vscode.Uri.joinPath(media, "risk-engine.js"));
   const riskUri = panel.webview.asWebviewUri(vscode.Uri.joinPath(media, "risk-model.js"));
   const attackTreeUri = panel.webview.asWebviewUri(vscode.Uri.joinPath(media, "attacktree-model.js"));
   const threatUri = panel.webview.asWebviewUri(vscode.Uri.joinPath(media, "threat-model.js"));
@@ -286,7 +287,7 @@ export async function openWizard(ctx: vscode.ExtensionContext, focusThreatId?: s
   const logoUri = panel.webview.asWebviewUri(vscode.Uri.joinPath(media, "embedrisk-logo.svg"));
   const nonce = String(Math.random()).slice(2);
   const csp = `default-src 'none'; img-src ${panel.webview.cspSource}; style-src ${panel.webview.cspSource} 'unsafe-inline'; script-src 'nonce-${nonce}' ${panel.webview.cspSource};`;
-  panel.webview.html = shell(cssUri, riskUri, scaleUri, attackTreeUri, threatUri, logoUri, csp, nonce);
+  panel.webview.html = shell(cssUri, riskEngineUri, riskUri, scaleUri, attackTreeUri, threatUri, logoUri, csp, nonce);
   await syncManagedAttacker(f.proj);
 
   const sendInit = async () => panel.webview.postMessage({ cmd: "init", data: await buildData(f.proj), focusThreatId, bugBar: await rdRaw(ctx.extensionUri, "runtime/.assets/knowledge-base/bug-bar.json", null), scheme: await rdRaw(ctx.extensionUri, "runtime/.assets/knowledge-base/risk-scheme.json", null) });
@@ -732,7 +733,7 @@ export async function openWizard(ctx: vscode.ExtensionContext, focusThreatId?: s
   }, undefined, ctx.subscriptions);
 }
 
-function shell(cssUri: vscode.Uri, riskUri: vscode.Uri, scaleUri: vscode.Uri, attackTreeUri: vscode.Uri, threatUri: vscode.Uri, logoUri: vscode.Uri, csp: string, nonce: string): string {
+function shell(cssUri: vscode.Uri, riskEngineUri: vscode.Uri, riskUri: vscode.Uri, scaleUri: vscode.Uri, attackTreeUri: vscode.Uri, threatUri: vscode.Uri, logoUri: vscode.Uri, csp: string, nonce: string): string {
   return `<!doctype html><html><head><meta charset="utf8"><meta http-equiv="Content-Security-Policy" content="${csp}">
 <link rel="stylesheet" href="${cssUri}">
 <style>
@@ -881,6 +882,7 @@ function shell(cssUri: vscode.Uri, riskUri: vscode.Uri, scaleUri: vscode.Uri, at
     </div>
   </div>
 </div>
+<script nonce="${nonce}" src="${riskEngineUri}"></script>
 <script nonce="${nonce}" src="${riskUri}"></script>
 <script nonce="${nonce}" src="${scaleUri}"></script>
 <script nonce="${nonce}" src="${attackTreeUri}"></script>

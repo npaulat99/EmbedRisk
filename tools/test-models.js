@@ -767,10 +767,19 @@ ok("band(0) is None", RiskModel.band(0, null).name === "None");
 
 /* ---------- Read-only matrix against the actual webapp client risk engine ---------- */
 const clientRiskModule = { exports: {} };
-require("node:vm").runInNewContext(esbuild.transformSync(
+const clientRiskEngineModule = { exports: {} };
+vm.runInNewContext(fs.readFileSync(path.join(root, "webapp/shared/riskEngine.js"), "utf8"), {
+  module: clientRiskEngineModule,
+  TextEncoder,
+});
+vm.runInNewContext(esbuild.transformSync(
   fs.readFileSync(path.join(root, "webapp/client/src/lib/risk.ts"), "utf8"),
   { loader: "ts", format: "cjs" },
-).code, { module: clientRiskModule });
+).code, {
+  module: clientRiskModule,
+  RiskEngine: clientRiskEngineModule.exports,
+  require: (id) => id === "@shared/riskEngine.js" ? clientRiskEngineModule.exports : require(id),
+});
 const clientRisk = clientRiskModule.exports;
 const matrixThreats = freezeThreatInput([
   { id: "M", likelihood: 5, impact: 5, future: { keep: ["metadata"] } },
@@ -998,6 +1007,88 @@ async function runRiskSchemeTests() {
   passed++;
   ok("risk scheme: built-in cost thresholds match existing defaults", JSON.stringify(cost.likelihood.derivation.probabilityThresholds)
     === JSON.stringify({ 2: 0.3, 3: 0.5, 4: 0.7, 5: 0.9 }));
+}
+
+function runRiskEngineTests() {
+  const canonicalPath = path.join(root, "webapp/shared/riskEngine.js");
+  const extensionPath = path.join(root, "vscode-extension/media/risk-engine.js");
+  const canonicalSource = fs.readFileSync(canonicalPath, "utf8");
+  const extensionSource = fs.readFileSync(extensionPath, "utf8");
+  ok("risk engine: extension vendor matches canonical source", canonicalSource === extensionSource);
+
+  const engineModule = { exports: {} };
+  vm.runInNewContext(canonicalSource, { module: engineModule, TextEncoder });
+  const browser = { window: {}, TextEncoder };
+  vm.runInNewContext(extensionSource, browser);
+  ok("risk engine: browser global exposes the same API", browser.window.RiskEngine
+    && Object.keys(browser.window.RiskEngine).sort().join(",") === Object.keys(engineModule.exports).sort().join(","));
+
+  const axisLevels = (prefix) => [1, 2, 3, 4].map((value) => ({ value, code: prefix + value, label: "Level " + value }));
+  const scheme = {
+    schemaVersion: 2,
+    id: "inline-engine-4x4",
+    title: "Inline 4x4",
+    version: "1",
+    likelihood: {
+      levels: axisLevels("E"),
+      derivation: { kind: "criteria-max" },
+      criteria: ["a", "b", "ignored"].map((id) => ({ id, label: id, levelTexts: {} })),
+    },
+    impact: {
+      levels: axisLevels("S"),
+      derivation: { kind: "criteria-max" },
+      criteria: ["x", "y", "ignored"].map((id) => ({ id, label: id, levelTexts: {} })),
+    },
+    classification: {
+      kind: "lookup",
+      levels: [
+        { id: "low", label: "low", rank: 1, color: "#2e7d32", treatment: "auto-accept" },
+        { id: "medium", label: "medium", rank: 2, color: "#f9a825", treatment: "optional" },
+        { id: "high", label: "high", rank: 3, color: "#ef6c00", treatment: "required", acceptanceBy: "management" },
+        { id: "critical", label: "critical", rank: 4, color: "#c62828", treatment: "immediate", acceptanceBy: "management" },
+      ],
+      matrix: {
+        "4": { "1": "medium", "2": "high", "3": "critical", "4": "critical" },
+        "3": { "1": "medium", "2": "high", "3": "high", "4": "critical" },
+        "2": { "1": "low", "2": "medium", "3": "medium", "4": "high" },
+        "1": { "1": "low", "2": "low", "3": "medium", "4": "medium" },
+      },
+    },
+    highLevel: "high",
+    acceptance: { defaultLevel: "medium" },
+  };
+  const engine = engineModule.exports.createRiskEngine(scheme);
+  const expected = {
+    "4": ["medium", "high", "critical", "critical"],
+    "3": ["medium", "high", "high", "critical"],
+    "2": ["low", "medium", "medium", "high"],
+    "1": ["low", "low", "medium", "medium"],
+  };
+  let allCellsMatch = true;
+  for (let impact = 1; impact <= 4; impact++) {
+    for (let likelihood = 1; likelihood <= 4; likelihood++) {
+      allCellsMatch = allCellsMatch && engine.classify(likelihood, impact).id === expected[String(impact)][likelihood - 1];
+    }
+  }
+  ok("risk engine: all 16 lookup cells classify by axes, not product", allCellsMatch
+    && engine.classify(2, 3).id === "high" && engine.classify(3, 2).id === "medium");
+  ok("risk engine: criteria-max derives each axis and leaves all-null unrated",
+    engine.deriveLikelihood({ likelihoodCriteria: { a: 2, b: 3, ignored: null } }) === 3
+    && engine.deriveImpact({ impactCriteria: { x: 1, y: 3, ignored: null } }) === 3
+    && engine.deriveLikelihood({ likelihoodCriteria: { a: null, b: null, ignored: null } }) === null);
+
+  const residualThreat = { id: "RESIDUAL", likelihood: 3, impact: 3 };
+  const residualCms = [{ addresses: [{ threat: "RESIDUAL", residualLikelihood: 1, residualImpact: 3 }] }];
+  ok("risk engine: residual control reduction classifies and meets acceptableLevel",
+    engine.riskOf(residualThreat, residualCms).residualBand.id === "medium"
+    && engine.isAcceptable(residualThreat, residualCms, { acceptableLevel: "medium" }));
+  ok("risk engine: high and critical require management acceptance",
+    !engine.isAcceptable({ id: "HIGH", likelihood: 2, impact: 3 }, [], { acceptableLevel: "medium" })
+    && !engine.isAcceptable({ id: "CRITICAL", likelihood: 3, impact: 4 }, [], { acceptableLevel: "medium" })
+    && engine.isAcceptable({ id: "HIGH", likelihood: 2, impact: 3, status: "accepted", acceptedBy: "manager" }, [], { acceptableLevel: "medium" }));
+  ok("risk engine: low is acceptable and out-of-range values are not", engine.isAcceptable({ id: "LOW", likelihood: 1, impact: 1 }, [], { acceptableLevel: "medium" })
+    && !engine.inRange("likelihood", 5) && engine.classify(5, 3).id === "none"
+    && !engine.isAcceptable({ id: "INVALID", likelihood: 5, impact: 3 }, [], { acceptableLevel: "medium" }));
 }
 
 function runDfdEngineTests() {
@@ -1506,6 +1597,7 @@ runImportedKbTests()
   .then(() => checkWebappParity())
   .then(() => runRiskGoldenTests())
   .then(() => runRiskSchemeTests())
+  .then(() => runRiskEngineTests())
   .then(() => runValidationCoreTests())
   .then(() => runValidationDiagnosticsTests())
   .then(async () => {
