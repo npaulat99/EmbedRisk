@@ -15,6 +15,15 @@ export function attackerForSlc(value?: string): AttackerProfile | null {
     return level ? SLC_ATTACKERS[level] : null;
 }
 
+// The stored managed profile realigned to the canonical content, or null when no rewrite is needed.
+export function alignedManagedAttacker(slTarget: string | undefined, attackers: AttackerProfile[] | undefined): AttackerProfile | null {
+    const canonical = attackerForSlc(slTarget);
+    const stored = attackers?.length === 1 ? attackers[0] : undefined;
+    if (!canonical || !stored || stored.id !== canonical.id) return null;
+    const differs = (['name', 'capability', 'motivation', 'resources', 'text'] as const).some((key) => stored[key] !== canonical[key]);
+    return differs ? { ...stored, ...canonical } : null;
+}
+
 export function syncThreatFeasibility(threat: Threat, capability: number): Threat {
     if (typeof threat.requiredSkill !== 'number') return threat;
     if (normalizeActorLevel(threat.requiredSkill)! > normalizeActorLevel(capability)!) return { ...threat, status: 'unfeasible' };

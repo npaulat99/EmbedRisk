@@ -159,7 +159,7 @@ function testCostBasedSlcValidation() {
         costRationales: { time: 'Measured effort', exploitability: 'Known weakness', window: 'Routine access', detection: 'Monitoring is limited', notoriety: 'Public knowledge', prep: 'Standard tools', abort: 'Low consequence' }, status: 'open',
     });
     const warnings = issueMessages(validate(project), 'warning');
-    assert.ok(warnings.includes('T-1: required skill exceeds the SL-C 2 attacker capability and should be marked unfeasible.'));
+    assert.ok(warnings.includes('T-1: required capability exceeds the SL-C 2 attacker capability and should be marked unfeasible.'));
     assert.ok(!warnings.some((message) => message.includes('unassessed difficulty dimensions')));
 }
 
@@ -224,7 +224,7 @@ function slcProject(level, capability, requiredSkill) {
 
 function testActorScaleValidation() {
     const profileWarning = (issues) => issues.some((i) => i.key === 'slc-attacker-profile');
-    const overCapability = (issues) => issueMessages(issues, 'warning').some((m) => m.includes('required skill exceeds'));
+    const overCapability = (issues) => issueMessages(issues, 'warning').some((m) => m.includes('required capability exceeds'));
     const legacyKeys = (issues) => issues.filter((i) => i.key.startsWith('legacy-actor-level:')).map((i) => i.key);
 
     let issues = slcProject(4, 4, 4);

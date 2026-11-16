@@ -375,10 +375,10 @@ export function activate(ctx: vscode.ExtensionContext) {
           list: async () => (await pathExists(root)
             ? await vscode.workspace.fs.readDirectory(root)
             : []).map(([name, type]) => ({
-              name,
-              isDirectory: Boolean(type & vscode.FileType.Directory),
-              isSymbolicLink: Boolean(type & vscode.FileType.SymbolicLink),
-            })),
+            name,
+            isDirectory: Boolean(type & vscode.FileType.Directory),
+            isSymbolicLink: Boolean(type & vscode.FileType.SymbolicLink),
+          })),
           choose: async (names) => (await vscode.window.showQuickPick(names, {
             placeHolder: "Select an imported knowledge base to remove",
           })),

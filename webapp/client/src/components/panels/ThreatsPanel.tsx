@@ -3,7 +3,7 @@ import { useStore, uid } from '../../state/store';
 import { Field, Chips, TagSelect, cx, STRIDE, sortStride, RiskPill, useFocus, useEditMode, EditBackBar, ScaleSelect, LIKELIHOOD_LEVELS, IMPACT_LEVELS, Jump, HelpButton, confirmDelete, IdInput } from '../common';
 import { riskOf } from '../../lib/risk';
 import { adId } from '../../lib/attackTree';
-import { actorLevelLabel } from '@shared/attackerScale.js';
+import { actorLevelLabel, normalizeActorLevel } from '@shared/attackerScale.js';
 import RiskCalculator from './RiskCalculator';
 import ThreatCmImportExport from '../ThreatCmImportExport';
 import type { Threat } from '../../types';
@@ -284,7 +284,7 @@ export default function ThreatsPanel() {
             <div className="assessment-basis" role="note">
                 <span className="assessment-basis-label">Attacker Profile</span>
                 {attacker ? (
-                    <span>{attacker.name} <span className="muted">· capability {attacker.capability} ({actorLevelLabel(attacker.capability)})</span></span>
+                    <span>{attacker.name} <span className="muted">· capability {normalizeActorLevel(attacker.capability)} ({actorLevelLabel(attacker.capability)})</span></span>
                 ) : (
                     <span className="warnmark">Select a target SL-C level in Project settings to establish the assessment attacker.</span>
                 )}

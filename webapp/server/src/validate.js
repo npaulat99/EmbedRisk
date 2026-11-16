@@ -132,7 +132,7 @@ export function validate({ project = {}, assumptions = {}, system = {}, threats 
             if (typeof t.costLikelihoodProposal === 'number' && t.likelihood !== t.costLikelihoodProposal)
                 add('notice', `${t.id}: manually selected likelihood (${t.likelihood}) differs from the calculated cost-based proposal (${t.costLikelihoodProposal}).`, `cost-likelihood-override:${t.id}:${t.costLikelihoodProposal}`);
             if (selectedSlc && typeof t.requiredSkill === 'number' && normalizeActorLevel(t.requiredSkill) > managedSlcAttacker(selectedSlc).capability && t.status !== 'unfeasible')
-                add('warning', `${t.id}: required skill exceeds the SL-C ${selectedSlc} attacker capability and should be marked unfeasible.`);
+                add('warning', `${t.id}: required capability exceeds the SL-C ${selectedSlc} attacker capability and should be marked unfeasible.`);
         }
         if (t.status === 'accepted' && (!t.acceptedBy || !t.acceptanceRationale || !t.reviewDate))
             add('warning', `${t.id}: accepted residual risk requires a sign-off owner (acceptedBy), a rationale (acceptanceRationale) and a next-review date (reviewDate).`);

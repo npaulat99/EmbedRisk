@@ -1337,7 +1337,14 @@ async function runAttackerScaleTests() {
     bundle: true, write: false, format: "cjs", platform: "node",
     alias: { "@shared": path.join(root, "webapp/shared") },
   }).outputFiles[0].text, { module: slcModule });
-  const { syncThreatFeasibility, SLC_ATTACKERS } = slcModule.exports;
+  const { syncThreatFeasibility, SLC_ATTACKERS, alignedManagedAttacker } = slcModule.exports;
+  const legacyProfile = { id: "ATK-SLC-4", name: "Threat Actor 4: State-Sponsored/Professional Attacks", capability: 5, text: "old", access: "remote" };
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(alignedManagedAttacker("SL-C 4", [legacyProfile]))), { ...legacyProfile, ...web.managedSlcAttacker(4) });
+  assert.strictEqual(alignedManagedAttacker("SL-C 4", [{ ...web.managedSlcAttacker(4), access: "remote" }]), null);
+  assert.strictEqual(alignedManagedAttacker("SL-C 3", [legacyProfile]), null);
+  assert.strictEqual(alignedManagedAttacker("SL-C 4", [legacyProfile, { id: "ATK-X" }]), null);
+  assert.strictEqual(alignedManagedAttacker(undefined, [legacyProfile]), null);
+  ok("attacker scale: webapp realigns only a single outdated managed profile and preserves its extra fields", true);
   for (const level of [1, 2, 3, 4]) {
     assert.deepStrictEqual(JSON.parse(JSON.stringify(SLC_ATTACKERS[level])), web.managedSlcAttacker(level));
     for (const skill of [1, 2, 3, 4]) {
