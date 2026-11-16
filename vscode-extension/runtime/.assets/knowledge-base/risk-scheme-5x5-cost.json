@@ -1,0 +1,51 @@
+{
+  "schemaVersion": 2,
+  "id": "builtin:5x5-cost",
+  "title": "5x5 Cost-based",
+  "version": "2.0",
+  "description": "Likelihood is derived from cost-based attack feasibility thresholds; impact is the maximum CIA/Safety dimension.",
+  "likelihood": {
+    "levels": [
+      { "value": 1, "code": "L1", "label": "Very Low", "description": "Physical access plus rare expertise needed; mature controls; no known path." },
+      { "value": 2, "code": "L2", "label": "Low", "description": "Local access and specialist skill; controls present; limited public knowledge." },
+      { "value": 3, "code": "L3", "label": "Medium", "description": "Adjacent/local access, moderate skill; partial controls; known technique." },
+      { "value": 4, "code": "L4", "label": "High", "description": "Remote or easy local access, common skill; weak controls; public exploit/tooling." },
+      { "value": 5, "code": "L5", "label": "Very High", "description": "Remote, low skill, scalable; no effective control; trivial or automated." }
+    ],
+    "derivation": { "kind": "cost-based", "probabilityThresholds": { "2": 0.3, "3": 0.5, "4": 0.7, "5": 0.9 } },
+    "criteria": []
+  },
+  "impact": {
+    "levels": [
+      { "value": 1, "code": "I1", "label": "Negligible", "description": "No safety effect; minor data exposure; self-recovering." },
+      { "value": 2, "code": "I2", "label": "Minor", "description": "Local CIA loss; nuisance; bounded process disturbance." },
+      { "value": 3, "code": "I3", "label": "Moderate", "description": "Process value falsification or downtime; reputational; no safety harm." },
+      { "value": 4, "code": "I4", "label": "Major", "description": "Loss of control/view of overfill protection; potential SIL demotion; multi-site." },
+      { "value": 5, "code": "I5", "label": "Severe", "description": "Safety hazard (overfill, spill); environmental/human harm; fleet-wide." }
+    ],
+    "derivation": { "kind": "criteria-max" },
+    "criteria": [
+      { "id": "confidentiality", "label": "Confidentiality", "levelTexts": { "1": "Negligible", "2": "Minor", "3": "Moderate", "4": "Major", "5": "Severe" } },
+      { "id": "integrity", "label": "Integrity", "levelTexts": { "1": "Negligible", "2": "Minor", "3": "Moderate", "4": "Major", "5": "Severe" } },
+      { "id": "availability", "label": "Availability", "levelTexts": { "1": "Negligible", "2": "Minor", "3": "Moderate", "4": "Major", "5": "Severe" } },
+      { "id": "safety", "label": "Safety", "levelTexts": { "1": "Negligible", "2": "Minor", "3": "Moderate", "4": "Major", "5": "Severe" } }
+    ]
+  },
+  "classification": {
+    "kind": "product-bands",
+    "levels": [
+      { "id": "low", "label": "Low", "rank": 1, "color": "#2e7d32", "treatment": "auto-accept" },
+      { "id": "medium", "label": "Medium", "rank": 2, "color": "#f9a825", "treatment": "optional" },
+      { "id": "high", "label": "High", "rank": 3, "color": "#ef6c00", "treatment": "required" },
+      { "id": "critical", "label": "Critical", "rank": 4, "color": "#c62828", "treatment": "immediate" }
+    ],
+    "bands": [
+      { "level": "low", "min": 1, "max": 5 },
+      { "level": "medium", "min": 6, "max": 11 },
+      { "level": "high", "min": 12, "max": 19 },
+      { "level": "critical", "min": 20, "max": 25 }
+    ]
+  },
+  "highLevel": "high",
+  "acceptance": { "defaultLevel": "medium" }
+}

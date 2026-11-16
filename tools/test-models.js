@@ -829,7 +829,7 @@ ok("threat schema still requires likelihood",
   !validateThreats({ threats: [{ ...schemaThreat, likelihood: undefined }] }));
 
 /* ---------- Bundled knowledge-base drift (extension runtime vs webapp) ---------- */
-["risk-scheme.json", "bug-bar.json", "field-device-library.json"].forEach((file) => {
+["risk-scheme.json", "risk-scheme-5x5-exposure.json", "risk-scheme-5x5-cost.json", "bug-bar.json", "field-device-library.json"].forEach((file) => {
   const webappFile = path.join(root, "webapp/.assets/knowledge-base", file);
   const extFile = path.join(root, "vscode-extension/runtime/.assets/knowledge-base", file);
   const inSync = fs.existsSync(extFile) && fs.readFileSync(webappFile).equals(fs.readFileSync(extFile));
@@ -930,6 +930,74 @@ async function runRiskGoldenTests() {
   const unfeasible = serverRisk.computeRisk(scheme, [{ id: "UNFEASIBLE", likelihood: 4, impact: 5, status: "unfeasible" }], [])[0];
   ok("risk golden: unfeasible threats have zero initial and residual risk", unfeasible.initial === 0
     && unfeasible.initialBand.name === "None" && unfeasible.residual === 0 && unfeasible.residualBand.name === "None");
+}
+
+async function runRiskSchemeTests() {
+  const { pathToFileURL } = require("node:url");
+  const { MAX_SCHEME_BYTES, normalizeScheme, fingerprint } = await import(pathToFileURL(path.join(root, "webapp/shared/riskScheme.js")));
+  const Ajv2020 = require(path.join(root, "vscode-extension/node_modules/ajv/dist/2020"));
+  const schema = JSON.parse(fs.readFileSync(path.join(root, "webapp/shared/risk-scheme.schema.json"), "utf8"));
+  const validateSchema = new Ajv2020({ allErrors: true }).compile(schema);
+  const webappKb = path.join(root, "webapp/.assets/knowledge-base");
+  const extensionKb = path.join(root, "vscode-extension/runtime/.assets/knowledge-base");
+  const exposureFile = "risk-scheme-5x5-exposure.json";
+  const costFile = "risk-scheme-5x5-cost.json";
+  const exposure = JSON.parse(fs.readFileSync(path.join(webappKb, exposureFile), "utf8"));
+  const cost = JSON.parse(fs.readFileSync(path.join(webappKb, costFile), "utf8"));
+
+  for (const file of [exposureFile, costFile]) {
+    const webappFile = path.join(webappKb, file);
+    const extensionFile = path.join(extensionKb, file);
+    ok("risk scheme: " + file + " is mirrored byte-for-byte", fs.readFileSync(webappFile).equals(fs.readFileSync(extensionFile)));
+    const raw = JSON.parse(fs.readFileSync(webappFile, "utf8"));
+    ok("risk scheme: " + file + " matches v2 JSON Schema", validateSchema(raw));
+    const normalized = normalizeScheme(raw);
+    ok("risk scheme: " + file + " normalizes and fingerprints", normalized.id === raw.id && /^[a-f0-9]{64}$/.test(fingerprint(raw)));
+  }
+
+  const clone = (value) => JSON.parse(JSON.stringify(value));
+  const lookup = clone(exposure);
+  lookup.id = "test-lookup";
+  const levels = lookup.classification.levels;
+  const bands = lookup.classification.bands;
+  const matrix = {};
+  for (const impact of lookup.impact.levels) {
+    matrix[String(impact.value)] = {};
+    for (const likelihood of lookup.likelihood.levels) {
+      const score = impact.value * likelihood.value;
+      matrix[String(impact.value)][String(likelihood.value)] = bands.find((band) => score >= band.min && score <= band.max).level;
+    }
+  }
+  lookup.classification = { kind: "lookup", levels, matrix };
+  const reversedKeys = (value) => Array.isArray(value)
+    ? value.map(reversedKeys)
+    : value && typeof value === "object"
+      ? Object.fromEntries(Object.entries(value).reverse().map(([key, item]) => [key, reversedKeys(item)]))
+      : value;
+  ok("risk scheme: fingerprints ignore JSON object key order", fingerprint(lookup) === fingerprint(reversedKeys(lookup)));
+
+  const rejects = (name, mutate, pattern) => {
+    const invalidScheme = clone(lookup);
+    mutate(invalidScheme);
+    assert.throws(() => normalizeScheme(invalidScheme), pattern, name);
+    passed++;
+  };
+  rejects("unknown derivation kind", (scheme) => { scheme.likelihood.derivation.kind = "unknown"; }, /unknown kind/);
+  rejects("non-contiguous axis values", (scheme) => { scheme.likelihood.levels[1].value = 3; }, /contiguous/);
+  rejects("lookup matrix gap", (scheme) => { delete scheme.classification.matrix["1"]["1"]; }, /matrix cell is missing/);
+  rejects("unknown lookup level", (scheme) => { scheme.classification.matrix["1"]["1"] = "unknown"; }, /unknown level id/);
+  rejects("duplicate classification ids", (scheme) => { scheme.classification.levels[1].id = scheme.classification.levels[0].id; }, /duplicate level id/);
+  rejects("invalid classification colour", (scheme) => { scheme.classification.levels[0].color = "#xyz"; }, /six-digit hex/);
+  rejects("oversized scheme", (scheme) => { scheme.description = "x".repeat(262145); }, /256 KB/);
+  assert.throws(() => normalizeScheme(JSON.stringify(lookup) + " ".repeat(MAX_SCHEME_BYTES)), /256 KB/);
+  passed++;
+  ok("risk scheme: local IDs are accepted", normalizeScheme(lookup, { local: true }).id === "test-lookup");
+  const builtinLookup = clone(lookup);
+  builtinLookup.id = "builtin:test-lookup";
+  assert.throws(() => normalizeScheme(builtinLookup, { local: true }), /prefix is reserved/);
+  passed++;
+  ok("risk scheme: built-in cost thresholds match existing defaults", JSON.stringify(cost.likelihood.derivation.probabilityThresholds)
+    === JSON.stringify({ 2: 0.3, 3: 0.5, 4: 0.7, 5: 0.9 }));
 }
 
 function runDfdEngineTests() {
@@ -1437,6 +1505,7 @@ runImportedKbTests()
   .then(() => runDashboardTests())
   .then(() => checkWebappParity())
   .then(() => runRiskGoldenTests())
+  .then(() => runRiskSchemeTests())
   .then(() => runValidationCoreTests())
   .then(() => runValidationDiagnosticsTests())
   .then(async () => {
