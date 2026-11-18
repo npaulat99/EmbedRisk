@@ -1,4 +1,5 @@
 import * as vscode from "vscode";
+import { loadRiskSchemes, resolveProjectRiskScheme } from "./riskSchemes";
 
 const DashboardModel = require("../media/dashboard-model.js") as {
   buildDashboard: (input: any) => DashboardModel;
@@ -19,9 +20,10 @@ type DashboardModel = {
   stats: { label: string; value: number; file: string; warning?: boolean }[];
   initial: RiskSummary;
   residual: RiskSummary;
+  schemeWarning?: string | null;
   threats: { id: string; label: string; description: string }[];
 };
-type RiskSummary = { maxScore: number; highCount: number; bands: { name: string; count: number }[] };
+type RiskSummary = { maxScore: number; maxLabel?: string; highCount: number; bands: { name: string; count: number }[] };
 
 class DashboardProvider implements vscode.TreeDataProvider<DashboardNode> {
   private readonly changed = new vscode.EventEmitter<DashboardNode | undefined | null | void>();
@@ -61,8 +63,8 @@ class DashboardProvider implements vscode.TreeDataProvider<DashboardNode> {
       file: stat.file,
     }));
     const riskNodes = (summary: RiskSummary): DashboardNode[] => [
-      { label: `High+ (score ≥12): ${summary.highCount}`, icon: "warning" },
-      { label: `Maximum score: ${summary.maxScore}`, icon: "graph" },
+      { label: `High+ (rank): ${summary.highCount}`, icon: "warning" },
+      { label: `Maximum level: ${summary.maxLabel || summary.maxScore}`, icon: "graph" },
       ...summary.bands.map((band) => ({
         label: `${band.name}: ${band.count}`,
         icon: band.name === "Critical" || band.name === "High" ? "shield" : "circle-outline",
@@ -85,6 +87,8 @@ class DashboardProvider implements vscode.TreeDataProvider<DashboardNode> {
       },
       { label: "Open DFD canvas", icon: "device-desktop", command: { command: "embedrisk.dfdNative" } },
     ];
+    if (this.model.schemeWarning) children.unshift({ label: this.model.schemeWarning, icon: "warning" });
+    if (this.model.schemeWarning) children.unshift({ label: this.model.schemeWarning, icon: "warning" });
     return [{
       label: this.model.title,
       description: this.model.description,
@@ -122,16 +126,17 @@ export function registerDashboard(ctx: vscode.ExtensionContext) {
       return;
     }
     projectRoot = vscode.Uri.joinPath(projectFile, "..", "..");
-    const [project, system, threats, countermeasures, requirements, defects, scheme] = await Promise.all([
+    const [project, system, threats, countermeasures, requirements, defects] = await Promise.all([
       readJson(projectFile),
       readJson(vscode.Uri.joinPath(projectRoot, "03-system-assets", "system.json")),
       readJson(vscode.Uri.joinPath(projectRoot, "06-threats", "threats.json")),
       readJson(vscode.Uri.joinPath(projectRoot, "08-countermeasures", "countermeasures.json")),
       readJson(vscode.Uri.joinPath(projectRoot, "05-requirements", "requirements.json")),
       readJson(vscode.Uri.joinPath(projectRoot, "09-defects", "defects.json")),
-      readJson(vscode.Uri.joinPath(ctx.extensionUri, "runtime", ".assets", "knowledge-base", "risk-scheme.json")),
     ]);
-    provider.setModel(DashboardModel.buildDashboard({ project, system, threats, countermeasures, requirements, defects, scheme }));
+    const registry = await loadRiskSchemes(ctx);
+    const selection = resolveProjectRiskScheme(project, registry);
+    provider.setModel(DashboardModel.buildDashboard({ project, system, threats, countermeasures, requirements, defects, scheme: selection.scheme, schemeWarning: selection.warning }));
   };
   const refreshSoon = () => {
     if (refreshTimer) clearTimeout(refreshTimer);

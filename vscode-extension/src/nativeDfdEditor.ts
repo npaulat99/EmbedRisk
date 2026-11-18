@@ -1,11 +1,14 @@
 import * as vscode from "vscode";
+import { loadRiskSchemes, resolveProjectRiskScheme } from "./riskSchemes";
+
+const RiskEngine = require("../media/risk-engine.js") as { createRiskEngine: (scheme: any, project?: any) => any };
 
 // Native DFD canvas: renders dfd.json directly in a webview (no iframe), so keyboard navigation works
 // and only DeMarco shapes exist. Recursive layers via parent drill-down. A right-hand inspector edits
 // the selected node/boundary (label, type, linked component, trust-boundary members, data flows).
 // Two-way sync with the JSON file. The schema is identical to the tra-webapp so projects interchange.
 export class NativeDfdEditor implements vscode.CustomTextEditorProvider {
-  constructor(private extUri: vscode.Uri) { }
+  constructor(private extUri: vscode.Uri, private globalStorageUri: vscode.Uri) { }
 
   async resolveCustomTextEditor(doc: vscode.TextDocument, panel: vscode.WebviewPanel) {
     const media = vscode.Uri.joinPath(this.extUri, "media");
@@ -45,39 +48,30 @@ export class NativeDfdEditor implements vscode.CustomTextEditorProvider {
         const threatsDoc = JSON.parse(Buffer.from(await vscode.workspace.fs.readFile(vscode.Uri.joinPath(projRoot, "06-threats/threats.json"))).toString());
         const cmsDoc = JSON.parse(Buffer.from(await vscode.workspace.fs.readFile(vscode.Uri.joinPath(projRoot, "08-countermeasures/countermeasures.json"))).toString());
         const project = JSON.parse(Buffer.from(await vscode.workspace.fs.readFile(vscode.Uri.joinPath(projRoot, "01-project-description/project.json"))).toString());
-        const scheme = JSON.parse(Buffer.from(await vscode.workspace.fs.readFile(vscode.Uri.joinPath(this.extUri, "runtime/.assets/knowledge-base/risk-scheme.json"))).toString());
-        return { threats: threatsDoc.threats || [], cms: cmsDoc.countermeasures || [], acceptableRisk: project.acceptableRisk, scheme };
+        const registry = await loadRiskSchemes({ extensionUri: this.extUri, globalStorageUri: this.globalStorageUri });
+        const selection = resolveProjectRiskScheme(project, registry);
+        return { threats: threatsDoc.threats || [], cms: cmsDoc.countermeasures || [], acceptableRisk: project.acceptableRisk, acceptableLevel: project.acceptableLevel, scheme: selection.scheme, schemeWarning: selection.warning };
       } catch { return { threats: [], cms: [], acceptableRisk: undefined, scheme: null }; }
     };
-    const readRiskData = async (): Promise<Record<string, string>> => {
+    const readRiskData = async (): Promise<Record<string, { rank: number; color: string }>> => {
       try {
         const threats = (JSON.parse(Buffer.from(await vscode.workspace.fs.readFile(vscode.Uri.joinPath(projRoot, "06-threats/threats.json"))).toString())).threats || [];
         const cms = (JSON.parse(Buffer.from(await vscode.workspace.fs.readFile(vscode.Uri.joinPath(projRoot, "08-countermeasures/countermeasures.json"))).toString())).countermeasures || [];
-        const BANDS = [{ min: 1, max: 5, color: '#2e7d32' }, { min: 6, max: 11, color: '#f9a825' }, { min: 12, max: 19, color: '#ef6c00' }, { min: 20, max: 25, color: '#c62828' }];
-        // Same rules as riskOf in webapp/client/src/lib/risk.ts: score <= 0 is the grey "None" band, unfeasible threats
-        // have no residual risk, and deselected countermeasures (selected === false) are ignored.
-        const NONE_COLOR = '#6b7280';
-        const getBandColor = (score: number) => score <= 0 ? NONE_COLOR : (BANDS.find(b => score >= b.min && score <= b.max) || BANDS[0]).color;
-        const selectedCms = cms.filter((c: any) => c.selected !== false);
-        const compWorst: Record<string, { score: number; color: string }> = {};
+        const project = JSON.parse(Buffer.from(await vscode.workspace.fs.readFile(vscode.Uri.joinPath(projRoot, "01-project-description/project.json"))).toString());
+        const registry = await loadRiskSchemes({ extensionUri: this.extUri, globalStorageUri: this.globalStorageUri });
+        const selection = resolveProjectRiskScheme(project, registry);
+        if (!selection.scheme) return {};
+        const engine = RiskEngine.createRiskEngine(selection.scheme, project);
+        const compWorst: Record<string, { rank: number; color: string }> = {};
         threats.forEach((t: any) => {
-          let rl = t.likelihood, ri = t.impact;
-          if (t.status === 'unfeasible') {
-            rl = 0; ri = 0;
-          } else {
-            const links = selectedCms.flatMap((c: any) => (c.addresses || []).filter((a: any) => a.threat === t.id));
-            for (const a of links) {
-              rl = Math.min(rl, a.residualLikelihood ?? t.likelihood);
-              ri = Math.min(ri, a.residualImpact ?? t.impact);
-            }
-          }
-          const score = (rl || 0) * (ri || 0);
-          const color = getBandColor(score);
+          const axes = engine.residual(t, cms);
+          const level = engine.classify(axes[0], axes[1]);
+          if (level.id === 'none') return;
           (t.components || []).forEach((cid: string) => {
-            if (!compWorst[cid] || score > compWorst[cid].score) compWorst[cid] = { score, color };
+            if (!compWorst[cid] || level.rank > compWorst[cid].rank) compWorst[cid] = { rank: level.rank, color: level.color };
           });
         });
-        return Object.fromEntries(Object.entries(compWorst).map(([k, v]) => [k, v.color]));
+        return compWorst;
       } catch { return {}; }
     };
     const post = async () => {
@@ -101,8 +95,8 @@ export class NativeDfdEditor implements vscode.CustomTextEditorProvider {
         if (label) endpoint.label = label;
         else delete endpoint.label;
       } else if (m.kind === "cell" && typeof m.strideKey === "string" &&
-          ["S", "T", "R", "I", "D", "E"].includes(m.strideKey) &&
-          (m.field === "strengths" || m.field === "weaknesses") && typeof m.value === "string") {
+        ["S", "T", "R", "I", "D", "E"].includes(m.strideKey) &&
+        (m.field === "strengths" || m.field === "weaknesses") && typeof m.value === "string") {
         const cells = endpoint.cells || (endpoint.cells = {});
         const cell = cells[m.strideKey] || (cells[m.strideKey] = {});
         const lines = m.value.split("\n");
@@ -244,6 +238,7 @@ svg{display:block;margin:0 auto}
   <span id="status"></span>
   <span id="hint">&larr;&rarr; select &middot; Enter in &middot; Backspace up &middot; t connect &middot; drag background to pan &middot; Ctrl+wheel zoom</span>
 </div>
+<div id="risk-warning" class="warnmark" role="alert" style="display:none;padding:6px 10px"></div>
 <div id="body">
   <div id="wrap"><svg id="cv" xmlns="http://www.w3.org/2000/svg"></svg></div>
   <aside id="insp"></aside>
@@ -258,7 +253,7 @@ svg{display:block;margin:0 auto}
 <script nonce="${nonce}">
 const M=DfdModel, R=window.RiskModel, V=window.LayerVisibilityModel, S=window.StrideModel, vs=acquireVsCodeApi();
 const TYPES=['external-entity','process','multiprocess','store','trust-boundary'];
-let dfd={nodes:[],flows:[]}, system={}, components=[], interfaces=[], trustBoundaryIds=[], riskData={}, threats=[], cms=[], riskScheme=null, acceptableRisk, matrixMode='residual', stack=[], focus=null, connect=false, connectFrom=null, strideOverlay=null;
+let dfd={nodes:[],flows:[]}, system={}, components=[], interfaces=[], trustBoundaryIds=[], riskData={}, threats=[], cms=[], riskScheme=null, schemeWarning=null, acceptableRisk, matrixMode='residual', stack=[], focus=null, connect=false, connectFrom=null, strideOverlay=null;
 let drag=null, chipDrag=null, portDrag=null, dragMoved=false, dragging=false;
 let renderedNodePositions=new Map();
 let view={zoom:1,minX:0,minY:0,vw:600,vh:400,ready:false}, needFit=true, pan=null;
@@ -292,16 +287,14 @@ function undo(){if(!undoStack.length)return;redoStack.push(snap());var p=undoSta
 function redo(){if(!redoStack.length)return;undoStack.push(snap());var n=redoStack.pop();if(!restore(n))return;baseState=n;histKey='';focus=null;updUndo();vs.postMessage({type:'save',dfd:JSON.stringify(dfd,null,2)});draw();}
 
 function worstRiskForNode(nodeId){
-  var BAND_ORDER={'#2e7d32':1,'#f9a825':2,'#ef6c00':3,'#c62828':4};
   var n=node(nodeId); if(!n)return null;
-  var directColor=(n.componentRef&&riskData[n.componentRef])?riskData[n.componentRef]:null;
-  var worstScore=directColor?(BAND_ORDER[directColor]||0):0;
-  var worstColor=directColor;
+  var direct=(n.componentRef&&riskData[n.componentRef])?riskData[n.componentRef]:null;
+  var worst=direct;
   dfd.nodes.filter(function(c){return c.parent===nodeId;}).forEach(function(c){
-    var childColor=worstRiskForNode(c.id);
-    if(childColor&&(BAND_ORDER[childColor]||0)>worstScore){worstScore=BAND_ORDER[childColor]||0;worstColor=childColor;}
+    var child=worstRiskForNode(c.id);
+    if(child&&(!worst||child.rank>worst.rank))worst=child;
   });
-  return worstColor;
+  return worst;
 }
 function applyZoomSize(vw,vh){
   if(vw!=null){view.vw=vw;view.vh=vh;}
@@ -472,6 +465,7 @@ function activateMatrixCell(cell){
   if(Array.isArray(ids))matrixThreatChooser(ids,cell);
 }
 function renderRiskMatrix(componentRef){
+  if(schemeWarning)return '<div class="risk-matrix warnmark" role="alert">'+esc(schemeWarning)+' Risk classifications are unavailable.</div>';
   if(!R||!R.matrix)return '<div class="risk-matrix">Risk matrix not available.</div>';
   var ids=null, rolledUp=false, scopedThreats=threats||[];
   if(componentRef){
@@ -485,17 +479,22 @@ function renderRiskMatrix(componentRef){
     scopedThreats=scopedThreats.filter(function(t){return (t.components||[]).some(function(id){return ids.has(id);});});
   }
   var m=R.matrix(scopedThreats,cms,riskScheme,acceptableRisk,matrixMode);
+  var likelihoodLevels=riskScheme&&riskScheme.likelihood&&riskScheme.likelihood.levels||[];
+  var impactLevels=riskScheme&&riskScheme.impact&&riskScheme.impact.levels||[];
   var html='<section class="risk-matrix" id="dfd-risk-matrix" aria-label="DFD risk matrix">'+
     '<h3>Risk matrix</h3><div class="matrix-modes" role="group" aria-label="Risk matrix mode">'+
     ['initial','residual'].map(function(mode){return '<button type="button" data-matrix-mode="'+mode+'" aria-pressed="'+(matrixMode===mode)+'">'+(mode==='initial'?'Initial':'Residual')+'</button>';}).join('')+
     '</div><table aria-label="'+matrixMode+' risk"><tbody>';
   m.cells.forEach(function(c){
-    if(c.likelihood===1)html+='<tr><th scope="row">'+c.impact+'</th>';
-    html+='<td data-l="'+c.likelihood+'" data-i="'+c.impact+'" '+(c.ids.length?'role="button" tabindex="0" data-matrix-threats="'+esc(JSON.stringify(c.ids))+'" aria-label="'+esc('Likelihood '+c.likelihood+' by impact '+c.impact+', '+c.band.name+', '+c.ids.length+' threat(s): '+c.ids.join(', ')+'. Activate to open.')+'" ':'')+'class="'+(c.ids.length?'hit ':'')+(c.boundaryTop?'boundary-top ':'')+(c.boundaryRight?'boundary-right':'')+'" title="'+esc('L'+c.likelihood+' × I'+c.impact+' = '+c.score+' ('+c.band.name+')'+(c.ids.length?' — '+c.ids.join(', '):''))+'">'+
-      '<span class="matrix-colour" style="background-color:'+esc(c.band.color)+'"></span><span>'+c.score+'</span><small class="bandmark" aria-hidden="true">'+esc(c.band.name[0])+'</small><b class="n">'+(c.ids.length||'')+'</b></td>';
-    if(c.likelihood===5)html+='</tr>';
+    var likelihood=likelihoodLevels.find(function(level){return level.value===c.likelihood;})||{code:'L'+c.likelihood,label:'Likelihood '+c.likelihood};
+    var impact=impactLevels.find(function(level){return level.value===c.impact;})||{code:'I'+c.impact,label:'Impact '+c.impact};
+    var level=R.classify(c.likelihood,c.impact,riskScheme), cellLabel=riskScheme.classification.kind==='lookup'?level.label:c.score;
+    if(c.likelihood===likelihoodLevels[0].value)html+='<tr><th scope="row">'+esc(impact.code||impact.label)+'</th>';
+    html+='<td data-l="'+c.likelihood+'" data-i="'+c.impact+'" '+(c.ids.length?'role="button" tabindex="0" data-matrix-threats="'+esc(JSON.stringify(c.ids))+'" aria-label="'+esc(likelihood.label+' by '+impact.label+', '+level.label+', '+c.ids.length+' threat(s): '+c.ids.join(', ')+'. Activate to open.')+'" ':'')+'class="'+(c.ids.length?'hit ':'')+(c.boundaryTop?'boundary-top ':'')+(c.boundaryRight?'boundary-right':'')+'" title="'+esc(riskScheme.classification.kind==='lookup'?likelihood.code+' × '+impact.code+' · '+level.label:'L'+c.likelihood+' × I'+c.impact+' = '+c.score+' ('+c.band.name+')'+(c.ids.length?' — '+c.ids.join(', '):''))+'">'+
+      '<span class="matrix-colour" style="background-color:'+esc(c.band.color)+'"></span><span>'+esc(cellLabel)+'</span><small class="bandmark" aria-hidden="true">'+esc(level.label[0])+'</small><b class="n">'+(c.ids.length||'')+'</b></td>';
+    if(c.likelihood===likelihoodLevels[likelihoodLevels.length-1].value)html+='</tr>';
   });
-  html+='</tbody><tfoot><tr><td></td>'+[1,2,3,4,5].map(function(l){return '<th scope="col">'+l+'</th>';}).join('')+'</tr></tfoot></table>'+
+  html+='</tbody><tfoot><tr><td></td>'+likelihoodLevels.map(function(level){return '<th scope="col">'+esc(level.code||level.label)+'</th>';}).join('')+'</tr></tfoot></table>'+
     '<div class="hint">Likelihood → · Impact ↑ · '+matrixMode+' risk · '+(componentRef?'selected component'+(rolledUp?' + descendants':''):'all project')+'</div><div class="matrix-legend">'+
     m.bands.map(function(b){return '<span><i style="background-color:'+esc(b.color)+'"></i> '+esc(b.name)+'</span>';}).join('')+
     '<span><i class="threshold-key"></i> acceptable risk: '+esc(m.threshold)+'</span></div></section>';
@@ -835,7 +834,7 @@ window.addEventListener('keydown',function(e){
 });
 
 window.addEventListener('message',function(ev){var m=ev.data;
-  if(m.type==='load'){try{dfd=JSON.parse(m.dfd);}catch(_){dfd={nodes:[],flows:[]};}if(!dfd.nodes)dfd.nodes=[];if(!dfd.flows)dfd.flows=[];if(m.system)system=m.system;if(m.components)components=m.components;if(m.interfaces)interfaces=m.interfaces;if(m.trustBoundaryIds)trustBoundaryIds=m.trustBoundaryIds;if(m.riskData)riskData=m.riskData;threats=m.threats||[];cms=m.cms||[];riskScheme=m.scheme||null;acceptableRisk=m.acceptableRisk;baseState=snap();updUndo();if(dragging)return;draw();}
+  if(m.type==='load'){try{dfd=JSON.parse(m.dfd);}catch(_){dfd={nodes:[],flows:[]};}if(!dfd.nodes)dfd.nodes=[];if(!dfd.flows)dfd.flows=[];if(m.system)system=m.system;if(m.components)components=m.components;if(m.interfaces)interfaces=m.interfaces;if(m.trustBoundaryIds)trustBoundaryIds=m.trustBoundaryIds;if(m.riskData)riskData=m.riskData;threats=m.threats||[];cms=m.cms||[];riskScheme=m.scheme||null;schemeWarning=m.schemeWarning||null;acceptableRisk=m.acceptableRisk;const warning=$('risk-warning');if(warning){warning.textContent=schemeWarning||'';warning.style.display=schemeWarning?'block':'none';}baseState=snap();updUndo();if(dragging)return;draw();}
 });
 vs.postMessage({type:'ready'});
 </script></body></html>`;

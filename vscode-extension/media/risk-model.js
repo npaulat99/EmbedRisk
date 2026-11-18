@@ -71,10 +71,12 @@
     var maxImpact = engine.impactLevels().length;
     engine.matrixCells().forEach(function (cell) {
       var acceptable = cell.score <= threshold;
-      cells.push({ likelihood: cell.likelihood, impact: cell.impact, score: cell.score, band: riskBand(engine, cell.likelihood, cell.impact, cell.score),
+      cells.push({
+        likelihood: cell.likelihood, impact: cell.impact, score: cell.score, band: riskBand(engine, cell.likelihood, cell.impact, cell.score),
         ids: ids[cell.likelihood + "-" + cell.impact] || [],
         boundaryTop: cell.impact < maxImpact && acceptable !== (cell.likelihood * (cell.impact + 1) <= threshold),
-        boundaryRight: cell.likelihood < maxLikelihood && acceptable !== ((cell.likelihood + 1) * cell.impact <= threshold) });
+        boundaryRight: cell.likelihood < maxLikelihood && acceptable !== ((cell.likelihood + 1) * cell.impact <= threshold)
+      });
     });
     return { cells: cells, bands: bandsOf(scheme), threshold: threshold };
   }
@@ -88,6 +90,13 @@
      (P11 interview finding: a single coarse likelihood is insufficient). */
   function deriveLikelihood(f) {
     return engineOf(null).deriveLikelihood({ likelihoodFactors: f });
+  }
+
+  function classify(likelihood, impact, scheme) {
+    return engineOf(scheme).classify(likelihood, impact);
+  }
+  function isHighOrAbove(likelihood, impact, scheme) {
+    return engineOf(scheme).isHighOrAbove(engineOf(scheme).classify(likelihood, impact));
   }
 
   function bandClass(name) { return String(name || "").toLowerCase(); }
@@ -250,7 +259,7 @@
     return cvss3BaseScore(vector);
   }
 
-  var api = { matrix: matrix, DEFAULT_BANDS: DEFAULT_BANDS, bandsOf: bandsOf, band: band, residual: residual, riskOf: riskOf, deriveImpact: deriveImpact, deriveLikelihood: deriveLikelihood, bandClass: bandClass, cvss3BaseScore: cvss3BaseScore, cvss4BaseScore: cvss4BaseScore, cvssBaseScore: cvssBaseScore, cvssExploitability: cvssExploitability, exposureFromInterface: exposureFromInterface };
+  var api = { matrix: matrix, DEFAULT_BANDS: DEFAULT_BANDS, bandsOf: bandsOf, band: band, residual: residual, riskOf: riskOf, deriveImpact: deriveImpact, deriveLikelihood: deriveLikelihood, classify: classify, isHighOrAbove: isHighOrAbove, bandClass: bandClass, cvss3BaseScore: cvss3BaseScore, cvss4BaseScore: cvss4BaseScore, cvssBaseScore: cvssBaseScore, cvssExploitability: cvssExploitability, exposureFromInterface: exposureFromInterface };
   g.RiskModel = api;
   if (typeof module !== "undefined" && module.exports) module.exports = api;
 })(typeof window !== "undefined" ? window : globalThis);

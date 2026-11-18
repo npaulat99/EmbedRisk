@@ -1131,7 +1131,8 @@ async function runRiskRegistryTests() {
     ok("risk registry: out-of-range stored values are errors", invalidRatingIssues.some((issue) => issue.severity === "error" && issue.key === "risk-range:INVALID"));
     const unfeasibleIssues = validate({ project: {}, riskScheme: localScheme, threats: { threats: [{ id: "UNFEASIBLE", likelihood: 2, impact: 3, status: "unfeasible" }] } });
     ok("risk registry: unfeasible residual zero is not an out-of-range error", !unfeasibleIssues.some((issue) => issue.key === "risk-range:UNFEASIBLE"));
-    const zeroResidualIssues = validate({ project: {}, riskScheme: localScheme,
+    const zeroResidualIssues = validate({
+      project: {}, riskScheme: localScheme,
       threats: { threats: [{ id: "ZERO-RESIDUAL", likelihood: 2, impact: 3 }] },
       countermeasures: { countermeasures: [{ id: "CM-ZERO", addresses: [{ threat: "ZERO-RESIDUAL", residualLikelihood: 0, residualImpact: 3 }] }] },
     });
@@ -1635,6 +1636,39 @@ function runDashboardTests() {
     model.initial.maxScore === 16 && model.initial.highCount === 2
     && model.residual.maxScore === 12 && model.residual.highCount === 1
     && model.threats[0].description.includes("Residual 4 (Low)"));
+  const lookupScheme = JSON.parse(fs.readFileSync(path.join(root, "webapp/.assets/knowledge-base/risk-scheme-5x5-exposure.json"), "utf8"));
+  lookupScheme.id = "dashboard-lookup-test";
+  lookupScheme.likelihood.levels = lookupScheme.likelihood.levels.slice(0, 4);
+  lookupScheme.impact.levels = lookupScheme.impact.levels.slice(0, 4);
+  lookupScheme.likelihood.criteria.forEach((criterion) => { delete criterion.levelTexts["5"]; });
+  lookupScheme.impact.criteria.forEach((criterion) => { delete criterion.levelTexts["5"]; });
+  lookupScheme.classification = {
+    kind: "lookup",
+    levels: lookupScheme.classification.levels,
+    matrix: {
+      "4": { "1": "medium", "2": "high", "3": "critical", "4": "critical" },
+      "3": { "1": "medium", "2": "high", "3": "high", "4": "critical" },
+      "2": { "1": "low", "2": "medium", "3": "medium", "4": "high" },
+      "1": { "1": "low", "2": "low", "3": "medium", "4": "medium" },
+    },
+  };
+  const lookupDashboard = DashboardModel.buildDashboard({
+    project: input.project,
+    system: input.system,
+    threats: {
+      threats: [
+        { id: "E2S3", title: "High lookup cell", likelihood: 2, impact: 3, status: "open" },
+        { id: "E3S2", title: "Medium lookup cell", likelihood: 3, impact: 2, status: "open" },
+      ]
+    },
+    requirements: { requirements: [] },
+    scheme: lookupScheme,
+  });
+  ok("dashboard: v2 lookup high+ count uses rank and non-product bands", lookupDashboard.initial.highCount === 1
+    && lookupDashboard.initial.maxLabel === "High" && lookupDashboard.threats[0].description.includes("Initial High"));
+  const unavailableDashboard = DashboardModel.buildDashboard({ project: input.project, threats: input.threats, schemeWarning: "Scheme unavailable" });
+  ok("dashboard: unavailable scheme exposes warning and omits risk classification", unavailableDashboard.schemeWarning === "Scheme unavailable"
+    && unavailableDashboard.threats.every((threat) => threat.description.includes("classification unavailable")));
   ok("dashboard: malformed project subobjects default safely and inputs are unchanged",
     JSON.stringify(input) === before && DashboardModel.buildDashboard({
       project: null, system: { components: "invalid" }, threats: { threats: [null, "bad"] },

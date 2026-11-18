@@ -226,7 +226,7 @@ export function activate(ctx: vscode.ExtensionContext) {
   registerValidationDiagnostics(ctx);
   registerDfdOverview(ctx);
   registerDashboard(ctx);
-  const attackTreeEditor = new AttackTreeEditor(ctx.extensionUri);
+  const attackTreeEditor = new AttackTreeEditor(ctx.extensionUri, ctx.globalStorageUri);
   const useCaseEditor = new UseCaseEditor(ctx.extensionUri);
   const openWebappCommand = async () => {
     const target = await pickLaunchFolder();
@@ -375,10 +375,10 @@ export function activate(ctx: vscode.ExtensionContext) {
           list: async () => (await pathExists(root)
             ? await vscode.workspace.fs.readDirectory(root)
             : []).map(([name, type]) => ({
-            name,
-            isDirectory: Boolean(type & vscode.FileType.Directory),
-            isSymbolicLink: Boolean(type & vscode.FileType.SymbolicLink),
-          })),
+              name,
+              isDirectory: Boolean(type & vscode.FileType.Directory),
+              isSymbolicLink: Boolean(type & vscode.FileType.SymbolicLink),
+            })),
           choose: async (names) => (await vscode.window.showQuickPick(names, {
             placeHolder: "Select an imported knowledge base to remove",
           })),
@@ -396,7 +396,7 @@ export function activate(ctx: vscode.ExtensionContext) {
         vscode.window.showErrorMessage(detail ? `Knowledge-base removal failed: ${detail}` : "Knowledge-base removal failed.");
       }
     }),
-    vscode.window.registerCustomEditorProvider("embedrisk.dfdNative", new NativeDfdEditor(ctx.extensionUri), { webviewOptions: { retainContextWhenHidden: true } }),
+    vscode.window.registerCustomEditorProvider("embedrisk.dfdNative", new NativeDfdEditor(ctx.extensionUri, ctx.globalStorageUri), { webviewOptions: { retainContextWhenHidden: true } }),
     vscode.window.registerCustomEditorProvider("embedrisk.attackTree", attackTreeEditor, { webviewOptions: { retainContextWhenHidden: true } }),
     vscode.window.registerCustomEditorProvider("embedrisk.useCases", useCaseEditor, { webviewOptions: { retainContextWhenHidden: true } }),
     vscode.window.registerCustomEditorProvider("embedrisk.dfdEditor", new DfdEditor(ctx.extensionUri)),
