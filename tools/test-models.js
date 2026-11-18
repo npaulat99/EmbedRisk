@@ -1009,6 +1009,77 @@ async function runRiskSchemeTests() {
   passed++;
   ok("risk scheme: built-in cost thresholds match existing defaults", JSON.stringify(cost.likelihood.derivation.probabilityThresholds)
     === JSON.stringify({ 2: 0.3, 3: 0.5, 4: 0.7, 5: 0.9 }));
+
+  const reportScheme = clone(exposure);
+  reportScheme.id = "test-report-4x4";
+  reportScheme.likelihood.levels = reportScheme.likelihood.levels.slice(0, 4);
+  reportScheme.impact.levels = reportScheme.impact.levels.slice(0, 4);
+  for (const axis of [reportScheme.likelihood, reportScheme.impact]) {
+    for (const criterion of axis.criteria) {
+      for (const level of Object.keys(criterion.levelTexts)) if (Number(level) > 4) delete criterion.levelTexts[level];
+    }
+  }
+  const reportMatrix = {};
+  for (const impact of reportScheme.impact.levels) {
+    reportMatrix[String(impact.value)] = {};
+    for (const likelihood of reportScheme.likelihood.levels) {
+      const score = impact.value * likelihood.value;
+      reportMatrix[String(impact.value)][String(likelihood.value)] = bands.find((band) => score >= band.min && score <= band.max).level;
+    }
+  }
+  reportMatrix["3"]["2"] = "critical";
+  reportScheme.classification = { kind: "lookup", levels, matrix: reportMatrix };
+  const reportFingerprint = fingerprint(reportScheme);
+  const reportTemp = fs.mkdtempSync(path.join(os.tmpdir(), "embedrisk-report-schemes-"));
+  try {
+    const projectCopy = path.join(reportTemp, "project");
+    const schemeDirectory = path.join(reportTemp, "schemes");
+    fs.cpSync(path.join(root, "tools/fixtures/RL-100"), projectCopy, { recursive: true });
+    fs.mkdirSync(schemeDirectory);
+    fs.writeFileSync(path.join(schemeDirectory, "report-4x4.json"), JSON.stringify(reportScheme));
+    const projectFile = path.join(projectCopy, "01-project-description/project.json");
+    const project = JSON.parse(fs.readFileSync(projectFile, "utf8"));
+    project.riskSchemeId = reportScheme.id;
+    project.riskSchemeFingerprint = reportFingerprint;
+    fs.writeFileSync(projectFile, JSON.stringify(project));
+    const environment = { ...process.env, EMBEDRISK_RISK_SCHEME_DIRECTORY: schemeDirectory };
+    const python = process.env.PYTHON || (process.platform === "win32" ? "python" : "python3");
+    const generators = [
+      [process.execPath, path.join(root, "tools/generate-report.mjs")],
+      [python, path.join(root, "tools/generate_report.py")],
+      [process.execPath, path.join(root, "vscode-extension/runtime/tools/generate-report.mjs")],
+      [python, path.join(root, "vscode-extension/runtime/tools/generate_report.py")],
+    ];
+    for (const [command, script] of generators) {
+      execFileSync(command, [script, projectCopy], { cwd: root, env: environment, stdio: "pipe" });
+      const html = fs.readFileSync(path.join(projectCopy, "report/index.html"), "utf8");
+      const matrixHtml = html.match(/<table aria-label=["']Active risk matrix["']>([\s\S]*?)<\/table>/);
+      assert.ok(matrixHtml, `${script} omitted the active risk matrix`);
+      assert.strictEqual((matrixHtml[1].match(/<td style=/g) || []).length, 16, `${script} did not render a 4x4 matrix`);
+      assert.ok(html.includes(`<code>${reportFingerprint}</code>`), `${script} omitted the normalized scheme fingerprint`);
+    }
+    const serverProject = path.join(reportTemp, "server-project");
+    fs.cpSync(path.join(root, "tools/fixtures/RL-100"), serverProject, { recursive: true });
+    const serverProjectFile = path.join(serverProject, "01-project-description/project.json");
+    const serverProjectData = JSON.parse(fs.readFileSync(serverProjectFile, "utf8"));
+    serverProjectData.riskSchemeId = cost.id;
+    serverProjectData.riskSchemeFingerprint = fingerprint(cost);
+    fs.writeFileSync(serverProjectFile, JSON.stringify(serverProjectData));
+    const reportModuleUrl = pathToFileURL(path.join(root, "webapp/server/src/report.js")).href;
+    const serverProbe = `import { buildReport } from ${JSON.stringify(reportModuleUrl)}; const report = await buildReport("server-project"); process.stdout.write(report.html);`;
+    const serverHtml = execFileSync(process.execPath, ["--input-type=module", "-e", serverProbe], {
+      cwd: root,
+      env: { ...process.env, TRA_PROJECTS_DIR: reportTemp },
+      stdio: "pipe",
+    }).toString();
+    const serverMatrix = serverHtml.match(/<table aria-label=['"]Active risk matrix['"]>([\s\S]*?)<\/table>/);
+    assert.ok(serverMatrix, "webapp server report omitted the active risk matrix");
+    assert.strictEqual((serverMatrix[1].match(/<td style=/g) || []).length, 25);
+    assert.ok(serverHtml.includes(`<code>${fingerprint(cost)}</code>`), "webapp server report omitted the scheme fingerprint");
+    ok("risk reports: server and four generators render scheme matrices and fingerprints", true);
+  } finally {
+    fs.rmSync(reportTemp, { recursive: true, force: true });
+  }
 }
 
 function runRiskEngineTests() {

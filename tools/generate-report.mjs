@@ -5,6 +5,8 @@
 import { readFileSync, writeFileSync, mkdirSync, existsSync, readdirSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
+import { normalizeScheme, fingerprint } from "../webapp/shared/riskScheme.js";
+import "../webapp/shared/riskEngine.js";
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)));
 const hasTraProject = (dir) => existsSync(join(dir, "01-project-description/project.json"));
@@ -31,13 +33,47 @@ function resolveProjectPath() {
 
 const { display: proj, base } = resolveProjectPath();
 const read = (p) => JSON.parse(readFileSync(join(base, p), "utf8"));
+const RiskEngine = globalThis.RiskEngine;
 const esc = (s) => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 const capLabel = (v) => (typeof v === 'number' && v >= 1 ? `capability ${Math.min(4, v)} · Threat actor ${Math.min(4, v)}` : `capability ${v ?? '—'}`);
 const ID_PATTERN = /^[A-Za-z0-9 _\-:.]+$/;
 const assumptionAnchor = (id) => `assumption-${String(id ?? '').replace(/[^A-Za-z0-9_.:-]/g, '-')}`;
-const scheme = JSON.parse(readFileSync(join(root, ".assets/knowledge-base/risk-scheme.json"), "utf8"));
-
 const project = read("01-project-description/project.json");
+const BUILTIN_SCHEME_FILES = {
+  "builtin:5x5-exposure": "risk-scheme-5x5-exposure.json",
+  "builtin:5x5-cost": "risk-scheme-5x5-cost.json",
+};
+function resolveScheme(project) {
+  const requestedId = project.riskSchemeId || ({ "exposure-exploitability-impact": "builtin:5x5-exposure", "cost-based": "builtin:5x5-cost" }[project.riskScoringMethod] || "builtin:5x5-cost");
+  const schemes = new Map();
+  const errors = [];
+  for (const [id, file] of Object.entries(BUILTIN_SCHEME_FILES)) {
+    try {
+      const scheme = normalizeScheme(readFileSync(join(root, "webapp/.assets/knowledge-base", file), "utf8"));
+      if (scheme.id !== id) throw new Error(`expected built-in ID '${id}'`);
+      schemes.set(id, scheme);
+    } catch (error) { errors.push(String(error.message || error)); }
+  }
+  const localDirectory = process.env.EMBEDRISK_RISK_SCHEME_DIRECTORY || join(root, "webapp/.local/risk-schemes");
+  try {
+    for (const entry of readdirSync(localDirectory, { withFileTypes: true }).filter((item) => item.isFile() && item.name.endsWith(".json"))) {
+      try {
+        const scheme = normalizeScheme(readFileSync(join(localDirectory, entry.name), "utf8"), { local: true });
+        if (schemes.has(scheme.id)) throw new Error(`duplicate scheme ID '${scheme.id}'`);
+        schemes.set(scheme.id, scheme);
+      } catch (error) { errors.push(`${entry.name}: ${String(error.message || error)}`); }
+    }
+  } catch (error) { if (error.code !== "ENOENT") errors.push(String(error.message || error)); }
+  const scheme = schemes.get(requestedId);
+  if (!scheme) return { id: requestedId, scheme: null, fingerprint: null, warning: `Risk scheme '${requestedId}' is unavailable. ${errors.join("; ")}`.trim() };
+  const activeFingerprint = fingerprint(scheme);
+  if (project.riskSchemeFingerprint && project.riskSchemeFingerprint !== activeFingerprint)
+    return { id: requestedId, scheme: null, fingerprint: activeFingerprint, warning: `Risk scheme '${requestedId}' has changed; classification is unavailable until reviewed.` };
+  return { id: requestedId, scheme, fingerprint: activeFingerprint, warning: null };
+}
+const schemeResolution = resolveScheme(project);
+const scheme = schemeResolution.scheme;
+const riskEngine = scheme ? RiskEngine.createRiskEngine(scheme, project) : null;
 // Webapp-created projects have no `steps` map (or a partial one): default to canonical step paths
 // (mirrors STEP_FILES in webapp/server/src/artifacts.js).
 const DEFAULT_STEPS = {
@@ -61,8 +97,6 @@ try { useCases = read(project.steps["04b-use-cases"] || "04b-use-cases/use-cases
 // residual risk. (webapp/server/src/risk.js computeRisk only zeroes residual risk for unfeasible threats.)
 const NONE_BAND = { name: 'None', min: 0, max: 0, color: '#6b7280' };
 const UNFEASIBLE_CELL = `<b style="color:${NONE_BAND.color}">n/a (unfeasible)</b>`;
-const band = (r) => (r <= 0 ? NONE_BAND : scheme.matrix.bands.find((b) => r >= b.min && r <= b.max) || scheme.matrix.bands[0]);
-const initialRisk = (t) => (t.status === 'unfeasible' ? 0 : (t.likelihood || 0) * (t.impact || 0));
 const residual = (t) => {
   if (t.status === 'unfeasible') return { l: 0, i: 0 };
   const links = cms.filter((c) => c.selected !== false).flatMap((c) => (c.addresses || []).filter((a) => a.threat === t.id));
@@ -73,6 +107,28 @@ const residual = (t) => {
   }
   return { l, i };
 };
+const riskOf = (threat) => riskEngine ? riskEngine.riskOf(threat, cms) : null;
+const axisRisk = (risk, axes, stored) => {
+  if (!risk) return `L${stored.likelihood ?? '—'} / I${stored.impact ?? '—'} (unavailable)`;
+  if (risk.initial <= 0 && axes === 'initial') return 'n/a (unfeasible)';
+  if (risk[axes] <= 0) return 'None';
+  const band = risk[axes === 'initial' ? 'initialBand' : 'residualBand'];
+  return scheme.classification.kind === 'lookup' ? band.label || band.name : `${risk[axes]} ${band.label || band.name}`;
+};
+const riskSchemeSection = (() => {
+  if (!riskEngine) return `<div class="warn"><b>Risk classification unavailable:</b> ${esc(schemeResolution.warning)} Raw stored L/I values are shown.</div>`;
+  const likelihoods = riskEngine.likelihoodLevels();
+  const impacts = riskEngine.impactLevels().slice().reverse();
+  const cells = riskEngine.matrixCells();
+  const rows = impacts.map((impact) => `<tr><th>${esc(impact.code)} · ${esc(impact.label)}</th>${likelihoods.map((likelihood) => {
+    const cell = cells.find((item) => item.likelihood === likelihood.value && item.impact === impact.value);
+    const level = riskEngine.classify(likelihood.value, impact.value);
+    const label = scheme.classification.kind === 'lookup' ? level.label : cell.score;
+    return `<td style="background:${esc(level.color)};color:#fff" title="${esc(likelihood.code)} × ${esc(impact.code)} · ${esc(level.label)}">${esc(label)}</td>`;
+  }).join('')}</tr>`).join('');
+  const legend = scheme.classification.levels.map((level) => `<span style="display:inline-flex;align-items:center;gap:4px;margin-right:10px"><i style="display:inline-block;width:10px;height:10px;background:${esc(level.color)}"></i>${esc(level.label)}</span>`).join('');
+  return `<h2>Risk scheme</h2><p><b>${esc(scheme.title)}</b> · v${esc(scheme.version)} · fingerprint <code>${schemeResolution.fingerprint}</code></p><div>${legend}</div><table aria-label="Active risk matrix"><thead><tr><th>Impact / Likelihood</th>${likelihoods.map((level) => `<th>${esc(level.code)}</th>`).join('')}</tr></thead><tbody>${rows}</tbody></table>`;
+})();
 
 // Plausibility checker (PR/NFR review step)
 const ids = new Set(sys.components.map((c) => c.id));
@@ -104,7 +160,7 @@ threats.forEach((t) => {
 cms.forEach((c) => (c.addresses || []).forEach((a) => { if (!tids.has(a.threat)) issues.push(`${c.id}: addresses unknown threat ${a.threat}.`); }));
 
 const rows = threats.map((t) => {
-  const r = initialRisk(t), rr = residual(t), rrv = (rr.l || 0) * (rr.i || 0);
+  const risk = riskOf(t), rr = risk ? { l: risk.residualLikelihood, i: risk.residualImpact } : residual(t);
   const unfeasible = t.status === 'unfeasible';
   const refs = (t.assumptionRefs || []).map((aid) => {
     if (!ID_PATTERN.test(aid)) return `<span>${esc(aid)}</span> (invalid ID)`;
@@ -118,7 +174,9 @@ const rows = threats.map((t) => {
     `<b>Responsibility:</b> ${esc(t.responsibility || '—')}`,
     t.deploymentConstraints ? `<b>Deployment constraints:</b> ${esc(t.deploymentConstraints)}` : '',
   ].filter(Boolean).join('<br>');
-  return `<tr id="threat-${esc(t.id)}"><td>${esc(t.id)}</td><td>${esc(t.title)}</td><td>${esc((t.stride || []).join(""))}</td><td>${refs || '—'}</td><td>${rationale || '—'}</td><td>${classification}</td><td>${unfeasible ? UNFEASIBLE_CELL : `${t.likelihood}x${t.impact}=<b style="color:${band(r).color}">${r} ${band(r).name}</b>`}</td><td>${unfeasible ? UNFEASIBLE_CELL : `${rr.l}x${rr.i}=<b style="color:${band(rrv).color}">${rrv} ${band(rrv).name}</b>`}</td><td>${esc(t.status || '')}</td></tr>`;
+  const initial = unfeasible ? UNFEASIBLE_CELL : risk ? axisRisk(risk, 'initial', t) : `L${esc(t.likelihood ?? '—')} / I${esc(t.impact ?? '—')} (unavailable)`;
+  const residualCell = unfeasible ? UNFEASIBLE_CELL : risk ? axisRisk(risk, 'residual', t) : `L${esc(rr.l ?? '—')} / I${esc(rr.i ?? '—')} (unavailable)`;
+  return `<tr id="threat-${esc(t.id)}"><td>${esc(t.id)}</td><td>${esc(t.title)}</td><td>${esc((t.stride || []).join(""))}</td><td>${refs || '—'}</td><td>${rationale || '—'}</td><td>${classification}</td><td>${initial}</td><td>${residualCell}</td><td>${esc(t.status || '')}</td></tr>`;
 }).join("");
 
 const ucRows = (useCases.diagrams || []).map((d) =>
@@ -143,6 +201,7 @@ const html = `<!doctype html><meta charset=utf8><title>TRA ${project.title}</tit
 <h2>Attacker profiles</h2><ul>${atkRows}</ul>
 ${assRows ? `<h2>Assumptions</h2>${assRows}` : ''}
 <h2>Assets</h2><ul>${sys.assets.map((a) => `<li>${a.name} (C${a.objectives.confidentiality}/I${a.objectives.integrity}/A${a.objectives.availability}/S${a.objectives.safety})</li>`).join("")}</ul>
+${riskSchemeSection}
 <h2>Threats & risk</h2><table><tr><th>ID</th><th>Threat</th><th>STRIDE</th><th>Assumptions</th><th>Rationale</th><th>Classification</th><th>Initial</th><th>Residual</th><th>Status</th></tr>${rows}</table>
 ${project.reportOptions?.includeUseCases ? `<h2>Use-case diagrams</h2>${ucRows ? `<ul>${ucRows}</ul>` : '<p>No use-case diagrams defined.</p>'}` : ''}
 <h2>Plausibility check</h2>${issues.length ? `<ul class=warn>${issues.map((i) => `<li>${i}</li>`).join("")}</ul>` : "<p>No issues found.</p>"}`;

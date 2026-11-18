@@ -113,7 +113,12 @@ async function generateReport(ctx: vscode.ExtensionContext, projDir: vscode.Uri,
     return;
   }
   try {
-    await execFileAsync(process.execPath, [script.fsPath, projDir.fsPath], { cwd: path.dirname(script.fsPath) });
+    const configuredRiskSchemeDirectory = vscode.workspace.getConfiguration("embedrisk").get<string>("riskSchemeDirectory", "").trim();
+    const riskSchemeDirectory = configuredRiskSchemeDirectory || vscode.Uri.joinPath(ctx.globalStorageUri, "risk-schemes").fsPath;
+    await execFileAsync(process.execPath, [script.fsPath, projDir.fsPath], {
+      cwd: path.dirname(script.fsPath),
+      env: { ...process.env, EMBEDRISK_RISK_SCHEME_DIRECTORY: riskSchemeDirectory },
+    });
     let report: vscode.Uri;
     if (artifact === "sbom") {
       const projectFile = vscode.Uri.joinPath(projDir, "01-project-description", "project.json");

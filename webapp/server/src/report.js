@@ -609,6 +609,7 @@ export async function buildReport(id) {
     const { project, assumptions, system, dfd, useCases, threats: td, requirements: rd, countermeasures: cd, attackTrees, defects: dd } = p;
     const schemeResolution = await resolveProjectScheme(project);
     const scheme = schemeResolution.scheme;
+    const reportRiskEngine = scheme ? globalThis.RiskEngine.createRiskEngine(scheme, project) : null;
     const threats = td.threats || [];
     const reqs = rd.requirements || [];
     const cms = cd.countermeasures || [];
@@ -635,6 +636,26 @@ export async function buildReport(id) {
     const sbomMode = project.sbom?.mode || 'in-tool';
     const sbomFormat = project.sbom?.format || 'cyclonedx';
     const sbomFile = sbomMode !== 'in-tool' ? project.sbom?.url || '(external, no URL)' : sbomFormat === 'spdx' ? 'report/sbom.spdx.json' : 'report/sbom.cdx.json';
+    const riskSchemeSection = reportRiskEngine
+        ? (() => {
+            const likelihoods = reportRiskEngine.likelihoodLevels();
+            const impacts = reportRiskEngine.impactLevels().slice().reverse();
+            const matrixRows = impacts.map((impact) => {
+                const cells = likelihoods.map((likelihood) => {
+                    const level = reportRiskEngine.classify(likelihood.value, impact.value);
+                    const score = likelihood.value * impact.value;
+                    const label = scheme.classification.kind === 'lookup' ? level.label : score;
+                    return `<td style='background:${esc(level.color)};color:#fff' title='${esc(likelihood.code)} × ${esc(impact.code)} · ${esc(level.label)}'>${esc(label)}</td>`;
+                }).join('');
+                return `<tr><th>${esc(impact.code)} · ${esc(impact.label)}</th>${cells}</tr>`;
+            }).join('');
+            const legend = scheme.classification.levels.map((level) =>
+                `<span style='display:inline-flex;align-items:center;gap:4px;margin-right:10px'><i style='display:inline-block;width:10px;height:10px;background:${esc(level.color)}'></i>${esc(level.label)}</span>`
+            ).join('');
+            const headers = likelihoods.map((level) => `<th>${esc(level.code)}</th>`).join('');
+            return `<h2>Risk scheme</h2><p><b>${esc(scheme.title)}</b> · v${esc(scheme.version)} · fingerprint <code>${schemeResolution.fingerprint}</code></p><div>${legend}</div><table aria-label='Active risk matrix'><thead><tr><th>Impact / Likelihood</th>${headers}</tr></thead><tbody>${matrixRows}</tbody></table>`;
+        })()
+        : '';
     const strideCov = buildStrideCoverage(system, threats);
     const strideTbSection = project.reportOptions?.includeStrideBoundaryAnalysis ? strideBoundaryTablesHtml(system, dfd) : '';
     const acceptedNotices = new Set(project.acceptedNotices || []);
@@ -800,6 +821,7 @@ export async function buildReport(id) {
         `<h2>Attacker profiles</h2><ul>${atk}</ul>` +
         (assumptionSection ? `<h2>Assumptions</h2>${assumptionSection}` : '') +
         `<h2>Assets</h2><ul>${assets}</ul>` +
+        riskSchemeSection +
         (ifaceList ? `<h2>External interfaces</h2><ul>${ifaceList}</ul>` : '') +
         (reqRows ? `<h2>Security requirements</h2><table><tr><th>ID</th><th>Requirement</th><th>Standard / SL·FR</th><th>From threats</th><th>Satisfied by</th></tr>${reqRows}</table>` : '') +
         `<h2>Countermeasures</h2><ul>${cmrows}</ul>` +

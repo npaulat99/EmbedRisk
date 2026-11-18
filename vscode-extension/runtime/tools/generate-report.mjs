@@ -4,7 +4,7 @@
 // Usage: node tools/generate-report.mjs <project-dir>
 import { readFileSync, writeFileSync, mkdirSync, existsSync, readdirSync, unlinkSync } from "node:fs";
 import { isAbsolute, join, dirname } from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)));
 const hasTraProject = (dir) => existsSync(join(dir, "01-project-description/project.json"));
@@ -31,13 +31,75 @@ function resolveProjectPath() {
 
 const { display: proj, base } = resolveProjectPath();
 const read = (p) => JSON.parse(readFileSync(join(base, p), "utf8"));
+await import(pathToFileURL(join(root, "..", "media", "risk-engine.js")).href);
+const RiskEngine = globalThis.RiskEngine;
 const esc = (s) => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 const capLabel = (v) => (typeof v === 'number' && v >= 1 ? `capability ${Math.min(4, v)} · Threat actor ${Math.min(4, v)}` : `capability ${v ?? '—'}`);
 const ID_PATTERN = /^[A-Za-z0-9 _\-:.]+$/;
 const assumptionAnchor = (id) => `assumption-${String(id ?? '').replace(/[^A-Za-z0-9_.:-]/g, '-')}`;
-const scheme = JSON.parse(readFileSync(join(root, ".assets/knowledge-base/risk-scheme.json"), "utf8"));
-
 const project = read("01-project-description/project.json");
+const BUILTIN_SCHEME_FILES = {
+  "builtin:5x5-exposure": "risk-scheme-5x5-exposure.json",
+  "builtin:5x5-cost": "risk-scheme-5x5-cost.json",
+};
+function validateV2Scheme(scheme, local) {
+  if (!scheme || scheme.schemaVersion !== 2 || typeof scheme.id !== "string") throw new Error("scheme must use schemaVersion 2 and have an ID");
+  if (local && scheme.id.startsWith("builtin:")) throw new Error("the 'builtin:' prefix is reserved");
+  for (const axis of ["likelihood", "impact"]) {
+    const definition = scheme[axis];
+    if (!Array.isArray(definition?.levels) || !definition.levels.length || !Array.isArray(definition.criteria)) throw new Error(`${axis} axis is invalid`);
+    definition.levels.forEach((level, index) => { if (level.value !== index + 1) throw new Error(`${axis} levels must be contiguous`); });
+  }
+  const { likelihood, impact, classification } = scheme;
+  if (!classification || !Array.isArray(classification.levels) || !classification.levels.length) throw new Error("classification levels are required");
+  const levels = new Set(classification.levels.map((level) => level.id));
+  if (classification.kind === "lookup") {
+    for (let i = 1; i <= impact.levels.length; i++) for (let l = 1; l <= likelihood.levels.length; l++)
+      if (!levels.has(classification.matrix?.[i]?.[l])) throw new Error(`lookup cell ${i}/${l} is missing or invalid`);
+  } else if (classification.kind === "product-bands") {
+    const bands = [...(classification.bands || [])].sort((a, b) => a.min - b.min);
+    let expected = 1;
+    for (const band of bands) {
+      if (!levels.has(band.level) || band.min !== expected || band.max < band.min) throw new Error("product bands have a gap, overlap, or unknown level");
+      expected = band.max + 1;
+    }
+    if (expected !== likelihood.levels.length * impact.levels.length + 1) throw new Error("product bands do not cover the full risk range");
+    classification.bands = bands;
+  } else throw new Error("classification kind is invalid");
+}
+function resolveScheme(project) {
+  const requestedId = project.riskSchemeId || ({ "exposure-exploitability-impact": "builtin:5x5-exposure", "cost-based": "builtin:5x5-cost" }[project.riskScoringMethod] || "builtin:5x5-cost");
+  const schemes = new Map(), errors = [];
+  const load = (file, local, expectedId) => {
+    try {
+      const text = readFileSync(file, "utf8");
+      if (Buffer.byteLength(text, "utf8") > 256 * 1024) throw new Error("scheme exceeds the 256 KB limit");
+      const scheme = JSON.parse(text);
+      validateV2Scheme(scheme, local);
+      if (expectedId && scheme.id !== expectedId) throw new Error(`expected built-in ID '${expectedId}'`);
+      if (schemes.has(scheme.id)) throw new Error(`duplicate scheme ID '${scheme.id}'`);
+      const engine = RiskEngine.createRiskEngine(scheme, project);
+      schemes.set(scheme.id, { scheme: engine.scheme, fingerprint: engine.fingerprint });
+    } catch (error) { errors.push(`${file}: ${String(error.message || error)}`); }
+  };
+  for (const [id, file] of Object.entries(BUILTIN_SCHEME_FILES))
+    load(join(root, ".assets/knowledge-base", file), false, id);
+  const localDirectory = process.env.EMBEDRISK_RISK_SCHEME_DIRECTORY;
+  if (localDirectory) {
+    try {
+      for (const entry of readdirSync(localDirectory, { withFileTypes: true }).filter((item) => item.isFile() && item.name.endsWith(".json")))
+        load(join(localDirectory, entry.name), true);
+    } catch (error) { if (error.code !== "ENOENT") errors.push(`${localDirectory}: ${String(error.message || error)}`); }
+  }
+  const selected = schemes.get(requestedId);
+  if (!selected) return { id: requestedId, scheme: null, fingerprint: null, warning: `Risk scheme '${requestedId}' is unavailable. ${errors.join("; ")}`.trim() };
+  if (project.riskSchemeFingerprint && project.riskSchemeFingerprint !== selected.fingerprint)
+    return { id: requestedId, scheme: null, fingerprint: selected.fingerprint, warning: `Risk scheme '${requestedId}' has changed; classification is unavailable until reviewed.` };
+  return { id: requestedId, scheme: selected.scheme, fingerprint: selected.fingerprint, warning: null };
+}
+const schemeResolution = resolveScheme(project);
+const scheme = schemeResolution.scheme;
+const riskEngine = scheme ? RiskEngine.createRiskEngine(scheme, project) : null;
 // Webapp-created projects have no `steps` map (or a partial one): default to canonical step paths
 // (mirrors STEP_FILES in webapp/server/src/artifacts.js).
 const DEFAULT_STEPS = {
@@ -63,8 +125,6 @@ try { reqs = read(project.steps["05-requirements"]).requirements || []; } catch 
 // residual risk. (webapp/server/src/risk.js computeRisk only zeroes residual risk for unfeasible threats.)
 const NONE_BAND = { name: 'None', min: 0, max: 0, color: '#6b7280' };
 const UNFEASIBLE_CELL = `<b style="color:${NONE_BAND.color}">n/a (unfeasible)</b>`;
-const band = (r) => (r <= 0 ? NONE_BAND : scheme.matrix.bands.find((b) => r >= b.min && r <= b.max) || scheme.matrix.bands[0]);
-const initialRisk = (t) => (t.status === 'unfeasible' ? 0 : (t.likelihood || 0) * (t.impact || 0));
 const residual = (t) => {
   if (t.status === 'unfeasible') return { l: 0, i: 0 };
   const links = cms.filter((c) => c.selected !== false).flatMap((c) => (c.addresses || []).filter((a) => a.threat === t.id));
@@ -75,14 +135,25 @@ const residual = (t) => {
   }
   return { l, i };
 };
+const riskOf = (threat) => riskEngine ? riskEngine.riskOf(threat, cms) : null;
+const riskCell = (risk, axes, threat, residualAxes) => {
+  if (!risk) return `L${threat.likelihood ?? '—'} / I${threat.impact ?? '—'} (unavailable)`;
+  if (axes === 'initial' && threat.status === 'unfeasible') return UNFEASIBLE_CELL;
+  const band = risk[axes === 'initial' ? 'initialBand' : 'residualBand'];
+  if (risk[axes] <= 0) return 'None';
+  return scheme.classification.kind === 'lookup'
+    ? esc(band.label || band.name)
+    : `${residualAxes ? `${residualAxes.l}×${residualAxes.i}=` : `${threat.likelihood}×${threat.impact}=`}<b style="color:${esc(band.color)}">${risk[axes]} ${esc(band.label || band.name)}</b>`;
+};
 const strideOrder = ['S', 'T', 'R', 'I', 'D', 'E'];
 const traceability = threats.map((t) => {
   const assetById = new Map((sys.assets || []).map((a) => [a.id, a]));
-  const rr = residual(t), [rl, ri] = [rr.l, rr.i];
-  const initial = (t.likelihood || 0) * (t.impact || 0), res = (rl || 0) * (ri || 0);
+  const computed = riskOf(t);
+  const rr = computed ? { l: computed.residualLikelihood, i: computed.residualImpact } : residual(t);
+  const [rl, ri] = [rr.l, rr.i];
+  const initial = computed?.initial ?? null, res = computed?.residual ?? null;
   const rqs = reqs.filter((r) => (r.derivedFromThreat || []).includes(t.id));
   const ctrls = cms.filter((c) => c.selected !== false && (c.addresses || []).some((a) => a.threat === t.id));
-  const riskBand = (value) => value <= 0 ? { name: 'None' } : scheme.matrix.bands.find((b) => value >= b.min && value <= b.max) || scheme.matrix.bands[0];
   return {
     asset: (t.assets || []).map((a) => assetById.get(a)?.name || a).join('; '),
     cias: (t.assets || []).map((a) => {
@@ -94,10 +165,14 @@ const traceability = threats.map((t) => {
       return (ai < 0 ? 99 : ai) - (bi < 0 ? 99 : bi);
     }).join(''),
     assumptionRefs: t.assumptionRefs || [], likelihoodRationale: t.likelihoodRationale || '', impactRationale: t.impactRationale || '',
-    initial, initialBand: riskBand(initial).name,
+    initial, initialBand: computed?.initialBand.label || 'Unavailable',
+    likelihood: computed ? undefined : t.likelihood ?? null,
+    impact: computed ? undefined : t.impact ?? null,
     requirement: rqs.map((r) => `${r.id}${r.standardRef ? ` [${r.standardRef}]` : ''}${(r.satisfiedByCM || []).length ? ` → ${(r.satisfiedByCM || []).join('+')}` : ''}`).join('; '),
     control: ctrls.map((c) => `${c.id} (${c.status || '?'})`).join('; '),
-    residual: res, residualBand: riskBand(res).name,
+    residual: res, residualBand: computed?.residualBand.label || 'Unavailable',
+    residualLikelihood: computed ? undefined : rl,
+    residualImpact: computed ? undefined : ri,
     evidence: ctrls.flatMap((c) => [...(c.ticketUrls || []), c.ticketUrl, c.verificationUrl]).filter(Boolean).join(' '),
     status: t.status || '', ratedBy: t.ratedBy || '',
     signoff: t.status === 'accepted' ? [t.acceptedBy && `by ${t.acceptedBy}`, t.reviewDate && `review ${t.reviewDate}`, t.acceptanceRationale].filter(Boolean).join(' · ') : '',
@@ -144,7 +219,7 @@ threats.forEach((t) => {
 cms.forEach((c) => (c.addresses || []).forEach((a) => { if (!tids.has(a.threat)) issues.push(`${c.id}: addresses unknown threat ${a.threat}.`); }));
 
 const rows = threats.map((t) => {
-  const r = initialRisk(t), rr = residual(t), rrv = (rr.l || 0) * (rr.i || 0);
+  const risk = riskOf(t), rr = risk ? { l: risk.residualLikelihood, i: risk.residualImpact } : residual(t);
   const unfeasible = t.status === 'unfeasible';
   const refs = (t.assumptionRefs || []).map((aid) => {
     if (!ID_PATTERN.test(aid)) return `<span>${esc(aid)}</span> (invalid ID)`;
@@ -160,8 +235,8 @@ const rows = threats.map((t) => {
   ].filter(Boolean).join('<br>');
   return `<tr id="threat-${esc(t.id)}"><td>${esc(t.id)}</td><td>${esc(t.title)}</td><td>${esc((t.stride || []).join(''))}</td>` +
     `<td>${refs || '—'}</td><td>${rationale || '—'}</td><td>${classification}</td>` +
-    `<td>${unfeasible ? UNFEASIBLE_CELL : `${t.likelihood}×${t.impact}=<b style="color:${band(r).color}">${r} ${esc(band(r).name)}</b>`}</td>` +
-    `<td>${unfeasible ? UNFEASIBLE_CELL : `${rr.l}×${rr.i}=<b style="color:${band(rrv).color}">${rrv} ${esc(band(rrv).name)}</b>`}</td>` +
+    `<td>${riskCell(risk, 'initial', t, rr)}</td>` +
+    `<td>${unfeasible ? UNFEASIBLE_CELL : riskCell(risk, 'residual', t, rr)}</td>` +
     `<td>${esc(t.status || 'open')}${t.status === 'accepted' && t.acceptedBy ? ` · <i>${esc(t.acceptedBy)}</i>` : ''}</td></tr>`;
 }).join('');
 
@@ -208,6 +283,20 @@ const buildCdx = () => ({
   })),
 });
 
+const riskSchemeSection = (() => {
+  if (!riskEngine) return `<div class="warn" role="alert"><b>Risk classification unavailable:</b> ${esc(schemeResolution.warning)} Raw stored L/I values are shown.</div>`;
+  const likelihoods = riskEngine.likelihoodLevels();
+  const impacts = riskEngine.impactLevels().slice().reverse();
+  const cells = riskEngine.matrixCells();
+  const rows = impacts.map((impact) => `<tr><th>${esc(impact.code)} · ${esc(impact.label)}</th>${likelihoods.map((likelihood) => {
+    const level = riskEngine.classify(likelihood.value, impact.value);
+    const cell = cells.find((item) => item.likelihood === likelihood.value && item.impact === impact.value);
+    const label = scheme.classification.kind === 'lookup' ? level.label : cell.score;
+    return `<td style="background:${esc(level.color)};color:#fff" title="${esc(likelihood.code)} × ${esc(impact.code)} · ${esc(level.label)}">${esc(label)}</td>`;
+  }).join('')}</tr>`).join('');
+  const legend = scheme.classification.levels.map((level) => `<span style="display:inline-flex;align-items:center;gap:4px;margin-right:10px"><i style="display:inline-block;width:10px;height:10px;background:${esc(level.color)}"></i>${esc(level.label)}</span>`).join('');
+  return `<h2>Risk scheme</h2><p><b>${esc(scheme.title)}</b> · v${esc(scheme.version)} · fingerprint <code>${schemeResolution.fingerprint}</code></p><div>${legend}</div><table aria-label="Active risk matrix"><thead><tr><th>Impact / Likelihood</th>${likelihoods.map((level) => `<th>${esc(level.code)}</th>`).join('')}</tr></thead><tbody>${rows}</tbody></table>`;
+})();
 const buildSpdx = () => {
   const sid = id => 'SPDXRef-Package-' + String(id).replace(/[^A-Za-z0-9.\-]/g, '-');
   const created = new Date().toISOString();
@@ -250,6 +339,7 @@ const html = `<!doctype html><meta charset=utf8><title>TRA ${esc(project.title |
 <h2>Attacker profiles</h2><ul>${atkRows}</ul>
 ${assRows ? `<h2>Assumptions</h2>${assRows}` : ''}
 <h2>Assets</h2><ul>${(sys.assets || []).map(a => `<li>${esc(a.name)} (C${a.objectives?.confidentiality}/I${a.objectives?.integrity}/A${a.objectives?.availability}/S${a.objectives?.safety})</li>`).join('')}</ul>
+${riskSchemeSection}
 <h2>Threats &amp; risk</h2><table><tr><th>ID</th><th>Threat</th><th>STRIDE</th><th>Assumptions</th><th>Rationale</th><th>Classification</th><th>Initial risk</th><th>Residual risk</th><th>Status</th></tr>${rows}</table>
 <h2>Countermeasures</h2><ul>${cmRows || '<li>None defined.</li>'}</ul>
 ${reqRows ? `<h2>Security requirements</h2><table><tr><th>ID</th><th>Requirement</th><th>Standard ref</th><th>From threats</th><th>Satisfied by</th></tr>${reqRows}</table>` : ''}
