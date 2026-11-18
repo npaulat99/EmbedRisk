@@ -534,14 +534,16 @@ ok("weight helpers match webapp defaults, normalization, zero/negative/nullish w
 ok("public stepProb retains unassessed=1 while weightedCost uses default cost=3",
   AtModel.stepProb() === 1 && AtModel.stepProb({}) === 1 && Math.abs(AtModel.weightedCost() - 3) < 1e-9);
 
-// Execute the actual calculator's pre-effect body and update callback, not copied formulas.
-// Loud anchors deliberately fail if the source moves: the React auto-effect is NOT our read API.
+// Execute the actual calculator's pre-render body and update callback, not copied formulas.
 const ThreatModel = require(path.join(root, "vscode-extension/media/threat-model.js"));
 const vm = require("node:vm");
 const calculatorSource = fs.readFileSync(path.join(root, "webapp/client/src/components/panels/RiskCalculator.tsx"), "utf8");
 const calculatorStart = calculatorSource.indexOf("function CostRiskCalculator(");
-const calculatorEnd = calculatorSource.indexOf("    useEffect(() => {", calculatorStart);
-assert(calculatorStart >= 0 && calculatorEnd > calculatorStart, "CostRiskCalculator pre-effect anchors changed");
+const calculatorEnd = calculatorSource.indexOf("    return (", calculatorStart);
+const calculatorComponentEnd = calculatorSource.indexOf("export default function RiskCalculator(", calculatorStart);
+assert(calculatorStart >= 0 && calculatorEnd > calculatorStart && calculatorComponentEnd > calculatorStart, "CostRiskCalculator pre-render anchors changed");
+assert(!calculatorSource.slice(calculatorStart, calculatorComponentEnd).includes("useEffect("), "CostRiskCalculator must not auto-write a proposal on mount");
+assert(calculatorSource.includes("Apply likelihood"), "CostRiskCalculator explicit apply action missing");
 const calculatorBody = calculatorSource.slice(calculatorStart, calculatorEnd);
 assert(calculatorBody.includes("const update = (patch: Partial<Threat>) => {") &&
   calculatorBody.includes("upd({ ...patch, status, costLikelihood:"), "CostRiskCalculator update anchor changed");
@@ -1129,6 +1131,11 @@ async function runRiskRegistryTests() {
     ok("risk registry: out-of-range stored values are errors", invalidRatingIssues.some((issue) => issue.severity === "error" && issue.key === "risk-range:INVALID"));
     const unfeasibleIssues = validate({ project: {}, riskScheme: localScheme, threats: { threats: [{ id: "UNFEASIBLE", likelihood: 2, impact: 3, status: "unfeasible" }] } });
     ok("risk registry: unfeasible residual zero is not an out-of-range error", !unfeasibleIssues.some((issue) => issue.key === "risk-range:UNFEASIBLE"));
+    const zeroResidualIssues = validate({ project: {}, riskScheme: localScheme,
+      threats: { threats: [{ id: "ZERO-RESIDUAL", likelihood: 2, impact: 3 }] },
+      countermeasures: { countermeasures: [{ id: "CM-ZERO", addresses: [{ threat: "ZERO-RESIDUAL", residualLikelihood: 0, residualImpact: 3 }] }] },
+    });
+    ok("risk registry: zero residual axis remains valid", !zeroResidualIssues.some((issue) => issue.key === "risk-range:ZERO-RESIDUAL"));
     const legacy = await resolveProjectScheme({ riskScoringMethod: "exposure-exploitability-impact", riskSchemePath: path.join(tempDir, "untrusted.json") }, options);
     ok("risk registry: legacy scoring maps to built-in and project paths are ignored", legacy.scheme?.id === "builtin:5x5-exposure");
     const unknown = await resolveProjectScheme({ riskSchemeId: "../outside" }, options);
@@ -1136,6 +1143,63 @@ async function runRiskRegistryTests() {
   } finally {
     fs.rmSync(tempDir, { recursive: true, force: true });
   }
+}
+
+function runClientRiskValidationTests() {
+  const validationSource = fs.readFileSync(path.join(root, "webapp/client/src/lib/validate.ts"), "utf8");
+  const validationModule = { exports: {} };
+  const supportModules = {
+    "../types": { DEFAULT_ACCEPTABLE_RISK: 12 },
+    "./ids": { ID_PATTERN: /^[A-Za-z0-9 _\-:.]+$/, idCollisions: () => [] },
+    "./risk": clientRiskModule.exports,
+    "./attackTree": { costWeightTotal: () => 1 },
+    "@shared/attackerScale.js": { normalizeActorLevel: (value) => value },
+  };
+  vm.runInNewContext(esbuild.transformSync(validationSource, { loader: "ts", format: "cjs" }).code, {
+    module: validationModule,
+    require: (id) => supportModules[id],
+  });
+  const axis = (prefix) => [1, 2, 3, 4].map((value) => ({ value, code: prefix + value, label: prefix + value }));
+  const scheme = {
+    schemaVersion: 2, id: "client-validation-4x4", title: "Validation 4x4", version: "1",
+    likelihood: { levels: axis("E"), derivation: { kind: "criteria-max" }, criteria: [] },
+    impact: { levels: axis("S"), derivation: { kind: "criteria-max" }, criteria: [] },
+    classification: {
+      kind: "lookup",
+      levels: [
+        { id: "low", label: "low", rank: 1, color: "#2e7d32", treatment: "auto-accept" },
+        { id: "medium", label: "medium", rank: 2, color: "#f9a825", treatment: "optional" },
+        { id: "high", label: "high", rank: 3, color: "#ef6c00", treatment: "required", acceptanceBy: "management" },
+        { id: "critical", label: "critical", rank: 4, color: "#c62828", treatment: "immediate", acceptanceBy: "management" },
+      ],
+      matrix: {
+        "4": { "1": "medium", "2": "high", "3": "critical", "4": "critical" },
+        "3": { "1": "medium", "2": "high", "3": "high", "4": "critical" },
+        "2": { "1": "low", "2": "medium", "3": "medium", "4": "high" },
+        "1": { "1": "low", "2": "low", "3": "medium", "4": "medium" },
+      },
+    },
+    highLevel: "high", acceptance: { defaultLevel: "medium" },
+  };
+  const makeData = (threat) => ({
+    project: { acceptableLevel: "medium" }, assumptions: { attacker: [] },
+    system: { components: [{ id: "C1" }], assets: [], interfaces: [], trustBoundaries: [] },
+    threats: { threats: [threat] }, requirements: { requirements: [] }, countermeasures: { countermeasures: [] },
+    dfd: { nodes: [] }, useCases: { diagrams: [] }, attackTrees: { trees: [] }, defects: { defects: [] },
+  });
+  const high = validationModule.exports.validate(makeData({ id: "HIGH", likelihood: 2, impact: 3, components: ["C1"], stride: [] }), scheme);
+  ok("client validation: lookup rank drives high requirement and management acceptance", high.some((issue) => issue.key === "risk-acceptance:HIGH")
+    && high.some((issue) => issue.message.includes("high/critical threat has no security requirement")));
+  const accepted = validationModule.exports.validate(makeData({ id: "ACCEPTED", likelihood: 2, impact: 3, components: ["C1"], stride: [], status: "accepted", acceptedBy: "manager" }), scheme);
+  ok("client validation: management owner satisfies scheme acceptance rule", !accepted.some((issue) => issue.key === "risk-acceptance:ACCEPTED"));
+  const low = validationModule.exports.validate(makeData({ id: "LOW", likelihood: 1, impact: 1, components: ["C1"], stride: [] }), scheme);
+  ok("client validation: auto-accept low level produces no risk warning", !low.some((issue) => issue.key === "risk-over-acceptable:LOW" || issue.key === "risk-acceptance:LOW"));
+  const invalid = validationModule.exports.validate(makeData({ id: "INVALID", likelihood: 5, impact: 3, components: ["C1"], stride: [] }), scheme);
+  ok("client validation: out-of-range stored axis is an error", invalid.some((issue) => issue.severity === "error" && issue.key === "risk-range:INVALID"));
+  const zeroResidual = makeData({ id: "ZERO", likelihood: 2, impact: 3, components: ["C1"], stride: [] });
+  zeroResidual.countermeasures.countermeasures = [{ id: "CM-ZERO", addresses: [{ threat: "ZERO", residualLikelihood: 0, residualImpact: 3 }] }];
+  const zeroResidualIssues = validationModule.exports.validate(zeroResidual, scheme);
+  ok("client validation: zero residual axis remains valid", !zeroResidualIssues.some((issue) => issue.key === "risk-range:ZERO"));
 }
 
 function runDfdEngineTests() {
@@ -1646,6 +1710,7 @@ runImportedKbTests()
   .then(() => runRiskSchemeTests())
   .then(() => runRiskEngineTests())
   .then(() => runRiskRegistryTests())
+  .then(() => runClientRiskValidationTests())
   .then(() => runValidationCoreTests())
   .then(() => runValidationDiagnosticsTests())
   .then(async () => {

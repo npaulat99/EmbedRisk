@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useStore, uid } from '../../state/store';
-import { Field, TagSelect, useFocus, useEditMode, EditBackBar, ScaleSelect, LIKELIHOOD_LEVELS, IMPACT_LEVELS, RiskPill, Jump, HelpButton, confirmDelete, IdInput } from '../common';
-import { band } from '../../lib/risk';
+import { Field, TagSelect, useFocus, useEditMode, EditBackBar, ScaleSelect, RiskPill, Jump, HelpButton, confirmDelete, IdInput } from '../common';
+import { bandForRisk, createRiskEngine } from '../../lib/risk';
 import { actorLevelLabel } from '@shared/attackerScale.js';
 import RiskCalculator from './RiskCalculator';
 import ThreatCmImportExport from '../ThreatCmImportExport';
@@ -11,6 +11,10 @@ export default function CountermeasuresPanel() {
     const data = useStore((s) => s.data)!;
     const kb = useStore((s) => s.kb);
     const scheme = useStore((s) => s.scheme);
+    const schemeWarning = useStore((s) => s.schemeWarning);
+    const engine = createRiskEngine(scheme);
+    const likelihoodScale: [number, string][] = [[0, 'None — not possible'], ...engine.likelihoodLevels().map((level) => [level.value, `${level.code} · ${level.label}`] as [number, string])];
+    const impactScale: [number, string][] = [[0, 'None — no impact'], ...engine.impactLevels().map((level) => [level.value, `${level.code} · ${level.label}`] as [number, string])];
     const save = useStore((s) => s.save);
 
     const cms = data.countermeasures.countermeasures || [];
@@ -196,10 +200,10 @@ export default function CountermeasuresPanel() {
                                     </div>
                                     <div className="grid2">
                                         <Field label="Residual likelihood">
-                                            <ScaleSelect value={a.residualLikelihood ?? t?.likelihood ?? 2} onChange={(n) => updAddr(a.threat, { residualLikelihood: Math.min(n, t?.likelihood ?? n) })} levels={LIKELIHOOD_LEVELS} style={{ width: '100%' }} />
+                                            <ScaleSelect value={a.residualLikelihood ?? t?.likelihood ?? 2} onChange={(n) => updAddr(a.threat, { residualLikelihood: Math.min(n, t?.likelihood ?? n) })} levels={likelihoodScale} disabled={!!schemeWarning} style={{ width: '100%' }} />
                                         </Field>
                                         <Field label="Residual impact">
-                                            <ScaleSelect value={a.residualImpact ?? t?.impact ?? 2} onChange={(n) => updAddr(a.threat, { residualImpact: Math.min(n, t?.impact ?? n) })} levels={IMPACT_LEVELS} style={{ width: '100%' }} />
+                                            <ScaleSelect value={a.residualImpact ?? t?.impact ?? 2} onChange={(n) => updAddr(a.threat, { residualImpact: Math.min(n, t?.impact ?? n) })} levels={impactScale} disabled={!!schemeWarning} style={{ width: '100%' }} />
                                         </Field>
                                     </div>
                                     <div style={{ marginTop: 8 }}>
@@ -346,7 +350,7 @@ export default function CountermeasuresPanel() {
                         </Field>
                         {t && (
                             <span className="hint" style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-                                Initial risk <RiskPill score={initial} band={band(initial, scheme)} /> (L {t.likelihood} × I {t.impact})
+                                Initial risk {schemeWarning ? `L ${t.likelihood ?? '—'} / I ${t.impact ?? '—'}` : <RiskPill score={initial} band={bandForRisk(t.likelihood, t.impact, scheme)} />}
                             </span>
                         )}
                     </div>
@@ -376,10 +380,10 @@ export default function CountermeasuresPanel() {
                                                 </td>
                                                 <td style={{ padding: 6 }}>
                                                     <div className="inline" style={{ gap: 4, alignItems: 'center' }}>
-                                                        <ScaleSelect value={rl} levels={LIKELIHOOD_LEVELS} onChange={(n) => updCmAddr(c.id, t.id, { residualLikelihood: Math.min(n, t.likelihood) })} style={{ width: 96 }} />
+                                                        <ScaleSelect value={rl} levels={likelihoodScale} disabled={!!schemeWarning} onChange={(n) => updCmAddr(c.id, t.id, { residualLikelihood: Math.min(n, t.likelihood) })} style={{ width: 96 }} />
                                                         <span>×</span>
-                                                        <ScaleSelect value={ri} levels={IMPACT_LEVELS} onChange={(n) => updCmAddr(c.id, t.id, { residualImpact: Math.min(n, t.impact) })} style={{ width: 96 }} />
-                                                        <RiskPill score={risk} band={band(risk, scheme)} />
+                                                        <ScaleSelect value={ri} levels={impactScale} disabled={!!schemeWarning} onChange={(n) => updCmAddr(c.id, t.id, { residualImpact: Math.min(n, t.impact) })} style={{ width: 96 }} />
+                                                        {schemeWarning ? <span className="hint">L {rl ?? '—'} / I {ri ?? '—'}</span> : <RiskPill score={risk} band={bandForRisk(rl, ri, scheme)} />}
                                                     </div>
                                                 </td>
                                                 <td style={{ padding: 6 }}>
@@ -456,6 +460,7 @@ export default function CountermeasuresPanel() {
                     </ul>
                 </HelpButton>
             </div>
+            {schemeWarning && <div className="settings-error-banner" role="alert">{schemeWarning} Residual ratings are read-only and shown as stored axes.</div>}
             <p className="lead">
                 Link each countermeasure to the threats it reduces and record the residual L/I per threat.
             </p>

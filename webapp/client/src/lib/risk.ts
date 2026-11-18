@@ -6,13 +6,17 @@ import '@shared/riskEngine.js';
 
 type RiskEngine = {
     scheme: any;
+    likelihoodLevels(): { value: number; code: string; label: string }[];
+    impactLevels(): { value: number; code: string; label: string }[];
     bands(): RiskBand[];
     band(score: number): RiskBand;
     classify(likelihood: number, impact: number): { id: string; label: string; rank: number; color: string };
+    isHighOrAbove(level: string | number | { rank: number }): boolean;
+    inRange(axis: 'likelihood' | 'impact', value: number): boolean;
     residual(threat: Threat, cms: Countermeasure[]): [number, number];
     riskOf(threat: Threat, cms: Countermeasure[]): { initial: number; residual: number; residualLikelihood: number; residualImpact: number };
-    deriveImpact(threat: { impactDimensions?: Objectives }): number | null;
-    deriveLikelihood(threat: { likelihoodFactors?: { exposure?: number; exploitability?: number } }): number | null;
+    deriveImpact(threat: { impact?: number; impactCriteria?: Record<string, number | null>; impactDimensions?: Objectives }): number | null;
+    deriveLikelihood(threat: { likelihood?: number; likelihoodCriteria?: Record<string, number | null>; likelihoodFactors?: { exposure?: number; exploitability?: number } }): number | null;
 };
 
 const engineCache = new WeakMap<object, RiskEngine>();
@@ -24,6 +28,15 @@ function engineOf(scheme: RiskScheme | null): RiskEngine {
     const engine = api.createRiskEngine(scheme || {});
     if (key) engineCache.set(key, engine);
     return engine;
+}
+
+export function createRiskEngine(scheme: RiskScheme | null): RiskEngine {
+    return engineOf(scheme);
+}
+
+export function bandForRisk(likelihood: number, impact: number, scheme: RiskScheme | null): RiskBand {
+    const engine = engineOf(scheme);
+    return riskBand(engine, likelihood, impact, likelihood * impact);
 }
 
 function riskBand(engine: RiskEngine, likelihood: number, impact: number, score: number): RiskBand {

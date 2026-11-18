@@ -25,11 +25,13 @@ const STEPS: StepDef[] = [
 
 export default function StepNav() {
     const data = useStore((s) => s.data);
+    const scheme = useStore((s) => s.scheme);
+    const schemeWarning = useStore((s) => s.schemeWarning);
     const view = useStore((s) => s.activeView);
     const setView = useStore((s) => s.setView);
     if (!data) return <nav className="stepnav" />;
 
-    const issues = openIssues(validate(data), data.project?.acceptedNotices);
+    const issues = openIssues(validate(data, scheme, schemeWarning), data.project?.acceptedNotices);
     const counts: Record<string, number> = {
         assumptions: data.assumptions.attacker?.length || 0,
         system: data.system.components?.length || 0,

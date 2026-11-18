@@ -200,7 +200,7 @@ function NodeInspector() {
                                                 <span className="muted" style={{ flex: 1 }}>
                                                     {t.id} · {t.title}
                                                 </span>
-                                                <RiskPill score={r.residual} band={r.residualBand} />
+                                                {schemeWarning ? <span className="hint">L {r.residualLikelihood ?? '—'} / I {r.residualImpact ?? '—'}</span> : <RiskPill score={r.residual} band={r.residualBand} />}
                                             </div>
                                         );
                                     })}
@@ -537,12 +537,14 @@ function UcGroupInspector() {
 
 export default function Inspector() {
     const data = useStore((s) => s.data);
+    const scheme = useStore((s) => s.scheme);
+    const schemeWarning = useStore((s) => s.schemeWarning);
     const view = useStore((s) => s.activeView);
     const selectedNodeId = useStore((s) => s.selectedNodeId);
     const selectedEdgeId = useStore((s) => s.selectedEdgeId);
     const ucSelection = useStore((s) => s.ucSelection);
     if (!data) return <aside className="inspector" />;
-    const issues = openIssues(validate(data), data.project?.acceptedNotices);
+    const issues = openIssues(validate(data, scheme, schemeWarning), data.project?.acceptedNotices);
     const isIface = !!selectedNodeId?.startsWith('iface:');
     const selNode = view === 'dfd' && selectedNodeId && !isIface ? data.dfd.nodes.find((n) => n.id === selectedNodeId) : null;
     const matrixRef = selNode?.componentRef;

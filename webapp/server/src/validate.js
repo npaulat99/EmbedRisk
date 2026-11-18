@@ -157,9 +157,10 @@ export function validate({ project = {}, assumptions = {}, system = {}, threats 
         const [rl, ri] = residual(t, cmList);
         const res = (rl || 0) * (ri || 0);
         if (riskEngine && !riskSchemeWarning) {
-            const initialInRange = riskEngine.inRange('likelihood', t.likelihood) && riskEngine.inRange('impact', t.impact);
+            const initialLikelihoodInRange = t.status === 'unfeasible' && t.likelihood === 0 || riskEngine.inRange('likelihood', t.likelihood);
+            const initialInRange = initialLikelihoodInRange && riskEngine.inRange('impact', t.impact);
             const residualInRange = t.status === 'unfeasible'
-                || (riskEngine.inRange('likelihood', rl) && riskEngine.inRange('impact', ri));
+                || ((rl === 0 || riskEngine.inRange('likelihood', rl)) && (ri === 0 || riskEngine.inRange('impact', ri)));
             if (!initialInRange || !residualInRange) {
                 add('error', `${t.id}: stored risk rating or residual is outside the active scheme's range.`, `risk-range:${t.id}`);
             } else {

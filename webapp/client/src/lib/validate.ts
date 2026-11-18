@@ -5,10 +5,10 @@
 // Each issue carries a severity: 'error' (broken/inconsistent), 'warning' (should be resolved)
 // or 'notice' (informational — e.g. an intentionally standalone requirement). Notices can be
 // accepted by the user (project.acceptedNotices); accepted notices are no longer open points.
-import type { ProjectData } from '../types';
+import type { ProjectData, RiskScheme } from '../types';
 import { DEFAULT_ACCEPTABLE_RISK } from '../types';
 import { ID_PATTERN, idCollisions } from './ids';
-import { residual } from './risk';
+import { createRiskEngine, residual } from './risk';
 import { costWeightTotal } from './attackTree';
 import { normalizeActorLevel } from '@shared/attackerScale.js';
 
@@ -32,7 +32,7 @@ export function openIssues(issues: Issue[], accepted?: string[]): Issue[] {
     return issues.filter((i) => !isAccepted(i, accepted));
 }
 
-export function validate(data: ProjectData): Issue[] {
+export function validate(data: ProjectData, scheme: RiskScheme | null = null, schemeWarning: string | null = null): Issue[] {
     const issues: Issue[] = [];
     const add = (severity: IssueSeverity, message: string, key?: string) => issues.push({ severity, message, key: key ?? message });
     const hasText = (value: unknown) => String(value || '').trim().length > 0;
@@ -58,7 +58,10 @@ export function validate(data: ProjectData): Issue[] {
     const cmIds = new Set(cms.map((c) => c.id));
     const threatById = new Map(threats.map((t) => [t.id, t]));
     const acceptableRisk = Number.isFinite(project.acceptableRisk) ? project.acceptableRisk : DEFAULT_ACCEPTABLE_RISK;
-    const costBased = project.riskScoringMethod === 'cost-based';
+    const riskEngine = scheme && !schemeWarning ? createRiskEngine(scheme) : null;
+    const costBased = riskEngine ? riskEngine.scheme.likelihood.derivation.kind === 'cost-based' : project.riskScoringMethod === 'cost-based';
+
+    if (schemeWarning) add('warning', schemeWarning, 'risk-scheme-unavailable');
 
     if (costBased && Math.abs(costWeightTotal(project.costFactorWeights) - 1) > 0.000001)
         add('warning', `Cost-factor weights total ${costWeightTotal(project.costFactorWeights).toFixed(2)}; they must combine to 1.00.`, 'cost-factor-weights');
@@ -124,7 +127,33 @@ export function validate(data: ProjectData): Issue[] {
         // Residual risk above the project's acceptable threshold — unless the residual is knowingly accepted.
         const [rl, ri] = residual(t, cms);
         const res = (rl || 0) * (ri || 0);
-        if (res > acceptableRisk && t.status !== 'accepted' && t.status !== 'unfeasible') {
+        if (riskEngine) {
+            const initialLikelihoodInRange = t.status === 'unfeasible' && t.likelihood === 0 || riskEngine.inRange('likelihood', t.likelihood);
+            const initialInRange = initialLikelihoodInRange && riskEngine.inRange('impact', t.impact);
+            const residualInRange = t.status === 'unfeasible'
+                || ((rl === 0 || riskEngine.inRange('likelihood', rl)) && (ri === 0 || riskEngine.inRange('impact', ri)));
+            if (!initialInRange || !residualInRange) {
+                add('error', `${t.id}: stored risk rating or residual is outside the active scheme's range.`, `risk-range:${t.id}`);
+            } else {
+                const level = riskEngine.classify(rl, ri);
+                if (level.id !== 'none' && level.treatment !== 'auto-accept') {
+                    const acceptedWithOwner = t.status === 'accepted' && hasText(t.acceptedBy);
+                    const acceptableLevel = project.acceptableLevel
+                        || (typeof project.acceptableRisk !== 'number' ? riskEngine.scheme.acceptance?.defaultLevel : null);
+                    const acceptableRank = acceptableLevel
+                        ? riskEngine.scheme.classification.levels.find((item: any) => item.id === acceptableLevel)?.rank
+                        : null;
+                    const withinThreshold = Number.isInteger(acceptableRank)
+                        ? level.rank <= acceptableRank
+                        : level.score <= acceptableRisk;
+                    if (level.acceptanceBy === 'management' && !acceptedWithOwner) {
+                        add('warning', `${t.id}: residual risk level '${level.label}' requires acceptance by management (status 'accepted' and acceptedBy).`, `risk-acceptance:${t.id}`);
+                    } else if (level.acceptanceBy !== 'management' && !withinThreshold && t.status !== 'accepted') {
+                        add('warning', `${t.id}: residual risk level '${level.label}' exceeds the acceptable level — reduce it or accept the residual.`, `risk-over-acceptable:${t.id}`);
+                    }
+                }
+            }
+        } else if (!schemeWarning && res > acceptableRisk && t.status !== 'accepted' && t.status !== 'unfeasible') {
             const threatLabel = t.id || 'threat';
             add('warning', `${threatLabel}: residual risk ${res} exceeds the acceptable risk (${acceptableRisk}) — reduce it or accept the residual.`, t.id ? `risk-over-acceptable:${t.id}` : undefined);
         }
@@ -176,7 +205,10 @@ export function validate(data: ProjectData): Issue[] {
     }
     const reqThreats = new Set(reqs.flatMap((r) => r.derivedFromThreat || []));
     for (const t of threats) {
-        if ((t.likelihood || 0) * (t.impact || 0) >= 12 && !reqThreats.has(t.id) && t.status !== 'accepted')
+        const highOrAbove = riskEngine
+            ? riskEngine.inRange('likelihood', t.likelihood) && riskEngine.inRange('impact', t.impact) && riskEngine.isHighOrAbove(riskEngine.classify(t.likelihood, t.impact))
+            : !schemeWarning && (t.likelihood || 0) * (t.impact || 0) >= 12;
+        if (highOrAbove && !reqThreats.has(t.id) && t.status !== 'accepted')
             add('warning', `${t.id}: high/critical threat has no security requirement derived from it.`);
         if (t.status === 'transferred' && !reqThreats.has(t.id))
             add('warning', `${t.id}: transferred risk requires a linked requirement documenting the risk transfer in the user guide.`);

@@ -151,6 +151,7 @@ async function testSymlinkStartup() {
         const schemes = await schemesRes.json();
         assert.ok(schemes.schemes.some((scheme) => scheme.id === 'builtin:5x5-exposure'));
         assert.ok(schemes.schemes.some((scheme) => scheme.id === 'builtin:5x5-cost'));
+        assert.match(schemes.fingerprints['builtin:5x5-exposure'], /^[a-f0-9]{64}$/);
 
         const schemeRes = await fetch(`http://127.0.0.1:${port}/api/risk-scheme?id=builtin%3A5x5-exposure`, { signal: AbortSignal.timeout(5000) });
         assert.equal(schemeRes.status, 200);

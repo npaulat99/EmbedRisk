@@ -23,6 +23,7 @@ const TYPE_ICON: Record<DfdNodeType, string> = {
 export default function DfdOverview({ onOpen }: { onOpen: (nodeId: string, path: string[]) => void }) {
     const data = useStore((s) => s.data)!;
     const scheme = useStore((s) => s.scheme);
+    const schemeWarning = useStore((s) => s.schemeWarning);
     const dfd = data.dfd;
     const threats = data.threats.threats || [];
     const cms = data.countermeasures.countermeasures || [];
@@ -33,6 +34,7 @@ export default function DfdOverview({ onOpen }: { onOpen: (nodeId: string, path:
     const childrenOf = (pid: string | null) => dfd.nodes.filter((n) => (n.parent ?? null) === pid);
 
     const riskFor = (node: DfdNode) => {
+        if (schemeWarning) return null;
         if (!node.componentRef) return null;
         const rel = threats.filter((t) => (t.components || []).includes(node.componentRef!));
         if (!rel.length) return null;
@@ -85,6 +87,7 @@ export default function DfdOverview({ onOpen }: { onOpen: (nodeId: string, path:
     const roots = childrenOf(null);
     return (
         <div className="dfd-overview">
+            {schemeWarning && <div className="settings-error-banner" role="alert">{schemeWarning} DFD risk indicators are hidden until the scheme is available.</div>}
             <div className="ov-head">Full-model overview — every layer and entity at a glance. Click a node to open it in the diagram.</div>
             <ul className="ov-tree">
                 <li>

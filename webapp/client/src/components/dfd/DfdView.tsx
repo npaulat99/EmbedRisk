@@ -220,6 +220,7 @@ function separateOverlaps(items: { id: string; x: number; y: number; w: number; 
 function Canvas({ connMode, setConnMode, overview, setOverview }: { connMode: boolean; setConnMode: (v: boolean) => void; overview: boolean; setOverview: (v: boolean) => void }) {
     const data = useStore((s) => s.data)!;
     const scheme = useStore((s) => s.scheme);
+    const schemeWarning = useStore((s) => s.schemeWarning);
     const dfdPath = useStore((s) => s.dfdPath);
     const setDfdPath = useStore((s) => s.setDfdPath);
     const selectedNodeId = useStore((s) => s.selectedNodeId);
@@ -260,6 +261,7 @@ function Canvas({ connMode, setConnMode, overview, setOverview }: { connMode: bo
         });
     }, [currentParent, dfd.flows, dfd.nodes, data.system.interfaces, realNodes, compById]);
     const riskFor = (node: DfdNode) => {
+        if (schemeWarning) return null;
         if (!node.componentRef) return null;
         const rel = threats.filter((t) => (t.components || []).includes(node.componentRef!));
         if (!rel.length) return null;
@@ -991,6 +993,7 @@ function Canvas({ connMode, setConnMode, overview, setOverview }: { connMode: bo
 
     return (
         <div className="dfd-wrap">
+            {schemeWarning && <div className="settings-error-banner" role="alert">{schemeWarning} DFD risk indicators are hidden until the scheme is available.</div>}
             <div className="dfd-bar">
                 <div className="crumbs">
                     <button onClick={() => setDfdPath([])} className={dfdPath.length ? '' : 'here'}>

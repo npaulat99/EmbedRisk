@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useStore, uid } from '../../state/store';
-import { Field, Chips, TagSelect, cx, STRIDE, sortStride, RiskPill, useFocus, useEditMode, EditBackBar, ScaleSelect, LIKELIHOOD_LEVELS, IMPACT_LEVELS, Jump, HelpButton, confirmDelete, IdInput } from '../common';
-import { riskOf } from '../../lib/risk';
+import { Field, Chips, TagSelect, cx, STRIDE, sortStride, RiskPill, useFocus, useEditMode, EditBackBar, ScaleSelect, Jump, HelpButton, confirmDelete, IdInput } from '../common';
+import { createRiskEngine, riskOf } from '../../lib/risk';
 import { adId } from '../../lib/attackTree';
 import { actorLevelLabel, normalizeActorLevel } from '@shared/attackerScale.js';
 import RiskCalculator from './RiskCalculator';
@@ -11,6 +11,10 @@ import type { Threat } from '../../types';
 export default function ThreatsPanel() {
     const data = useStore((s) => s.data)!;
     const scheme = useStore((s) => s.scheme);
+    const schemeWarning = useStore((s) => s.schemeWarning);
+    const engine = createRiskEngine(scheme);
+    const likelihoodScale = engine.likelihoodLevels().map((level) => [level.value, `${level.code} · ${level.label}`] as [number, string]);
+    const impactScale = engine.impactLevels().map((level) => [level.value, `${level.code} · ${level.label}`] as [number, string]);
     const kb = useStore((s) => s.kb);
     const save = useStore((s) => s.save);
     const setView = useStore((s) => s.setView);
@@ -127,13 +131,17 @@ export default function ThreatsPanel() {
                     </Field>
                     <div className="grid3">
                         <Field label="Likelihood">
-                            <ScaleSelect value={t.likelihood} onChange={(n) => upd({ likelihood: n })} levels={LIKELIHOOD_LEVELS} />
-                            {data.project.riskScoringMethod === 'cost-based' && typeof t.costLikelihoodProposal === 'number' && t.likelihood !== t.costLikelihoodProposal && (
+                            {schemeWarning ? <span className="hint">Stored: {t.likelihood ?? '—'}</span> : ['criteria-max', 'geometric-mean'].includes(engine.scheme.likelihood.derivation.kind)
+                                ? <span className="hint">{engine.scheme.likelihood.levels.find((level: any) => level.value === t.likelihood)?.label || 'Not rated'} · rated in Risk assessment</span>
+                                : <ScaleSelect value={t.likelihood} onChange={(n) => upd({ likelihood: n })} levels={likelihoodScale} />}
+                            {engine.scheme.likelihood.derivation.kind === 'cost-based' && typeof t.costLikelihoodProposal === 'number' && t.likelihood !== t.costLikelihoodProposal && (
                                 <p className="hint warnmark" style={{ margin: '5px 0 0' }}>Manual value differs from calculated proposal L{t.costLikelihoodProposal}. Review and accept this override in Review &amp; report if intentional.</p>
                             )}
                         </Field>
                         <Field label="Impact">
-                            <ScaleSelect value={t.impact} onChange={(n) => upd({ impact: n })} levels={IMPACT_LEVELS} />
+                            {schemeWarning ? <span className="hint">Stored: {t.impact ?? '—'}</span> : engine.scheme.impact.derivation.kind === 'criteria-max'
+                                ? <span className="hint">{engine.scheme.impact.levels.find((level: any) => level.value === t.impact)?.label || 'Not rated'} · rated in Risk assessment</span>
+                                : <ScaleSelect value={t.impact} onChange={(n) => upd({ impact: n })} levels={impactScale} />}
                         </Field>
                         <Field label="Status">
                             <select value={t.status || 'open'} onChange={(e) => upd({ status: e.target.value })}>
@@ -278,6 +286,7 @@ export default function ThreatsPanel() {
                     </ul>
                 </HelpButton>
             </div>
+            {schemeWarning && <div className="settings-error-banner" role="alert">{schemeWarning} Risk fields are read-only; stored L/I values are shown without classification.</div>}
             <p className="lead">
                 Enumerate STRIDE threats and link each one to the affected components and assets.
             </p>

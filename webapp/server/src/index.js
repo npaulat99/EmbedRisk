@@ -33,6 +33,7 @@ import { loadRiskSchemes, loadScheme, resolveProjectScheme } from './risk.js';
 import { validate } from './validate.js';
 import { generateReport, buildReport } from './report.js';
 import { pullKnowledgeBase, commitProject, gitStatus, getProjectWorkspace, prepareProjectWorkspace, verifyProjectWorkspace, removeImportedCatalogue } from './git.js';
+import { fingerprint } from '../../shared/riskScheme.js';
 
 const app = express();
 app.use(express.json({ limit: '8mb' }));
@@ -78,7 +79,10 @@ async function loadImportableLibrary() {
 // ---- REST API -------------------------------------------------------------
 app.get('/api/risk-schemes', async (_req, res) => {
     const registry = await loadRiskSchemes();
-    res.json(registry);
+    res.json({
+        ...registry,
+        fingerprints: Object.fromEntries(registry.schemes.map((scheme) => [scheme.id, fingerprint(scheme)])),
+    });
 });
 
 app.get('/api/risk-scheme', async (req, res) => {
