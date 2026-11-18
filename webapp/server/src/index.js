@@ -29,7 +29,7 @@ import {
     recordAssessmentVersion,
     diffProjectVersions,
 } from './artifacts.js';
-import { loadScheme } from './risk.js';
+import { loadRiskSchemes, loadScheme, resolveProjectScheme } from './risk.js';
 import { validate } from './validate.js';
 import { generateReport, buildReport } from './report.js';
 import { pullKnowledgeBase, commitProject, gitStatus, getProjectWorkspace, prepareProjectWorkspace, verifyProjectWorkspace, removeImportedCatalogue } from './git.js';
@@ -76,7 +76,19 @@ async function loadImportableLibrary() {
 }
 
 // ---- REST API -------------------------------------------------------------
-app.get('/api/risk-scheme', async (_req, res) => res.json(await loadScheme()));
+app.get('/api/risk-schemes', async (_req, res) => {
+    const registry = await loadRiskSchemes();
+    res.json(registry);
+});
+
+app.get('/api/risk-scheme', async (req, res) => {
+    try {
+        const id = typeof req.query.id === 'string' ? req.query.id : undefined;
+        res.json(await loadScheme(id));
+    } catch (error) {
+        res.status(404).json({ error: error.message });
+    }
+});
 
 app.get('/api/kb', async (_req, res) => {
     try {
@@ -103,7 +115,15 @@ app.get('/api/kb/full', async (_req, res) => {
             return null;
         }
     };
-    const out = { library: await readJson(fieldLibraryPath), bugBar: await readJson(bugBarPath), riskScheme: await readJson(riskSchemePath), imported: [] };
+    const riskSchemes = await loadRiskSchemes();
+    const out = {
+        library: await readJson(fieldLibraryPath),
+        bugBar: await readJson(bugBarPath),
+        riskScheme: await readJson(riskSchemePath),
+        riskSchemes: riskSchemes.schemes,
+        riskSchemeErrors: riskSchemes.errors,
+        imported: [],
+    };
     try {
         const importedDir = join(knowledgeBaseDir, 'imported');
         for (const e of await fs.readdir(importedDir, { withFileTypes: true })) {
@@ -182,7 +202,8 @@ app.put('/api/projects/:id/:step', async (req, res) => {
 
 app.post('/api/projects/:id/validate', async (req, res) => {
     const data = await readProject(req.params.id);
-    res.json({ issues: validate(data) });
+    const resolved = await resolveProjectScheme(data.project);
+    res.json({ issues: validate({ ...data, riskScheme: resolved.scheme, riskSchemeWarning: resolved.warning }) });
 });
 
 app.post('/api/projects/:id/report', async (req, res) => {

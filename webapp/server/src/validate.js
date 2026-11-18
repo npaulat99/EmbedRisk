@@ -4,6 +4,7 @@
 // notices (e.g. an intentionally standalone requirement) can be accepted via project.acceptedNotices.
 import { residual } from './risk.js';
 import { managedSlcAttacker, normalizeActorLevel } from '../../shared/attackerScale.js';
+import '../../shared/riskEngine.js';
 
 const arr = (x) => (Array.isArray(x) ? x : []);
 const PROX = { remote: 1, adjacent: 2, local: 3, physical: 4 };
@@ -22,7 +23,7 @@ function slcLevel(value) {
     return match ? Number(match[1]) : null;
 }
 
-export function validate({ project = {}, assumptions = {}, system = {}, threats = {}, requirements = {}, countermeasures = {}, dfd = {}, useCases = {}, attackTrees = {}, defects = {} } = {}) {
+export function validate({ project = {}, assumptions = {}, system = {}, threats = {}, requirements = {}, countermeasures = {}, dfd = {}, useCases = {}, attackTrees = {}, defects = {}, riskScheme = null, riskSchemeWarning = null } = {}) {
     const issues = [];
     const add = (severity, message, key) => issues.push({ severity, message, key: key ?? message });
     const hasText = (value) => String(value || '').trim().length > 0;
@@ -49,7 +50,12 @@ export function validate({ project = {}, assumptions = {}, system = {}, threats 
 
     const acceptableRisk = Number.isFinite(project.acceptableRisk) ? project.acceptableRisk : DEFAULT_ACCEPTABLE_RISK;
     const selectedSlc = slcLevel(project.slTarget);
-    const costBased = project.riskScoringMethod === 'cost-based';
+    const riskEngine = riskScheme ? globalThis.RiskEngine.createRiskEngine(riskScheme, project) : null;
+    const costBased = riskEngine
+        ? riskEngine.scheme.likelihood.derivation.kind === 'cost-based'
+        : project.riskScoringMethod === 'cost-based';
+
+    if (riskSchemeWarning) add('warning', riskSchemeWarning, 'risk-scheme-unavailable');
 
     if (costBased && Math.abs(costWeightTotal(project.costFactorWeights) - 1) > 1e-6)
         add('warning', `Cost-factor weights total ${costWeightTotal(project.costFactorWeights).toFixed(2)}; they must combine to 1.00.`, 'cost-factor-weights');
@@ -150,7 +156,33 @@ export function validate({ project = {}, assumptions = {}, system = {}, threats 
         }
         const [rl, ri] = residual(t, cmList);
         const res = (rl || 0) * (ri || 0);
-        if (res > acceptableRisk && t.status !== 'accepted') {
+        if (riskEngine && !riskSchemeWarning) {
+            const initialInRange = riskEngine.inRange('likelihood', t.likelihood) && riskEngine.inRange('impact', t.impact);
+            const residualInRange = t.status === 'unfeasible'
+                || (riskEngine.inRange('likelihood', rl) && riskEngine.inRange('impact', ri));
+            if (!initialInRange || !residualInRange) {
+                add('error', `${t.id}: stored risk rating or residual is outside the active scheme's range.`, `risk-range:${t.id}`);
+            } else {
+                const level = riskEngine.classify(rl, ri);
+                if (level.id !== 'none' && level.treatment !== 'auto-accept') {
+                    const acceptsByManagement = level.acceptanceBy === 'management';
+                    const acceptedWithOwner = t.status === 'accepted' && hasText(t.acceptedBy);
+                    const acceptableLevel = project.acceptableLevel
+                        || (typeof project.acceptableRisk !== 'number' ? riskEngine.scheme.acceptance?.defaultLevel : null);
+                    const acceptableRank = acceptableLevel
+                        ? riskEngine.scheme.classification.levels.find((item) => item.id === acceptableLevel)?.rank
+                        : null;
+                    const withinThreshold = Number.isInteger(acceptableRank)
+                        ? level.rank <= acceptableRank
+                        : level.score <= acceptableRisk;
+                    if (acceptsByManagement && !acceptedWithOwner) {
+                        add('warning', `${t.id}: residual risk level '${level.label}' requires acceptance by management (status 'accepted' and acceptedBy).`, `risk-acceptance:${t.id}`);
+                    } else if (!acceptsByManagement && !withinThreshold && t.status !== 'accepted') {
+                        add('warning', `${t.id}: residual risk level '${level.label}' exceeds the acceptable level — reduce it or accept the residual.`, `risk-over-acceptable:${t.id}`);
+                    }
+                }
+            }
+        } else if (!riskSchemeWarning && res > acceptableRisk && t.status !== 'accepted') {
             const threatLabel = t.id || 'threat';
             add('warning', `${threatLabel}: residual risk ${res} exceeds the acceptable risk (${acceptableRisk}) — reduce it or accept the residual.`, t.id ? `risk-over-acceptable:${t.id}` : undefined);
         }
@@ -214,7 +246,10 @@ export function validate({ project = {}, assumptions = {}, system = {}, threats 
     }
     const reqThreats = new Set(reqList.flatMap((r) => arr(r.derivedFromThreat)));
     for (const t of threatList) {
-        if ((t.likelihood || 0) * (t.impact || 0) >= 12 && !reqThreats.has(t.id) && t.status !== 'accepted')
+        const highOrAbove = riskEngine
+            ? riskEngine.inRange('likelihood', t.likelihood) && riskEngine.inRange('impact', t.impact) && riskEngine.isHighOrAbove(riskEngine.classify(t.likelihood, t.impact))
+            : !riskSchemeWarning && (t.likelihood || 0) * (t.impact || 0) >= 12;
+        if (highOrAbove && !reqThreats.has(t.id) && t.status !== 'accepted')
             add('warning', `${t.id}: high/critical threat has no security requirement derived from it.`);
         if (t.status === 'transferred' && !reqThreats.has(t.id))
             add('warning', `${t.id}: transferred risk requires a linked requirement documenting the risk transfer in the user guide.`);

@@ -145,6 +145,25 @@ async function testSymlinkStartup() {
         assert.equal(configRes.status, 200);
         const config = await configRes.json();
         assert.deepEqual(config, { preselectProjectId: singleProjectId });
+
+        const schemesRes = await fetch(`http://127.0.0.1:${port}/api/risk-schemes`, { signal: AbortSignal.timeout(5000) });
+        assert.equal(schemesRes.status, 200);
+        const schemes = await schemesRes.json();
+        assert.ok(schemes.schemes.some((scheme) => scheme.id === 'builtin:5x5-exposure'));
+        assert.ok(schemes.schemes.some((scheme) => scheme.id === 'builtin:5x5-cost'));
+
+        const schemeRes = await fetch(`http://127.0.0.1:${port}/api/risk-scheme?id=builtin%3A5x5-exposure`, { signal: AbortSignal.timeout(5000) });
+        assert.equal(schemeRes.status, 200);
+        assert.equal((await schemeRes.json()).id, 'builtin:5x5-exposure');
+
+        const unknownSchemeRes = await fetch(`http://127.0.0.1:${port}/api/risk-scheme?id=unknown`, { signal: AbortSignal.timeout(5000) });
+        assert.equal(unknownSchemeRes.status, 404);
+
+        const fullKbRes = await fetch(`http://127.0.0.1:${port}/api/kb/full`, { signal: AbortSignal.timeout(5000) });
+        assert.equal(fullKbRes.status, 200);
+        const fullKb = await fullKbRes.json();
+        assert.ok(fullKb.riskScheme && Array.isArray(fullKb.riskSchemes));
+        assert.ok(fullKb.riskSchemes.some((scheme) => scheme.id === 'builtin:5x5-cost'));
     } finally {
         if (child) await terminateChild(child);
         rmSync(tempBase, { recursive: true, force: true });

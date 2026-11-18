@@ -1091,6 +1091,53 @@ function runRiskEngineTests() {
     && !engine.isAcceptable({ id: "INVALID", likelihood: 5, impact: 3 }, [], { acceptableLevel: "medium" }));
 }
 
+async function runRiskRegistryTests() {
+  const { pathToFileURL } = require("node:url");
+  const { loadRiskSchemes, resolveProjectScheme } = await import(pathToFileURL(path.join(root, "webapp/server/src/risk.js")));
+  const { buildTraceability } = await import(pathToFileURL(path.join(root, "webapp/server/src/report.js")));
+  const { validate } = await import(pathToFileURL(path.join(root, "webapp/server/src/validate.js")));
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "embedrisk-risk-registry-"));
+  const options = { localDirectory: tempDir };
+  const localScheme = JSON.parse(fs.readFileSync(path.join(root, "webapp/.assets/knowledge-base/risk-scheme-5x5-exposure.json"), "utf8"));
+  localScheme.id = "local-test-scheme";
+  try {
+    let registry = await loadRiskSchemes(options);
+    ok("risk registry: built-ins load when local directory is absent", registry.schemes.length === 2 && registry.errors.length === 0);
+
+    fs.writeFileSync(path.join(tempDir, "local.json"), JSON.stringify(localScheme));
+    fs.writeFileSync(path.join(tempDir, "malformed.json"), "{ invalid");
+    const builtinCollision = { ...localScheme, id: "builtin:5x5-cost" };
+    fs.writeFileSync(path.join(tempDir, "reserved.json"), JSON.stringify(builtinCollision));
+    registry = await loadRiskSchemes(options);
+    ok("risk registry: valid local scheme loads and invalid files report errors", registry.schemes.some((scheme) => scheme.id === "local-test-scheme")
+      && registry.schemes.some((scheme) => scheme.id === "builtin:5x5-cost") && registry.errors.length === 2
+      && registry.errors.some((issue) => issue.file === "malformed.json" && /JSON/.test(issue.message))
+      && registry.errors.some((issue) => issue.file === "reserved.json" && /reserved/.test(issue.message)));
+
+    const selected = await resolveProjectScheme({ riskSchemeId: "local-test-scheme" }, options);
+    ok("risk registry: project selects a scheme by ID", selected.scheme?.id === "local-test-scheme" && selected.fingerprint?.length === 64);
+    const changed = await resolveProjectScheme({ riskSchemeId: "local-test-scheme", riskSchemeFingerprint: "stale" }, options);
+    ok("risk registry: fingerprint mismatch disables classification with warning", changed.scheme === null && /has changed/.test(changed.warning));
+    const rawReport = buildTraceability({ system: { assets: [] }, threats: [{ id: "RAW", likelihood: 5, impact: 3, stride: [] }], requirements: [], countermeasures: [], scheme: null })[0];
+    ok("risk registry: unavailable report scheme preserves raw axes without risk labels", rawReport.initial === null
+      && rawReport.residual === null && rawReport.initialBand === "Unavailable"
+      && rawReport.likelihood === 5 && rawReport.impact === 3 && rawReport.residualLikelihood === 5 && rawReport.residualImpact === 3);
+    const warningIssues = validate({ project: {}, threats: { threats: [{ id: "RAW", likelihood: 5, impact: 3 }] }, riskSchemeWarning: changed.warning });
+    ok("risk registry: unavailable scheme warns and skips stale risk threshold checks", warningIssues.some((issue) => issue.key === "risk-scheme-unavailable")
+      && !warningIssues.some((issue) => issue.key === "risk-over-acceptable:RAW"));
+    const invalidRatingIssues = validate({ project: {}, riskScheme: localScheme, threats: { threats: [{ id: "INVALID", likelihood: 6, impact: 3 }] } });
+    ok("risk registry: out-of-range stored values are errors", invalidRatingIssues.some((issue) => issue.severity === "error" && issue.key === "risk-range:INVALID"));
+    const unfeasibleIssues = validate({ project: {}, riskScheme: localScheme, threats: { threats: [{ id: "UNFEASIBLE", likelihood: 2, impact: 3, status: "unfeasible" }] } });
+    ok("risk registry: unfeasible residual zero is not an out-of-range error", !unfeasibleIssues.some((issue) => issue.key === "risk-range:UNFEASIBLE"));
+    const legacy = await resolveProjectScheme({ riskScoringMethod: "exposure-exploitability-impact", riskSchemePath: path.join(tempDir, "untrusted.json") }, options);
+    ok("risk registry: legacy scoring maps to built-in and project paths are ignored", legacy.scheme?.id === "builtin:5x5-exposure");
+    const unknown = await resolveProjectScheme({ riskSchemeId: "../outside" }, options);
+    ok("risk registry: unknown IDs do not become filesystem paths", unknown.scheme === null && /unavailable/.test(unknown.warning));
+  } finally {
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  }
+}
+
 function runDfdEngineTests() {
   const vm = require("node:vm");
   const esbuild = require(path.join(root, "vscode-extension/node_modules/esbuild"));
@@ -1598,6 +1645,7 @@ runImportedKbTests()
   .then(() => runRiskGoldenTests())
   .then(() => runRiskSchemeTests())
   .then(() => runRiskEngineTests())
+  .then(() => runRiskRegistryTests())
   .then(() => runValidationCoreTests())
   .then(() => runValidationDiagnosticsTests())
   .then(async () => {
