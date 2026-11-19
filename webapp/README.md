@@ -163,7 +163,8 @@ browser supports it) direct canvas interaction:
 | Inspector → **Connections**    | add / label / delete data flows between nodes     |
 
 Selecting a node also focuses the inspector's risk matrix on **that component** (the threats that
-reference it), so the 5×5 grid doubles as a per-component view.
+reference it), so the active scheme's grid doubles as a per-component view. Built-in schemes use
+5×5 axes; a local scheme can use different axis sizes and labels.
 
 Trust boundaries are drawn automatically around their member nodes (a boundary must contain at
 least one node). External interfaces (HART, Bluetooth, JTAG …) are pinned on every layer and
@@ -184,10 +185,15 @@ One JSON file per step under `projects/<id>/`, matching the `tra/` methodology a
   access/skill/cost, defence + vulnerability nodes), each linked to a threat.
 - `08-countermeasures/countermeasures.json` — m:n `addresses` with residual L/I.
 
-**Risk = Likelihood × Impact** (5×5), banded Low/Medium/High/Critical. Impact follows the Bug Bar
-(`max(C, I, A, Safety)`, safety-dominant); likelihood is attacker-grounded (required access,
-capability, exploitability, control maturity), with CVSS as an optional exploitability signal.
-The canonical scheme is `.assets/knowledge-base/risk-scheme.json`.
+Risk ratings are classified by the scheme bound to the project. The built-in schemes use 5×5
+likelihood and impact axes; a local v2 scheme can define different axes and either a lookup matrix
+or product-score bands. The built-in rubrics use the Bug Bar (`max(C, I, A, Safety)`,
+safety-dominant) and attacker-grounded likelihood; a local scheme defines its own criteria and
+derivation. CVSS remains an optional exploitability signal.
+
+The built-in v2 schemes are in `.assets/knowledge-base/`. To add a local scheme, use the
+[risk-scheme guide](../docs/RISK-SCHEMES.md); user schemes are kept under the ignored
+`.local/risk-schemes/` directory.
 
 ## Knowledge base
 
@@ -252,11 +258,12 @@ JSON file under `.assets/knowledge-base/imported/<your-catalogue-name>/*.json` w
 - **Security requirements (step 05)** — a first-class requirement artifact links
   threats → requirements (with the standard clause / SL·FR) → countermeasures, closing the
   IEC 62443-4-1 SR chain.
-- **Risk methodology (P11)** — likelihood is decomposed into **Exposure × Exploitability** (after
-  the interview finding that a single coarse likelihood is insufficient), combined as a geometric
-  mean onto the familiar 5×5 matrix; impact is the Bug Bar `max(C/I/A/Safety)`. The mandatory
-  attacker profile seeds and gates the factors. **Rigorous mode** (Project panel) makes the
-  structured rubric and a named rater compulsory for reproducibility.
+- **Risk methodology (P11)** — the built-in exposure scheme combines **Exposure × Exploitability**
+  geometrically and uses the Bug Bar `max(C/I/A/Safety)` for impact. The built-in cost scheme
+  derives a likelihood proposal from cost-based feasibility. A project's active scheme defines its
+  levels and classification; local schemes may use a lookup matrix and other axis sizes. The
+  mandatory attacker profile grounds the built-in assessments. **Rigorous mode** (Project panel)
+  makes the structured rubric and a named rater compulsory for reproducibility.
 - **Dashboard (IEC 62443-4-1 overview)** — components (with SBOM version/supplier + third-party
   flag), interfaces, assets, threats, requirements, countermeasures and open defects, with
   ticket/verification-link gaps flagged. Every row links back to the underlying item.

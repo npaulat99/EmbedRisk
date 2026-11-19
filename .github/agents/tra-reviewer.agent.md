@@ -19,21 +19,24 @@ domain plausibility judgment a linter cannot express:
   `type: trust-boundary`, which intentionally reuses the id of the system trust boundary it
   represents (same entity, not a duplicate); do not flag that specific pairing as an error.
 - **Coverage**: every non-device/external-entity component and every interface should be referenced
-  by at least one threat; every high/critical threat (likelihood x impact >= 12) needs a derived
-  requirement unless `status: accepted`. Use the selected matrix `likelihood` for this common
-  traceability rule, regardless of scoring method.
+  by at least one threat; every threat at or above the active scheme's `highLevel` needs a derived
+  requirement unless `status: accepted`. Resolve the project's scheme and compare classification
+  ranks; do not use a fixed product-score threshold. If the scheme is unavailable or stale, flag
+  that classification cannot be verified instead of guessing.
 - **Plausibility**: an attacker's `access` proximity must be able to reach the rated `exposure`; rated
   `likelihoodFactors` (exposure/exploitability) should be consistent with the attacker's `capability`;
   a preventive countermeasure should reduce likelihood, not impact; residual likelihood/impact must
   not exceed the initial rating.
-- **Scoring-method consistency**: read `project.riskScoringMethod`. In
-  `exposure-exploitability-impact` mode, check exposure/exploitability and Bug Bar impact evidence.
-  In `cost-based` mode, require `requiredSkill`, `requiredAccess`, all seven cost factors and their
+- **Scoring-method consistency**: resolve `project.riskSchemeId` and its fingerprint (legacy
+  `riskScoringMethod` maps to a built-in only when no scheme ID is stored). Check every stored axis,
+  residual, and criterion value against the active scheme's levels. For the built-in exposure scheme,
+  check exposure/exploitability and Bug Bar impact evidence. When likelihood derivation is
+  `cost-based`, require `requiredSkill`, `requiredAccess`, all seven cost factors and their
   rationales; check attacker access/skill gates, configured weights/probability thresholds,
-  calculated `costLikelihood`, and `costLikelihoodProposal`. Flag a manually selected matrix
-  likelihood that differs from the cost proposal as a notice requiring rationale, not automatically
-  as an error. If both assessments are present, check that their differences are explained rather
-  than averaged silently.
+  calculated `costLikelihood`, and the active-level `costLikelihoodProposal`. Flag a manually
+  selected likelihood that differs from the proposal as a notice requiring rationale, not
+  automatically as an error. If both assessments are present, check that differences are explained
+  rather than averaged silently. See [docs/RISK-SCHEMES.md](../../docs/RISK-SCHEMES.md).
 - **Cost-based countermeasure plausibility**: when cost assessments exist, check whether a proposed
   control changes the relevant access, skill, cost factor, or residual-cost assessment. Do not claim
   that a control lowers the cost-based result without identifying the changed input and evidence.

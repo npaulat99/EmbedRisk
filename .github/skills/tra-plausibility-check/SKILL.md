@@ -7,8 +7,11 @@ argument-hint: "Path to the TRA project folder, optionally a specific step or th
 Run a focused plausibility pass on the project (or the specific step/threat id) provided. Skip the
 full schema/reference-integrity sweep (that's `tra-review-single`); focus only on:
 
-- The selected `project.riskScoringMethod`. Both schemes use the common 1-5 likelihood/impact
-  matrix; cost-based mode additionally requires cost-feasibility evidence.
+- The active `project.riskSchemeId` and its fingerprint. Use that scheme's axis values,
+  classification ranks, and `highLevel`; built-ins are 5x5 but local schemes may differ. If the
+  scheme is unavailable or stale, do not infer classifications or apply a fixed cutoff. For a legacy
+  project without an ID, use its built-in `riskScoringMethod` mapping. Cost-based evidence is needed
+  only when the active likelihood derivation is `cost-based`.
 
 - Attacker `access` vs. rated `exposure`/`likelihoodFactors.exposure` mismatches.
 - Attacker `capability` vs. `likelihoodFactors.exploitability` mismatches.
@@ -17,7 +20,7 @@ full schema/reference-integrity sweep (that's `tra-review-single`); focus only o
 - Countermeasures whose `residualLikelihood`/`residualImpact` don't make sense for their `type`
   (a preventive control should move likelihood, not impact, and vice versa for some detective/
   corrective controls — explain the mismatch, don't just flag it).
-- In cost-based mode: missing `requiredSkill`, `requiredAccess`, cost factors, cost rationales,
+- When the active likelihood derivation is `cost-based`: missing `requiredSkill`, `requiredAccess`, cost factors, cost rationales,
   configured weight/threshold problems, attacker access/skill mismatches, and unexplained
   differences between `costLikelihoodProposal` and the selected matrix likelihood. Also check that
   claimed countermeasure effects identify the changed cost input. Do not report the absence of
@@ -26,3 +29,6 @@ full schema/reference-integrity sweep (that's `tra-review-single`); focus only o
 Report only genuine implausibilities with a one-line rationale each — do not repeat things that are
 merely incomplete (missing fields) unless they make a rating impossible to sanity-check. This is a
 sparring-style plausibility pass, not a compliance audit.
+
+For scheme definitions and adding a local scheme from a requested rubric, follow
+[docs/RISK-SCHEMES.md](../../../docs/RISK-SCHEMES.md).

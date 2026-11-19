@@ -28,7 +28,7 @@ Both tools focus on structured, traceable assessments for IEC 62443-oriented pro
 - STRIDE-based threat modeling grounded in OT device context.
 - Layered DFD modeling with trust boundaries and interfaces.
 - In VS Code, the Explorer DFD Overview presents project layers as a read-only tree; selecting a node opens its layer in draw.io, but cannot focus that specific node.
-- Risk scoring with a configurable 5x5 scheme (Likelihood x Impact).
+- Risk scoring with project-selectable schemes; each scheme defines its own likelihood and impact scales and classification matrix or bands.
 - Optional attack trees for deeper threat decomposition.
 - Threat to requirement to countermeasure traceability.
 - HTML report generation from project artifacts.
@@ -88,6 +88,9 @@ Read [docs/HOW-TO-TRA.md](docs/HOW-TO-TRA.md) for:
 - a practical step-by-step modeling workflow,
 - a short list of high-value further reading.
 
+For the risk-scheme format, local installation, and an AI-ready workflow for translating a scoring
+policy into a validated scheme, see [docs/RISK-SCHEMES.md](docs/RISK-SCHEMES.md).
+
 ## AI-assisted TRA workflow
 
 This repository also ships a GitHub Copilot agent/prompt framework (under `.github/agents/`,
@@ -110,8 +113,9 @@ EmbedRisk is designed to support secure product development workflows aligned wi
 
 The risk method uses:
 
-- Likelihood x Impact on a 5x5 matrix,
-- impact dimensions across Confidentiality, Integrity, Availability, and Safety,
+- the active project's scheme to define likelihood and impact levels and classify their combination;
+- built-in 5x5 schemes by default, with local schemes able to use different axes and lookup matrices;
+- impact dimensions across Confidentiality, Integrity, Availability, and Safety in the built-in rubrics;
 - attacker-profile-grounded assumptions to reduce subjective scoring.
 
 ## Target SL-C and the modelled attacker
