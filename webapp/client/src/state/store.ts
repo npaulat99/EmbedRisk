@@ -10,6 +10,7 @@ import { create } from 'zustand';
 import type { LaunchConfig, ProjectData, ProjectSummary, RiskScheme, RiskSchemeV2, StepKey, ViewKey } from '../types';
 import { tutorialStorageKey } from '../tutorial/tutorialData';
 import { alignedManagedAttacker } from '../lib/slc';
+import { legacyRiskSchemeRegistry, schemeForProject } from '../lib/risk';
 
 const norm = (v: string | null | undefined) => String(v || '').toLowerCase().replace(/[^a-z0-9]+/g, '');
 const isPlaceholderComponentName = (label: string | undefined) => {
@@ -371,16 +372,6 @@ const applyTheme = (t: 'light' | 'dark') => {
     document.documentElement.dataset.theme = t;
 };
 
-function schemeForProject(project: ProjectData['project'], schemes: RiskSchemeV2[], fingerprints: Record<string, string>) {
-    const id = project.riskSchemeId || (project.riskScoringMethod === 'exposure-exploitability-impact' ? 'builtin:5x5-exposure' : 'builtin:5x5-cost');
-    const scheme = schemes.find((item) => item.id === id);
-    if (!scheme) return { scheme: null, schemeWarning: `Risk scheme '${id}' is unavailable. Risk ratings are read-only.` };
-    const fingerprint = fingerprints[id];
-    if (project.riskSchemeFingerprint && project.riskSchemeFingerprint !== fingerprint)
-        return { scheme: null, schemeWarning: `Risk scheme '${id}' has changed since this project was assessed. Risk ratings are read-only.` };
-    return { scheme, schemeWarning: null };
-}
-
 function riskValuesChanged(step: StepKey, before: any, after: any): boolean {
     const threatFields = ['likelihood', 'impact', 'likelihoodCriteria', 'impactCriteria', 'likelihoodFactors', 'impactDimensions', 'costFactors', 'costLikelihood', 'costLikelihoodProposal'];
     if (step === 'threats') {
@@ -492,7 +483,10 @@ export const useStore = create<Store>((set, get) => ({
             }
         });
         const [registry, kb, bugBar, projects, config] = await Promise.all([
-            getJSON<{ schemes: RiskSchemeV2[]; fingerprints: Record<string, string>; errors: { file: string; message: string }[] }>('/api/risk-schemes').catch(() => null),
+            getJSON<{ schemes: RiskSchemeV2[]; fingerprints: Record<string, string>; errors: { file: string; message: string }[] }>('/api/risk-schemes').catch(async () => {
+                const legacyScheme = await getJSON<RiskScheme>('/api/risk-scheme').catch(() => null);
+                return legacyScheme ? legacyRiskSchemeRegistry(legacyScheme) : null;
+            }),
             getJSON<any>('/api/kb').catch(() => null),
             getJSON<any>('/api/bug-bar').catch(() => null),
             getJSON<ProjectSummary[]>('/api/projects').catch(() => []),

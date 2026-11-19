@@ -783,6 +783,18 @@ vm.runInNewContext(esbuild.transformSync(
   require: (id) => id === "@shared/riskEngine.js" ? clientRiskEngineModule.exports : require(id),
 });
 const clientRisk = clientRiskModule.exports;
+const legacyRiskScheme = JSON.parse(fs.readFileSync(path.join(root, "webapp/.assets/knowledge-base/risk-scheme.json"), "utf8"));
+const legacyRegistry = clientRisk.legacyRiskSchemeRegistry(legacyRiskScheme);
+ok("legacy risk API fallback: both built-in scoring methods resolve with fingerprints",
+  legacyRegistry.schemes.map((scheme) => scheme.id).sort().join(",") === "builtin:5x5-cost,builtin:5x5-exposure"
+  && legacyRegistry.schemes.every((scheme) => /^[a-f0-9]{64}$/.test(legacyRegistry.fingerprints[scheme.id])));
+const legacyDefault = clientRisk.schemeForProject({ riskScoringMethod: "cost-based" }, legacyRegistry.schemes, legacyRegistry.fingerprints);
+ok("legacy risk API fallback: project without scheme ID resolves to builtin:5x5-cost and stays editable",
+  legacyDefault.scheme?.id === "builtin:5x5-cost" && legacyDefault.schemeWarning === null);
+ok("legacy risk API fallback: exposure method resolves to builtin:5x5-exposure",
+  clientRisk.schemeForProject({ riskScoringMethod: "exposure-exploitability-impact" }, legacyRegistry.schemes, legacyRegistry.fingerprints).scheme?.id === "builtin:5x5-exposure");
+const legacyStale = clientRisk.schemeForProject({ riskScoringMethod: "cost-based", riskSchemeFingerprint: "stale" }, legacyRegistry.schemes, legacyRegistry.fingerprints);
+ok("legacy risk API fallback: explicit stale fingerprint remains read-only", legacyStale.scheme === null && /has changed/.test(legacyStale.schemeWarning));
 const matrixThreats = freezeThreatInput([
   { id: "M", likelihood: 5, impact: 5, future: { keep: ["metadata"] } },
   ...[[0, 4], [4, 0], [6, 4], [1.5, 4], [3, 2]].map(([likelihood, impact], n) => ({ id: "E" + n, likelihood, impact })),

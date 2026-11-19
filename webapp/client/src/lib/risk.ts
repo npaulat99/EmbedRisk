@@ -1,7 +1,7 @@
 // Client-side mirror of the deterministic risk engine so risk badges update instantly
 // as the user edits, without a server round-trip. Bands fall back to the canonical
 // scheme until the live scheme is fetched.
-import type { Component, Countermeasure, Objectives, RiskBand, RiskScheme, Threat } from '../types';
+import type { Component, Countermeasure, Objectives, RiskBand, RiskScheme, RiskSchemeV2, Threat } from '../types';
 import '@shared/riskEngine.js';
 
 type RiskEngine = {
@@ -32,6 +32,30 @@ function engineOf(scheme: RiskScheme | null): RiskEngine {
 
 export function createRiskEngine(scheme: RiskScheme | null): RiskEngine {
     return engineOf(scheme);
+}
+
+export function legacyRiskSchemeRegistry(legacyScheme: RiskScheme): {
+    schemes: RiskSchemeV2[];
+    fingerprints: Record<string, string>;
+    errors: { file: string; message: string }[];
+} {
+    const api = (globalThis as any).RiskEngine;
+    const engines = (['cost-based', 'exposure-exploitability-impact'] as const).map((riskScoringMethod) =>
+        api.createRiskEngine(legacyScheme, { riskScoringMethod }));
+    return {
+        schemes: engines.map((engine) => engine.scheme as RiskSchemeV2),
+        fingerprints: Object.fromEntries(engines.map((engine) => [engine.scheme.id, engine.fingerprint])),
+        errors: [],
+    };
+}
+
+export function schemeForProject(project: { riskSchemeId?: string; riskScoringMethod?: string; riskSchemeFingerprint?: string }, schemes: RiskSchemeV2[], fingerprints: Record<string, string>) {
+    const id = project.riskSchemeId || (project.riskScoringMethod === 'exposure-exploitability-impact' ? 'builtin:5x5-exposure' : 'builtin:5x5-cost');
+    const scheme = schemes.find((item) => item.id === id);
+    if (!scheme) return { scheme: null, schemeWarning: `Risk scheme '${id}' is unavailable. Risk ratings are read-only.` };
+    if (project.riskSchemeFingerprint && project.riskSchemeFingerprint !== fingerprints[id])
+        return { scheme: null, schemeWarning: `Risk scheme '${id}' has changed since this project was assessed. Risk ratings are read-only.` };
+    return { scheme, schemeWarning: null };
 }
 
 export function bandForRisk(likelihood: number, impact: number, scheme: RiskScheme | null): RiskBand {
