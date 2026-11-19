@@ -4,38 +4,135 @@
   "title": "Threats and Risk Ratings",
   "description": "Threats attached to components/assets via many-to-many references. Each threat carries an initial risk rating; residual risk is recomputed once countermeasures are applied.",
   "type": "object",
-  "required": ["threats"],
+  "required": [
+    "threats"
+  ],
   "properties": {
     "threats": {
       "type": "array",
       "items": {
         "type": "object",
-        "required": ["id", "title", "stride", "components", "likelihood", "impact"],
+        "required": [
+          "id",
+          "title",
+          "stride",
+          "components",
+          "likelihood",
+          "impact"
+        ],
         "properties": {
-          "id": { "type": "string" },
-          "title": { "type": "string" },
-          "description": { "type": "string" },
-          "stride": { "type": "array", "items": { "enum": ["S", "T", "R", "I", "D", "E"] } },
-          "components": { "type": "array", "items": { "type": "string" }, "description": "Affected component ids (m:n)." },
-          "assets": { "type": "array", "items": { "type": "string" }, "description": "Affected asset ids (m:n)." },
-          "attackerRef": { "type": "string", "description": "Attacker profile id grounding the likelihood." },
-          "attackTreeRef": { "type": ["string", "null"], "description": "Optional attack-tree artifact path; not mandatory." },
-          "likelihood": { "type": "integer", "minimum": 0 },
-          "impact": { "type": "integer", "minimum": 1 },
+          "id": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "stride": {
+            "type": "array",
+            "items": {
+              "enum": [
+                "S",
+                "T",
+                "R",
+                "I",
+                "D",
+                "E"
+              ]
+            }
+          },
+          "components": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Affected component ids (m:n)."
+          },
+          "assets": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Affected asset ids (m:n)."
+          },
+          "attackerRef": {
+            "type": "string",
+            "description": "Attacker profile id grounding the likelihood."
+          },
+          "attackTreeRef": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Optional attack-tree artifact path; not mandatory."
+          },
+          "likelihood": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "impact": {
+            "type": "integer",
+            "minimum": 1
+          },
           "likelihoodCriteria": {
             "type": "object",
-            "additionalProperties": { "type": ["integer", "null"], "minimum": 1 }
+            "additionalProperties": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "minimum": 1
+            }
           },
           "impactCriteria": {
             "type": "object",
-            "additionalProperties": { "type": ["integer", "null"], "minimum": 1 }
+            "additionalProperties": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "minimum": 1
+            }
           },
-          "likelihoodRationale": { "type": "string" },
-          "impactRationale": { "type": "string" },
-          "countermeasures": { "type": "array", "items": { "type": "string" }, "description": "Applied countermeasure ids (m:n)." },
-          "residualLikelihood": { "type": ["integer", "null"], "minimum": 1 },
-          "residualImpact": { "type": ["integer", "null"], "minimum": 1 },
-          "status": { "type": "string", "enum": ["open", "mitigated", "accepted", "transferred", "unfeasible"] }
+          "likelihoodRationale": {
+            "type": "string"
+          },
+          "impactRationale": {
+            "type": "string"
+          },
+          "countermeasures": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Applied countermeasure ids (m:n)."
+          },
+          "residualLikelihood": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 1
+          },
+          "residualImpact": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 1
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "open",
+              "mitigated",
+              "accepted",
+              "transferred",
+              "unfeasible"
+            ]
+          }
         }
       }
     }

@@ -124,8 +124,8 @@ export default function ReviewPanel() {
                 </div>
             )}
 
-                {schemeWarning && <div className="settings-error-banner" role="alert">{schemeWarning} Risk fields are shown as stored axes without classification.</div>}
-                <div className="card">
+            {schemeWarning && <div className="settings-error-banner" role="alert">{schemeWarning} Risk fields are shown as stored axes without classification.</div>}
+            <div className="card">
                 <h3>Plausibility check</h3>
                 <ul className="issues">
                     {open.length === 0 ? (

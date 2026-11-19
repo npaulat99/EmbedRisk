@@ -1,155 +1,376 @@
 {
-  "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://embedrisk.local/schemas/risk-scheme-v2.schema.json",
-  "title": "EmbedRisk risk scheme v2",
-  "type": "object",
-  "required": ["schemaVersion", "id", "title", "version", "likelihood", "impact", "classification"],
-  "properties": {
-    "schemaVersion": { "const": 2 },
-    "id": { "type": "string", "pattern": "^(builtin:)?[a-z0-9][a-z0-9._:-]*$" },
-    "title": { "type": "string", "minLength": 1 },
-    "version": { "type": "string", "minLength": 1 },
-    "description": { "type": "string" },
-    "likelihood": { "$ref": "#/$defs/likelihoodAxis" },
-    "impact": { "$ref": "#/$defs/impactAxis" },
-    "classification": {
-      "oneOf": [
-        { "$ref": "#/$defs/lookupClassification" },
-        { "$ref": "#/$defs/productBandsClassification" }
-      ]
-    },
-    "highLevel": { "type": "string", "minLength": 1 },
-    "acceptance": {
-      "type": "object",
-      "required": ["defaultLevel"],
-      "properties": { "defaultLevel": { "type": "string", "minLength": 1 } },
-      "additionalProperties": false
-    }
-  },
-  "additionalProperties": false,
-  "$defs": {
-    "axisLevel": {
-      "type": "object",
-      "required": ["value", "code", "label"],
-      "properties": {
-        "value": { "type": "integer", "minimum": 1 },
-        "code": { "type": "string", "minLength": 1 },
-        "label": { "type": "string", "minLength": 1 },
-        "description": { "type": "string" }
-      },
-      "additionalProperties": false
-    },
-    "criterion": {
-      "type": "object",
-      "required": ["id", "label", "levelTexts"],
-      "properties": {
-        "id": { "type": "string", "minLength": 1 },
-        "label": { "type": "string", "minLength": 1 },
-        "levelTexts": {
-          "type": "object",
-          "propertyNames": { "pattern": "^[1-9][0-9]*$" },
-          "additionalProperties": { "type": "string" }
-        }
-      },
-      "additionalProperties": false
-    },
-    "likelihoodAxis": {
-      "type": "object",
-      "required": ["levels", "derivation", "criteria"],
-      "properties": {
-        "levels": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/axisLevel" } },
-        "derivation": {
-          "type": "object",
-          "required": ["kind"],
-          "properties": {
-            "kind": { "enum": ["criteria-max", "geometric-mean", "cost-based", "manual"] },
-            "probabilityThresholds": {
-              "type": "object",
-              "propertyNames": { "pattern": "^[2-9][0-9]*$" },
-              "additionalProperties": { "type": "number", "exclusiveMinimum": 0, "maximum": 1 }
-            }
-          },
-          "additionalProperties": false
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "https://embedrisk.local/schemas/risk-scheme-v2.schema.json",
+    "title": "EmbedRisk risk scheme v2",
+    "type": "object",
+    "required": [
+        "schemaVersion",
+        "id",
+        "title",
+        "version",
+        "likelihood",
+        "impact",
+        "classification"
+    ],
+    "properties": {
+        "schemaVersion": {
+            "const": 2
         },
-        "criteria": { "type": "array", "items": { "$ref": "#/$defs/criterion" } }
-      },
-      "allOf": [
-        {
-          "if": { "properties": { "derivation": { "type": "object", "properties": { "kind": { "const": "cost-based" } }, "required": ["kind"] } }, "required": ["derivation"] },
-          "then": { "properties": { "derivation": { "type": "object", "required": ["probabilityThresholds"] } } }
-        }
-      ],
-      "additionalProperties": false
-    },
-    "impactAxis": {
-      "type": "object",
-      "required": ["levels", "derivation", "criteria"],
-      "properties": {
-        "levels": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/axisLevel" } },
-        "derivation": {
-          "type": "object",
-          "required": ["kind"],
-          "properties": { "kind": { "enum": ["criteria-max", "manual"] } },
-          "additionalProperties": false
+        "id": {
+            "type": "string",
+            "pattern": "^(builtin:)?[a-z0-9][a-z0-9._:-]*$"
         },
-        "criteria": { "type": "array", "items": { "$ref": "#/$defs/criterion" } }
-      },
-      "additionalProperties": false
-    },
-    "classificationLevel": {
-      "type": "object",
-      "required": ["id", "label", "rank", "color", "treatment"],
-      "properties": {
-        "id": { "type": "string", "pattern": "^[a-z][a-z0-9-]*$" },
-        "label": { "type": "string", "minLength": 1 },
-        "rank": { "type": "integer", "minimum": 1 },
-        "color": { "type": "string", "pattern": "^#[0-9A-Fa-f]{6}$" },
-        "treatment": { "enum": ["auto-accept", "optional", "required", "immediate"] },
-        "acceptanceBy": { "const": "management" },
-        "description": { "type": "string" }
-      },
-      "additionalProperties": false
-    },
-    "lookupClassification": {
-      "type": "object",
-      "required": ["kind", "levels", "matrix"],
-      "properties": {
-        "kind": { "const": "lookup" },
-        "levels": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/classificationLevel" } },
-        "matrix": {
-          "type": "object",
-          "propertyNames": { "pattern": "^[1-9][0-9]*$" },
-          "additionalProperties": {
+        "title": {
+            "type": "string",
+            "minLength": 1
+        },
+        "version": {
+            "type": "string",
+            "minLength": 1
+        },
+        "description": {
+            "type": "string"
+        },
+        "likelihood": {
+            "$ref": "#/$defs/likelihoodAxis"
+        },
+        "impact": {
+            "$ref": "#/$defs/impactAxis"
+        },
+        "classification": {
+            "oneOf": [
+                {
+                    "$ref": "#/$defs/lookupClassification"
+                },
+                {
+                    "$ref": "#/$defs/productBandsClassification"
+                }
+            ]
+        },
+        "highLevel": {
+            "type": "string",
+            "minLength": 1
+        },
+        "acceptance": {
             "type": "object",
-            "propertyNames": { "pattern": "^[1-9][0-9]*$" },
-            "additionalProperties": { "type": "string", "minLength": 1 }
-          }
-        }
-      },
-      "additionalProperties": false
-    },
-    "productBandsClassification": {
-      "type": "object",
-      "required": ["kind", "levels", "bands"],
-      "properties": {
-        "kind": { "const": "product-bands" },
-        "levels": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/classificationLevel" } },
-        "bands": {
-          "type": "array",
-          "minItems": 1,
-          "items": {
-            "type": "object",
-            "required": ["level", "min", "max"],
+            "required": [
+                "defaultLevel"
+            ],
             "properties": {
-              "level": { "type": "string", "minLength": 1 },
-              "min": { "type": "integer", "minimum": 1 },
-              "max": { "type": "integer", "minimum": 1 }
+                "defaultLevel": {
+                    "type": "string",
+                    "minLength": 1
+                }
             },
             "additionalProperties": false
-          }
         }
-      },
-      "additionalProperties": false
+    },
+    "additionalProperties": false,
+    "$defs": {
+        "axisLevel": {
+            "type": "object",
+            "required": [
+                "value",
+                "code",
+                "label"
+            ],
+            "properties": {
+                "value": {
+                    "type": "integer",
+                    "minimum": 1
+                },
+                "code": {
+                    "type": "string",
+                    "minLength": 1
+                },
+                "label": {
+                    "type": "string",
+                    "minLength": 1
+                },
+                "description": {
+                    "type": "string"
+                }
+            },
+            "additionalProperties": false
+        },
+        "criterion": {
+            "type": "object",
+            "required": [
+                "id",
+                "label",
+                "levelTexts"
+            ],
+            "properties": {
+                "id": {
+                    "type": "string",
+                    "minLength": 1
+                },
+                "label": {
+                    "type": "string",
+                    "minLength": 1
+                },
+                "levelTexts": {
+                    "type": "object",
+                    "propertyNames": {
+                        "pattern": "^[1-9][0-9]*$"
+                    },
+                    "additionalProperties": {
+                        "type": "string"
+                    }
+                }
+            },
+            "additionalProperties": false
+        },
+        "likelihoodAxis": {
+            "type": "object",
+            "required": [
+                "levels",
+                "derivation",
+                "criteria"
+            ],
+            "properties": {
+                "levels": {
+                    "type": "array",
+                    "minItems": 1,
+                    "items": {
+                        "$ref": "#/$defs/axisLevel"
+                    }
+                },
+                "derivation": {
+                    "type": "object",
+                    "required": [
+                        "kind"
+                    ],
+                    "properties": {
+                        "kind": {
+                            "enum": [
+                                "criteria-max",
+                                "geometric-mean",
+                                "cost-based",
+                                "manual"
+                            ]
+                        },
+                        "probabilityThresholds": {
+                            "type": "object",
+                            "propertyNames": {
+                                "pattern": "^[2-9][0-9]*$"
+                            },
+                            "additionalProperties": {
+                                "type": "number",
+                                "exclusiveMinimum": 0,
+                                "maximum": 1
+                            }
+                        }
+                    },
+                    "additionalProperties": false
+                },
+                "criteria": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/$defs/criterion"
+                    }
+                }
+            },
+            "allOf": [
+                {
+                    "if": {
+                        "properties": {
+                            "derivation": {
+                                "type": "object",
+                                "properties": {
+                                    "kind": {
+                                        "const": "cost-based"
+                                    }
+                                },
+                                "required": [
+                                    "kind"
+                                ]
+                            }
+                        },
+                        "required": [
+                            "derivation"
+                        ]
+                    },
+                    "then": {
+                        "properties": {
+                            "derivation": {
+                                "type": "object",
+                                "required": [
+                                    "probabilityThresholds"
+                                ]
+                            }
+                        }
+                    }
+                }
+            ],
+            "additionalProperties": false
+        },
+        "impactAxis": {
+            "type": "object",
+            "required": [
+                "levels",
+                "derivation",
+                "criteria"
+            ],
+            "properties": {
+                "levels": {
+                    "type": "array",
+                    "minItems": 1,
+                    "items": {
+                        "$ref": "#/$defs/axisLevel"
+                    }
+                },
+                "derivation": {
+                    "type": "object",
+                    "required": [
+                        "kind"
+                    ],
+                    "properties": {
+                        "kind": {
+                            "enum": [
+                                "criteria-max",
+                                "manual"
+                            ]
+                        }
+                    },
+                    "additionalProperties": false
+                },
+                "criteria": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/$defs/criterion"
+                    }
+                }
+            },
+            "additionalProperties": false
+        },
+        "classificationLevel": {
+            "type": "object",
+            "required": [
+                "id",
+                "label",
+                "rank",
+                "color",
+                "treatment"
+            ],
+            "properties": {
+                "id": {
+                    "type": "string",
+                    "pattern": "^[a-z][a-z0-9-]*$"
+                },
+                "label": {
+                    "type": "string",
+                    "minLength": 1
+                },
+                "rank": {
+                    "type": "integer",
+                    "minimum": 1
+                },
+                "color": {
+                    "type": "string",
+                    "pattern": "^#[0-9A-Fa-f]{6}$"
+                },
+                "treatment": {
+                    "enum": [
+                        "auto-accept",
+                        "optional",
+                        "required",
+                        "immediate"
+                    ]
+                },
+                "acceptanceBy": {
+                    "const": "management"
+                },
+                "description": {
+                    "type": "string"
+                }
+            },
+            "additionalProperties": false
+        },
+        "lookupClassification": {
+            "type": "object",
+            "required": [
+                "kind",
+                "levels",
+                "matrix"
+            ],
+            "properties": {
+                "kind": {
+                    "const": "lookup"
+                },
+                "levels": {
+                    "type": "array",
+                    "minItems": 1,
+                    "items": {
+                        "$ref": "#/$defs/classificationLevel"
+                    }
+                },
+                "matrix": {
+                    "type": "object",
+                    "propertyNames": {
+                        "pattern": "^[1-9][0-9]*$"
+                    },
+                    "additionalProperties": {
+                        "type": "object",
+                        "propertyNames": {
+                            "pattern": "^[1-9][0-9]*$"
+                        },
+                        "additionalProperties": {
+                            "type": "string",
+                            "minLength": 1
+                        }
+                    }
+                }
+            },
+            "additionalProperties": false
+        },
+        "productBandsClassification": {
+            "type": "object",
+            "required": [
+                "kind",
+                "levels",
+                "bands"
+            ],
+            "properties": {
+                "kind": {
+                    "const": "product-bands"
+                },
+                "levels": {
+                    "type": "array",
+                    "minItems": 1,
+                    "items": {
+                        "$ref": "#/$defs/classificationLevel"
+                    }
+                },
+                "bands": {
+                    "type": "array",
+                    "minItems": 1,
+                    "items": {
+                        "type": "object",
+                        "required": [
+                            "level",
+                            "min",
+                            "max"
+                        ],
+                        "properties": {
+                            "level": {
+                                "type": "string",
+                                "minLength": 1
+                            },
+                            "min": {
+                                "type": "integer",
+                                "minimum": 1
+                            },
+                            "max": {
+                                "type": "integer",
+                                "minimum": 1
+                            }
+                        },
+                        "additionalProperties": false
+                    }
+                }
+            },
+            "additionalProperties": false
+        }
     }
-  }
 }
