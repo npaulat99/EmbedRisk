@@ -90,8 +90,9 @@
     });
     function summarize(which) {
       var values = risks.filter(function (item) { return item.risk; }).map(function (item) { return item.risk[which]; });
-      var bands = [{ name: "None", count: 0 }].concat((schemeWarning ? [] : RiskModel.bandsOf(scheme)).map(function (band) {
-        return { name: band.name, count: 0 };
+      var highNames = schemeWarning ? [] : RiskModel.highBandNames(scheme);
+      var bands = [{ name: "None", count: 0, high: false }].concat((schemeWarning ? [] : RiskModel.bandsOf(scheme)).map(function (band) {
+        return { name: band.name, count: 0, high: highNames.indexOf(band.name) >= 0 };
       }));
       risks.forEach(function (item) {
         if (!item.risk) return;

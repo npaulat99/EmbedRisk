@@ -23,7 +23,7 @@ type DashboardModel = {
   schemeWarning?: string | null;
   threats: { id: string; label: string; description: string }[];
 };
-type RiskSummary = { maxScore: number; maxLabel?: string; highCount: number; bands: { name: string; count: number }[] };
+type RiskSummary = { maxScore: number; maxLabel?: string; highCount: number; bands: { name: string; count: number; high?: boolean }[] };
 
 class DashboardProvider implements vscode.TreeDataProvider<DashboardNode> {
   private readonly changed = new vscode.EventEmitter<DashboardNode | undefined | null | void>();
@@ -67,13 +67,13 @@ class DashboardProvider implements vscode.TreeDataProvider<DashboardNode> {
       { label: `Maximum level: ${summary.maxLabel || summary.maxScore}`, icon: "graph" },
       ...summary.bands.map((band) => ({
         label: `${band.name}: ${band.count}`,
-        icon: band.name === "Critical" || band.name === "High" ? "shield" : "circle-outline",
+        icon: band.high ? "shield" : "circle-outline",
       })),
     ];
     const children: DashboardNode[] = [
       { label: "Summary counts", icon: "symbol-number", children: stats },
-      { label: "Initial risk", description: `${this.model.initial.highCount} high+ · max ${this.model.initial.maxScore}`, icon: "warning", children: riskNodes(this.model.initial) },
-      { label: "Residual risk", description: `${this.model.residual.highCount} high+ · max ${this.model.residual.maxScore}`, icon: "shield", children: riskNodes(this.model.residual) },
+      { label: "Initial risk", description: `${this.model.initial.highCount} high+ · max ${this.model.initial.maxLabel || this.model.initial.maxScore}`, icon: "warning", children: riskNodes(this.model.initial) },
+      { label: "Residual risk", description: `${this.model.residual.highCount} high+ · max ${this.model.residual.maxLabel || this.model.residual.maxScore}`, icon: "shield", children: riskNodes(this.model.residual) },
       {
         label: `Threats (${this.model.threats.length})`,
         icon: "bug",
@@ -87,7 +87,6 @@ class DashboardProvider implements vscode.TreeDataProvider<DashboardNode> {
       },
       { label: "Open DFD canvas", icon: "device-desktop", command: { command: "embedrisk.dfdNative" } },
     ];
-    if (this.model.schemeWarning) children.unshift({ label: this.model.schemeWarning, icon: "warning" });
     if (this.model.schemeWarning) children.unshift({ label: this.model.schemeWarning, icon: "warning" });
     return [{
       label: this.model.title,

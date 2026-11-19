@@ -1822,6 +1822,21 @@ function runDashboardTests() {
   });
   ok("dashboard: v2 lookup high+ count uses rank and non-product bands", lookupDashboard.initial.highCount === 1
     && lookupDashboard.initial.maxLabel === "High" && lookupDashboard.threats[0].description.includes("Initial High"));
+  const germanScheme = JSON.parse(JSON.stringify(lookupScheme));
+  germanScheme.id = "dashboard-german-test";
+  ["niedrig", "mittel", "hoch", "kritisch"].forEach((label, index) => { germanScheme.classification.levels[index].label = label; });
+  const germanDashboard = DashboardModel.buildDashboard({
+    project: input.project, system: input.system, requirements: { requirements: [] }, scheme: germanScheme,
+    threats: { threats: [{ id: "E2S3", title: "hoch", likelihood: 2, impact: 3, status: "open" }, { id: "E3S4", title: "kritisch", likelihood: 3, impact: 4, status: "open" }, { id: "E1S1", title: "niedrig", likelihood: 1, impact: 1, status: "open" }] },
+  });
+  const highBandFlags = Object.fromEntries(germanDashboard.initial.bands.map((band) => [band.name, band.high]));
+  ok("dashboard: German level labels keep high+ band flags and counts by rank",
+    highBandFlags.hoch === true && highBandFlags.kritisch === true && highBandFlags.mittel === false && highBandFlags.niedrig === false
+    && germanDashboard.initial.highCount === 2 && germanDashboard.initial.maxLabel === "kritisch");
+  ok("dashboard: built-in English high+ flags are unchanged",
+    model.initial.bands.filter((band) => band.high).map((band) => band.name).join(",") === "High,Critical");
+  ok("dashboard: tree icons are chosen from the model's high flag, not English labels",
+    !/band\.name\s*===\s*"(Critical|High)"/.test(fs.readFileSync(path.join(root, "vscode-extension/src/dashboard.ts"), "utf8")));
   const unavailableDashboard = DashboardModel.buildDashboard({ project: input.project, threats: input.threats, schemeWarning: "Scheme unavailable" });
   ok("dashboard: unavailable scheme exposes warning and omits risk classification", unavailableDashboard.schemeWarning === "Scheme unavailable"
     && unavailableDashboard.threats.every((threat) => threat.description.includes("classification unavailable")));

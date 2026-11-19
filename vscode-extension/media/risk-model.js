@@ -98,6 +98,12 @@
   function isHighOrAbove(likelihood, impact, scheme) {
     return engineOf(scheme).isHighOrAbove(engineOf(scheme).classify(likelihood, impact));
   }
+  /* Display names of the classification levels at or above the scheme's high level. */
+  function highBandNames(scheme) {
+    var engine = engineOf(scheme);
+    return engine.scheme.classification.levels.filter(function (level) { return engine.isHighOrAbove(level); })
+      .map(function (level) { return level.label; });
+  }
 
   function bandClass(name) { return String(name || "").toLowerCase(); }
 
@@ -259,7 +265,7 @@
     return cvss3BaseScore(vector);
   }
 
-  var api = { matrix: matrix, DEFAULT_BANDS: DEFAULT_BANDS, bandsOf: bandsOf, band: band, residual: residual, riskOf: riskOf, deriveImpact: deriveImpact, deriveLikelihood: deriveLikelihood, classify: classify, isHighOrAbove: isHighOrAbove, bandClass: bandClass, cvss3BaseScore: cvss3BaseScore, cvss4BaseScore: cvss4BaseScore, cvssBaseScore: cvssBaseScore, cvssExploitability: cvssExploitability, exposureFromInterface: exposureFromInterface };
+  var api = { matrix: matrix, DEFAULT_BANDS: DEFAULT_BANDS, bandsOf: bandsOf, band: band, residual: residual, riskOf: riskOf, deriveImpact: deriveImpact, deriveLikelihood: deriveLikelihood, classify: classify, isHighOrAbove: isHighOrAbove, highBandNames: highBandNames, bandClass: bandClass, cvss3BaseScore: cvss3BaseScore, cvss4BaseScore: cvss4BaseScore, cvssBaseScore: cvssBaseScore, cvssExploitability: cvssExploitability, exposureFromInterface: exposureFromInterface };
   g.RiskModel = api;
   if (typeof module !== "undefined" && module.exports) module.exports = api;
 })(typeof window !== "undefined" ? window : globalThis);
