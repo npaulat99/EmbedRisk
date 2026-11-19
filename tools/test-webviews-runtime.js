@@ -1373,6 +1373,23 @@ async function checkRiskMatrices(h, mod) {
   await reopen();
   const init = h.toWebview.filter((message) => message.cmd === "init").at(-1);
   assert.equal(init?.scheme?.id, "wizard-matrix", `wizard failed to resolve local matrix scheme: ${init?.schemeWarning}`);
+  const malformedPath = path.join(ctx.globalStorageUri.fsPath, "risk-schemes", "malformed.json");
+  const malformed = JSON.parse(JSON.stringify(scheme));
+  malformed.id = "malformed-extra-cells";
+  malformed.unsupported = true;
+  malformed.classification = { kind: "lookup", levels: scheme.classification.levels, matrix: {} };
+  for (const impact of [1, 2, 3, 4, 5, 6]) {
+    malformed.classification.matrix[String(impact)] = Object.fromEntries([1, 2, 3, 4, 5].map((likelihood) => [String(likelihood), "low"]));
+  }
+  h.overlay.set(malformedPath, JSON.stringify(malformed));
+  await reopen();
+  const parityInit = h.toWebview.filter((message) => message.cmd === "init").at(-1);
+  const loadedIds = (parityInit?.riskSchemes || []).map((item) => item.id);
+  assert.ok(!loadedIds.includes("malformed-extra-cells"), "extension accepted a scheme the shared validator rejects");
+  assert.ok(["builtin:5x5-exposure", "builtin:5x5-cost", "wizard-matrix"].every((id) => loadedIds.includes(id)),
+    `built-in or valid local schemes missing after a malformed file: ${loadedIds.join(", ")}`);
+  h.overlay.delete(malformedPath);
+  await reopen();
   const before = saves(), diskBefore = [tp, cp, pp].map((p) => h.readText(path.join(projectDir, p)));
   for (const mount of ["threats", "cms"]) {
     const cells = h.$$(`#${mount}-matrix td[data-l]`);

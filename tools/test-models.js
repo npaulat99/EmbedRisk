@@ -987,6 +987,14 @@ async function runRiskSchemeTests() {
     ok("risk scheme: " + file + " normalizes and fingerprints", normalized.id === raw.id && /^[a-f0-9]{64}$/.test(fingerprint(raw)));
   }
 
+  const sharedSource = fs.readFileSync(path.join(root, "webapp/shared/riskScheme.js"), "utf8");
+  const vendoredSource = fs.readFileSync(path.join(root, "vscode-extension/src/vendor/risk-scheme.js"), "utf8");
+  const sharedImport = 'import { createHash } from "node:crypto";\n';
+  const sharedExport = "export { MAX_SCHEME_BYTES, normalizeScheme, fingerprint };";
+  const sharedBody = sharedSource.slice(sharedImport.length, sharedSource.trimEnd().length - sharedExport.length).trim();
+  ok("risk scheme: extension validator vendor matches webapp/shared/riskScheme.js (regenerate the ESM-to-CJS copy if this fails)",
+    sharedSource.startsWith(sharedImport) && vendoredSource.includes(sharedBody));
+
   const clone = (value) => JSON.parse(JSON.stringify(value));
   const lookup = clone(exposure);
   lookup.id = "test-lookup";
