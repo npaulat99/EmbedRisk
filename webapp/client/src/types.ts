@@ -341,6 +341,8 @@ export interface CmAddress {
     threat: string;
     residualLikelihood?: number;
     residualImpact?: number;
+    likelihoodCriteria?: Record<string, number | null>;
+    impactCriteria?: Record<string, number | null>;
     attackerRef?: string;
     interfaceRef?: string;
     interfaceRefs?: string[];

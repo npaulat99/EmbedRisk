@@ -87,6 +87,19 @@
       "type": "string",
       "description": "Target IEC 62443-4-2 Security Level (SL-C), e.g. SL2."
     },
+    "riskSchemeId": {
+      "type": "string",
+      "description": "ID of the active risk scheme; built-in IDs are builtin:5x5-exposure and builtin:5x5-cost."
+    },
+    "riskSchemeFingerprint": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$",
+      "description": "SHA-256 fingerprint of the normalized active risk scheme."
+    },
+    "acceptableLevel": {
+      "type": "string",
+      "description": "Maximum acceptable risk classification level ID in the active scheme."
+    },
     "steps": {
       "type": "object",
       "description": "Relative paths to the artifact files produced by each step.",

@@ -51,6 +51,9 @@ export function validate({ project = {}, assumptions = {}, system = {}, threats 
     const acceptableRisk = Number.isFinite(project.acceptableRisk) ? project.acceptableRisk : DEFAULT_ACCEPTABLE_RISK;
     const selectedSlc = slcLevel(project.slTarget);
     const riskEngine = riskScheme ? globalThis.RiskEngine.createRiskEngine(riskScheme, project) : null;
+    const criterionRatingsInRange = (axis, ratings) => !riskEngine.criteria(axis).some((criterion) =>
+        ratings?.[criterion.id] != null && !riskEngine.inRange(axis, ratings[criterion.id]));
+    const riskValueInRange = (axis, value) => value === 0 || riskEngine.inRange(axis, value);
     const costBased = riskEngine
         ? riskEngine.scheme.likelihood.derivation.kind === 'cost-based'
         : project.riskScoringMethod === 'cost-based';
@@ -161,7 +164,16 @@ export function validate({ project = {}, assumptions = {}, system = {}, threats 
             const initialInRange = initialLikelihoodInRange && riskEngine.inRange('impact', t.impact);
             const residualInRange = t.status === 'unfeasible'
                 || ((rl === 0 || riskEngine.inRange('likelihood', rl)) && (ri === 0 || riskEngine.inRange('impact', ri)));
-            if (!initialInRange || !residualInRange) {
+            const criteriaInRange = criterionRatingsInRange('likelihood', t.likelihoodCriteria)
+                && criterionRatingsInRange('impact', t.impactCriteria);
+            const legacyResidualInRange = (t.residualLikelihood == null || riskValueInRange('likelihood', t.residualLikelihood))
+                && (t.residualImpact == null || riskValueInRange('impact', t.residualImpact));
+            const countermeasureRatingsInRange = cmList.flatMap((cm) => arr(cm.addresses)).filter((address) => address.threat === t.id).every((address) =>
+                (address.residualLikelihood == null || riskValueInRange('likelihood', address.residualLikelihood))
+                && (address.residualImpact == null || riskValueInRange('impact', address.residualImpact))
+                && criterionRatingsInRange('likelihood', address.likelihoodCriteria)
+                && criterionRatingsInRange('impact', address.impactCriteria));
+            if (!initialInRange || !residualInRange || !criteriaInRange || !legacyResidualInRange || !countermeasureRatingsInRange) {
                 add('error', `${t.id}: stored risk rating or residual is outside the active scheme's range.`, `risk-range:${t.id}`);
             } else {
                 const level = riskEngine.classify(rl, ri);

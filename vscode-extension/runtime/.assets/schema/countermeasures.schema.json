@@ -23,8 +23,16 @@
               "required": ["threat"],
               "properties": {
                 "threat": { "type": "string" },
-                "residualLikelihood": { "type": "integer", "minimum": 1, "maximum": 5 },
-                "residualImpact": { "type": "integer", "minimum": 1, "maximum": 5 }
+                "likelihoodCriteria": {
+                  "type": "object",
+                  "additionalProperties": { "type": ["integer", "null"], "minimum": 1 }
+                },
+                "impactCriteria": {
+                  "type": "object",
+                  "additionalProperties": { "type": ["integer", "null"], "minimum": 1 }
+                },
+                "residualLikelihood": { "type": "integer", "minimum": 1 },
+                "residualImpact": { "type": "integer", "minimum": 1 }
               }
             }
           },

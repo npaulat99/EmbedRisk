@@ -818,18 +818,21 @@ ok("matrix: frozen threats/controls and unknown metadata remain unchanged", JSON
 
 /* ---------- Threat schema: cost-based feasibility includes unfeasible L0 ---------- */
 const Ajv2020 = require(path.join(root, "vscode-extension/node_modules/ajv/dist/2020"));
-const threatSchema = JSON.parse(fs.readFileSync(path.join(root, "vscode-extension/runtime/.assets/schema/threats.schema.json"), "utf8"));
+const schemaDir = path.join(root, "vscode-extension/runtime/.assets/schema");
+const threatSchema = JSON.parse(fs.readFileSync(path.join(schemaDir, "threats.schema.json"), "utf8"));
 const validateThreats = new Ajv2020().compile(threatSchema);
 const schemaThreat = { id: "T-SCHEMA", title: "Schema boundary", stride: ["S"], components: ["C1"], likelihood: 1, impact: 3 };
-for (const likelihood of [0, 1, 2, 3, 4, 5]) {
+for (const likelihood of [0, 1, 2, 3, 4, 5, 6, 9]) {
   ok("threat schema accepts likelihood " + likelihood,
     validateThreats({ threats: [{ ...schemaThreat, likelihood }] }));
 }
-for (const likelihood of [-1, 6, 1.5, "0", null]) {
+for (const likelihood of [-1, 1.5, "0", null]) {
   ok("threat schema rejects likelihood " + JSON.stringify(likelihood),
     !validateThreats({ threats: [{ ...schemaThreat, likelihood }] }));
   assert.ok(validateThreats.errors.some((error) => error.instancePath === "/threats/0/likelihood"));
 }
+ok("threat schema accepts scheme-specific criterion maps",
+  validateThreats({ threats: [{ ...schemaThreat, likelihoodCriteria: { custom: 6, other: null }, impactCriteria: { severity: 4 } }] }));
 for (const status of ["open", "mitigated", "accepted", "transferred", "unfeasible"]) {
   ok("threat schema accepts status " + status,
     validateThreats({ threats: [{ ...schemaThreat, status, likelihood: status === "unfeasible" ? 0 : 3 }] }));
@@ -838,6 +841,12 @@ ok("threat schema still rejects unknown status",
   !validateThreats({ threats: [{ ...schemaThreat, status: "unknown" }] }));
 ok("threat schema still requires likelihood",
   !validateThreats({ threats: [{ ...schemaThreat, likelihood: undefined }] }));
+const validateCountermeasures = new Ajv2020().compile(JSON.parse(fs.readFileSync(path.join(schemaDir, "countermeasures.schema.json"), "utf8")));
+ok("countermeasure schema accepts residual values beyond the built-in 5-level range",
+  validateCountermeasures({ countermeasures: [{ id: "CM-SCHEMA", title: "Dynamic range", addresses: [{ threat: "T-SCHEMA", residualLikelihood: 6, residualImpact: 7, likelihoodCriteria: { exposure: 6 }, impactCriteria: { safety: 7 } }] }] }));
+const validateProjectSchema = new Ajv2020().compile(JSON.parse(fs.readFileSync(path.join(schemaDir, "tra-project.schema.json"), "utf8")));
+ok("project schema accepts risk-scheme bindings and acceptable level",
+  validateProjectSchema({ traVersion: "1.0", device: { name: "Device", type: "Controller" }, steps: {}, riskSchemeId: "local:4x4", riskSchemeFingerprint: "a".repeat(64), acceptableLevel: "medium" }));
 
 /* ---------- Bundled knowledge-base drift (extension runtime vs webapp) ---------- */
 ["risk-scheme.json", "risk-scheme-5x5-exposure.json", "risk-scheme-5x5-cost.json", "bug-bar.json", "field-device-library.json"].forEach((file) => {
@@ -1200,6 +1209,19 @@ async function runRiskRegistryTests() {
       && !warningIssues.some((issue) => issue.key === "risk-over-acceptable:RAW"));
     const invalidRatingIssues = validate({ project: {}, riskScheme: localScheme, threats: { threats: [{ id: "INVALID", likelihood: 6, impact: 3 }] } });
     ok("risk registry: out-of-range stored values are errors", invalidRatingIssues.some((issue) => issue.severity === "error" && issue.key === "risk-range:INVALID"));
+    const invalidControlIssues = validate({
+      project: {}, riskScheme: localScheme,
+      threats: { threats: [{ id: "INVALID-CONTROL", likelihood: 3, impact: 3 }] },
+      countermeasures: { countermeasures: [{ id: "CM-INVALID", addresses: [{ threat: "INVALID-CONTROL", residualLikelihood: 6, residualImpact: 2 }] }] },
+    });
+    ok("risk registry: out-of-range individual countermeasure axes are errors even when minima mask them",
+      invalidControlIssues.some((issue) => issue.severity === "error" && issue.key === "risk-range:INVALID-CONTROL"));
+    const invalidCriteriaIssues = validate({
+      project: {}, riskScheme: localScheme,
+      threats: { threats: [{ id: "INVALID-CRITERION", likelihood: 3, impact: 3, likelihoodCriteria: { exposure: 6 } }] },
+    });
+    ok("risk registry: out-of-range per-threat criteria are errors",
+      invalidCriteriaIssues.some((issue) => issue.severity === "error" && issue.key === "risk-range:INVALID-CRITERION"));
     const unfeasibleIssues = validate({ project: {}, riskScheme: localScheme, threats: { threats: [{ id: "UNFEASIBLE", likelihood: 2, impact: 3, status: "unfeasible" }] } });
     ok("risk registry: unfeasible residual zero is not an out-of-range error", !unfeasibleIssues.some((issue) => issue.key === "risk-range:UNFEASIBLE"));
     const zeroResidualIssues = validate({
@@ -1234,8 +1256,8 @@ function runClientRiskValidationTests() {
   const axis = (prefix) => [1, 2, 3, 4].map((value) => ({ value, code: prefix + value, label: prefix + value }));
   const scheme = {
     schemaVersion: 2, id: "client-validation-4x4", title: "Validation 4x4", version: "1",
-    likelihood: { levels: axis("E"), derivation: { kind: "criteria-max" }, criteria: [] },
-    impact: { levels: axis("S"), derivation: { kind: "criteria-max" }, criteria: [] },
+    likelihood: { levels: axis("E"), derivation: { kind: "criteria-max" }, criteria: [{ id: "exposure", label: "Exposure", levelTexts: { "1": "1", "2": "2", "3": "3", "4": "4" } }] },
+    impact: { levels: axis("S"), derivation: { kind: "criteria-max" }, criteria: [{ id: "safety", label: "Safety", levelTexts: { "1": "1", "2": "2", "3": "3", "4": "4" } }] },
     classification: {
       kind: "lookup",
       levels: [
@@ -1268,6 +1290,12 @@ function runClientRiskValidationTests() {
   ok("client validation: auto-accept low level produces no risk warning", !low.some((issue) => issue.key === "risk-over-acceptable:LOW" || issue.key === "risk-acceptance:LOW"));
   const invalid = validationModule.exports.validate(makeData({ id: "INVALID", likelihood: 5, impact: 3, components: ["C1"], stride: [] }), scheme);
   ok("client validation: out-of-range stored axis is an error", invalid.some((issue) => issue.severity === "error" && issue.key === "risk-range:INVALID"));
+  const invalidCriteria = validationModule.exports.validate(makeData({ id: "INVALID-CRITERION", likelihood: 2, impact: 2, likelihoodCriteria: { exposure: 5 }, components: ["C1"], stride: [] }), scheme);
+  ok("client validation: out-of-range criterion rating is an error", invalidCriteria.some((issue) => issue.severity === "error" && issue.key === "risk-range:INVALID-CRITERION"));
+  const invalidCountermeasure = makeData({ id: "INVALID-CONTROL", likelihood: 3, impact: 3, components: ["C1"], stride: [] });
+  invalidCountermeasure.countermeasures.countermeasures = [{ id: "CM-INVALID", addresses: [{ threat: "INVALID-CONTROL", residualLikelihood: 5, residualImpact: 2 }] }];
+  const invalidCountermeasureIssues = validationModule.exports.validate(invalidCountermeasure, scheme);
+  ok("client validation: out-of-range countermeasure axis is an error even when minima mask it", invalidCountermeasureIssues.some((issue) => issue.severity === "error" && issue.key === "risk-range:INVALID-CONTROL"));
   const zeroResidual = makeData({ id: "ZERO", likelihood: 2, impact: 3, components: ["C1"], stride: [] });
   zeroResidual.countermeasures.countermeasures = [{ id: "CM-ZERO", addresses: [{ threat: "ZERO", residualLikelihood: 0, residualImpact: 3 }] }];
   const zeroResidualIssues = validationModule.exports.validate(zeroResidual, scheme);
