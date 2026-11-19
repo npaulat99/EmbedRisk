@@ -59,8 +59,8 @@ export function IdInput({ id, onRename }: { id: string; onRename?: (newId: strin
 
 export function RiskPill({ score, band, title }: { score: number; band: RiskBand; title?: string }) {
     return (
-        <span className="pill" style={{ background: band.color }} title={title || `${score} · ${band.name}`}>
-            {band.min === band.max && band.min > 0 ? band.name : `${score} · ${band.name}`}
+        <span className="pill" style={{ background: band.color }} title={title || (band.lookup ? band.name : `${score} · ${band.name}`)}>
+            {band.lookup ? band.name : `${score} · ${band.name}`}
         </span>
     );
 }

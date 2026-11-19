@@ -93,15 +93,20 @@ export function computeRisk(s, threats, cms) {
             if (score <= 0) return { name: 'None', min: 0, max: 0, color: '#6b7280' };
             if (engine.scheme.classification.kind === 'product-bands') return engine.band(score);
             const level = engine.classify(likelihood, impact);
-            return { name: level.label, min: level.rank, max: level.rank, color: level.color };
+            return { name: level.label, min: level.rank, max: level.rank, color: level.color, lookup: true };
         };
+        const initialBand = riskBand(t.likelihood, t.impact, risk.initial);
+        const residualBand = riskBand(risk.residualLikelihood, risk.residualImpact, risk.residual);
+        // Lookup schemes have no product score; the level rank is the priority.
         return {
             id: t.id,
             likelihood: t.likelihood,
             impact: t.impact,
             ...risk,
-            initialBand: riskBand(t.likelihood, t.impact, risk.initial),
-            residualBand: riskBand(risk.residualLikelihood, risk.residualImpact, risk.residual),
+            initial: initialBand.lookup ? initialBand.min : risk.initial,
+            residual: residualBand.lookup ? residualBand.min : risk.residual,
+            initialBand,
+            residualBand,
         };
     });
 }

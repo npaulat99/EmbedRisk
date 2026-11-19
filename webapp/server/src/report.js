@@ -616,6 +616,7 @@ export async function buildReport(id) {
     const defects = dd.defects || [];
     const issues = validate({ project, assumptions, system, threats: td, requirements: rd, countermeasures: cd, dfd, useCases, attackTrees, defects: dd, riskScheme: scheme, riskSchemeWarning: schemeResolution.warning });
     const trace = buildTraceability({ system, threats, requirements: reqs, countermeasures: cms, scheme });
+    const lookupScheme = scheme?.classification?.kind === 'lookup';
     const assumptionsFlat = [
         ...(assumptions.device || []).map((a) => ({ id: a.id, text: a.text || '', source: 'Device' })),
         ...(assumptions.system || []).map((a) => ({ id: a.id, text: a.text || '', source: 'System' })),
@@ -699,8 +700,8 @@ export async function buildReport(id) {
                 .join('');
             return (
                 `<tr id='threat-${esc(r.threat)}'><td>${esc(r.asset)}</td><td>${esc(r.cias)}</td><td><b>${esc(r.threat)}</b> ${esc(r.title)} <span class=mono>${esc(r.stride)}</span></td>` +
-                `<td${r.initialColor ? ` style='color:${esc(r.initialColor)}'` : ''}>${r.initial === null ? `L${esc(r.likelihood ?? '—')} / I${esc(r.impact ?? '—')} (${esc(r.initialBand)})` : `${r.initial} ${esc(r.initialBand)}`}</td><td>${esc(r.requirement) || '—'}</td>` +
-                `<td>${esc(r.control) || '—'}</td><td${r.residualColor ? ` style='color:${esc(r.residualColor)}'` : ''}>${r.residual === null ? `L${esc(r.residualLikelihood ?? '—')} / I${esc(r.residualImpact ?? '—')} (${esc(r.residualBand)})` : `${r.residual} ${esc(r.residualBand)}`}</td>` +
+                `<td${r.initialColor ? ` style='color:${esc(r.initialColor)}'` : ''}>${r.initial === null ? `L${esc(r.likelihood ?? '—')} / I${esc(r.impact ?? '—')} (${esc(r.initialBand)})` : lookupScheme ? esc(r.initialBand) : `${r.initial} ${esc(r.initialBand)}`}</td><td>${esc(r.requirement) || '—'}</td>` +
+                `<td>${esc(r.control) || '—'}</td><td${r.residualColor ? ` style='color:${esc(r.residualColor)}'` : ''}>${r.residual === null ? `L${esc(r.residualLikelihood ?? '—')} / I${esc(r.residualImpact ?? '—')} (${esc(r.residualBand)})` : lookupScheme ? esc(r.residualBand) : `${r.residual} ${esc(r.residualBand)}`}</td>` +
                 `<td>${r.evidence ? r.evidence.split(' ').map((u) => `<a href='${esc(u)}'>link</a>`).join(' ') : '—'}${support}</td><td>${esc(r.status)}${r.signoff ? `<br><span class=mono style='font-size:11px'>${esc(r.signoff)}</span>` : ''}${r.ratedBy ? `<br><span class=mono style='font-size:11px'>rated: ${esc(r.ratedBy)}</span>` : ''}</td></tr>`
             );
         })

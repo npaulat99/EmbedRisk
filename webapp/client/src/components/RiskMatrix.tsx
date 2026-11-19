@@ -50,8 +50,8 @@ export default function RiskMatrix({ componentRef }: { componentRef?: string }) 
     const boundaryClass = (likelihood: number, impact: number) => {
         const acceptable = isAcceptable(likelihood, impact);
         const classes: string[] = [];
-        if (impact < 5 && acceptable !== isAcceptable(likelihood, impact + 1)) classes.push('boundary-top');
-        if (likelihood < 5 && acceptable !== isAcceptable(likelihood + 1, impact)) classes.push('boundary-right');
+        if (impact < impacts.length && acceptable !== isAcceptable(likelihood, impact + 1)) classes.push('boundary-top');
+        if (likelihood < likes.length && acceptable !== isAcceptable(likelihood + 1, impact)) classes.push('boundary-right');
         return classes.join(' ');
     };
     const openCell = (ids: string[]) => {

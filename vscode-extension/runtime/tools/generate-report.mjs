@@ -151,7 +151,9 @@ const traceability = threats.map((t) => {
   const computed = riskOf(t);
   const rr = computed ? { l: computed.residualLikelihood, i: computed.residualImpact } : residual(t);
   const [rl, ri] = [rr.l, rr.i];
-  const initial = computed?.initial ?? null, res = computed?.residual ?? null;
+  const lookup = scheme?.classification.kind === 'lookup';
+  const initial = computed ? (lookup ? computed.initialBand.rank ?? 0 : computed.initial) : null;
+  const res = computed ? (lookup ? computed.residualBand.rank ?? 0 : computed.residual) : null;
   const rqs = reqs.filter((r) => (r.derivedFromThreat || []).includes(t.id));
   const ctrls = cms.filter((c) => c.selected !== false && (c.addresses || []).some((a) => a.threat === t.id));
   return {

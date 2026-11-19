@@ -69,7 +69,7 @@ function riskBand(engine: RiskEngine, likelihood: number, impact: number, score:
     const level = engine.classify(likelihood, impact);
     return level.id === 'none'
         ? NONE_BAND
-        : { name: level.label, min: level.rank, max: level.rank, color: level.color };
+        : { name: level.label, min: level.rank, max: level.rank, color: level.color, lookup: true };
 }
 
 /**
@@ -132,10 +132,15 @@ export interface ThreatRisk {
 export function riskOf(threat: Threat, cms: Countermeasure[], scheme: RiskScheme | null): ThreatRisk {
     const engine = engineOf(scheme);
     const risk = engine.riskOf(threat, cms);
+    const initialBand = riskBand(engine, threat.likelihood, threat.impact, risk.initial);
+    const residualBand = riskBand(engine, risk.residualLikelihood, risk.residualImpact, risk.residual);
+    // Lookup schemes have no product score; the level rank is the priority used for sorting.
     return {
         ...risk,
-        initialBand: riskBand(engine, threat.likelihood, threat.impact, risk.initial),
-        residualBand: riskBand(engine, risk.residualLikelihood, risk.residualImpact, risk.residual),
+        initial: initialBand.lookup ? initialBand.min : risk.initial,
+        residual: residualBand.lookup ? residualBand.min : risk.residual,
+        initialBand,
+        residualBand,
     };
 }
 

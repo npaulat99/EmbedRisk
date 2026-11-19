@@ -1216,6 +1216,35 @@ async function runRiskRegistryTests() {
     ok("risk registry: unavailable report scheme preserves raw axes without risk labels", rawReport.initial === null
       && rawReport.residual === null && rawReport.initialBand === "Unavailable"
       && rawReport.likelihood === 5 && rawReport.impact === 3 && rawReport.residualLikelihood === 5 && rawReport.residualImpact === 3);
+    const lookupAxis = (prefix) => [1, 2, 3, 4].map((value) => ({ value, code: prefix + value, label: prefix + value }));
+    const lookupScheme = {
+      schemaVersion: 2, id: "trace-lookup", title: "Trace lookup", version: "1",
+      likelihood: { levels: lookupAxis("E"), derivation: { kind: "manual" }, criteria: [] },
+      impact: { levels: lookupAxis("S"), derivation: { kind: "manual" }, criteria: [] },
+      classification: {
+        kind: "lookup",
+        levels: [
+          { id: "low", label: "niedrig", rank: 1, color: "#2e7d32", treatment: "auto-accept" },
+          { id: "medium", label: "mittel", rank: 2, color: "#f9a825", treatment: "optional" },
+          { id: "high", label: "hoch", rank: 3, color: "#ef6c00", treatment: "required" },
+          { id: "critical", label: "kritisch", rank: 4, color: "#c62828", treatment: "immediate" },
+        ],
+        matrix: {
+          "4": { "1": "medium", "2": "high", "3": "critical", "4": "critical" },
+          "3": { "1": "medium", "2": "high", "3": "high", "4": "critical" },
+          "2": { "1": "low", "2": "medium", "3": "medium", "4": "high" },
+          "1": { "1": "low", "2": "low", "3": "medium", "4": "medium" },
+        },
+      },
+      highLevel: "high",
+    };
+    const lookupTrace = buildTraceability({
+      system: { assets: [] }, requirements: [], countermeasures: [], scheme: lookupScheme,
+      threats: [{ id: "E2S3", likelihood: 2, impact: 3, stride: [] }, { id: "E3S2", likelihood: 3, impact: 2, stride: [] }],
+    });
+    ok("lookup trace: equal products get different level and priority (hoch 3 vs mittel 2)",
+      lookupTrace[0].initialBand === "hoch" && lookupTrace[1].initialBand === "mittel"
+      && lookupTrace[0].initial === 3 && lookupTrace[1].initial === 2);
     const warningIssues = validate({ project: {}, threats: { threats: [{ id: "RAW", likelihood: 5, impact: 3 }] }, riskSchemeWarning: changed.warning });
     ok("risk registry: unavailable scheme warns and skips stale risk threshold checks", warningIssues.some((issue) => issue.key === "risk-scheme-unavailable")
       && !warningIssues.some((issue) => issue.key === "risk-over-acceptable:RAW"));
@@ -1312,6 +1341,14 @@ function runClientRiskValidationTests() {
   zeroResidual.countermeasures.countermeasures = [{ id: "CM-ZERO", addresses: [{ threat: "ZERO", residualLikelihood: 0, residualImpact: 3 }] }];
   const zeroResidualIssues = validationModule.exports.validate(zeroResidual, scheme);
   ok("client validation: zero residual axis remains valid", !zeroResidualIssues.some((issue) => issue.key === "risk-range:ZERO"));
+
+  const e2s3 = clientRisk.riskOf({ id: "E2S3", likelihood: 2, impact: 3 }, [], scheme);
+  const e3s2 = clientRisk.riskOf({ id: "E3S2", likelihood: 3, impact: 2 }, [], scheme);
+  ok("client lookup risk: equal products rank by level (E2/S3 high above E3/S2 medium)",
+    e2s3.initialBand.name === "high" && e3s2.initialBand.name === "medium" && e2s3.initialBand.lookup === true
+    && e2s3.initial === 3 && e3s2.initial === 2);
+  const builtinRisk = clientRisk.riskOf({ id: "P", likelihood: 3, impact: 4 }, [], legacyRegistry.schemes[0]);
+  ok("client product-bands risk keeps numeric scores", builtinRisk.initial === 12 && !builtinRisk.initialBand.lookup);
 }
 
 function runDfdEngineTests() {

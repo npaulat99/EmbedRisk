@@ -476,6 +476,7 @@ export interface RiskBand {
     min: number;
     max: number;
     color: string;
+    lookup?: boolean; // true for lookup schemes: min/max are the level rank, not a product-score range
 }
 export type RiskDerivationKind = 'criteria-max' | 'geometric-mean' | 'cost-based' | 'manual';
 export interface RiskAxisLevel {
