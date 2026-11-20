@@ -59,8 +59,8 @@ export function IdInput({ id, onRename }: { id: string; onRename?: (newId: strin
 
 export function RiskPill({ score, band, title }: { score: number; band: RiskBand; title?: string }) {
     return (
-        <span className="pill" style={{ background: band.color }} title={title}>
-            {score} · {band.name}
+        <span className="pill" style={{ background: band.color }} title={title || (band.lookup ? band.name : `${score} · ${band.name}`)}>
+            {band.lookup ? band.name : `${score} · ${band.name}`}
         </span>
     );
 }
@@ -248,6 +248,7 @@ export function ScaleSelect({
     onChange,
     levels,
     allowEmpty,
+    disabled,
     style,
     className,
 }: {
@@ -255,11 +256,12 @@ export function ScaleSelect({
     onChange: (n: number) => void;
     levels: [number, string][];
     allowEmpty?: boolean;
+    disabled?: boolean;
     style?: React.CSSProperties;
     className?: string;
 }) {
     return (
-        <select className={className || 'inp'} style={style} value={value ?? ''} onChange={(e) => onChange(Number(e.target.value))}>
+        <select className={className || 'inp'} style={style} value={value ?? ''} disabled={disabled} onChange={(e) => onChange(Number(e.target.value))}>
             {allowEmpty && <option value="">–</option>}
             {levels.map(([n, label]) => (
                 <option key={n} value={n}>

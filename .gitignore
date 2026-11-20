@@ -33,3 +33,7 @@ __pycache__/
 .env
 .env.*
 !.env.example
+
+# Local risk scheme overrides
+.local/
+*.risk-scheme.local.json

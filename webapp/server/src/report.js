@@ -6,7 +6,7 @@ import { promises as fs } from 'node:fs';
 import { join } from 'node:path';
 import { projectsDir } from './paths.js';
 import { readProject } from './artifacts.js';
-import { loadScheme, band, residual } from './risk.js';
+import { resolveProjectScheme, computeRisk, residual } from './risk.js';
 import { validate } from './validate.js';
 import { kbVersion } from './git.js';
 import { routeAround, roundedPath, labelPtOnPolyline, borderPoint } from '../../shared/dfdEngine.js';
@@ -356,11 +356,14 @@ function useCaseSvg(diagram = {}) {
 export function buildTraceability({ system, threats, requirements, countermeasures, scheme }) {
     const assetById = new Map((system.assets || []).map((a) => [a.id, a]));
     return (threats || []).map((t) => {
-        const [rl, ri] = residual(t, countermeasures);
+        const computedRisk = scheme ? computeRisk(scheme, [t], countermeasures)[0] : null;
+        const [rl, ri] = computedRisk
+            ? [computedRisk.residualLikelihood, computedRisk.residualImpact]
+            : residual(t, countermeasures);
         const rqs = (requirements || []).filter((r) => (r.derivedFromThreat || []).includes(t.id));
         const ctrls = (countermeasures || []).filter((c) => c.selected !== false && (c.addresses || []).some((a) => a.threat === t.id));
-        const initial = (t.likelihood || 0) * (t.impact || 0);
-        const res = (rl || 0) * (ri || 0);
+        const initial = computedRisk?.initial ?? null;
+        const res = computedRisk?.residual ?? null;
         return {
             asset: (t.assets || []).map((a) => assetById.get(a)?.name || a).join('; '),
             cias: (t.assets || [])
@@ -376,11 +379,13 @@ export function buildTraceability({ system, threats, requirements, countermeasur
             likelihoodRationale: t.likelihoodRationale || '',
             impactRationale: t.impactRationale || '',
             initial,
-            initialBand: band(scheme, initial).name,
+            initialBand: computedRisk?.initialBand.name || 'Unavailable',
+            initialColor: computedRisk?.initialBand.color || null,
             requirement: rqs.map((r) => `${r.id}${r.standardRef ? ` [${r.standardRef}]` : ''}${(r.satisfiedByCM || []).length ? ` → ${(r.satisfiedByCM || []).join('+')}` : ''}`).join('; '),
             control: ctrls.map((c) => `${c.id} (${c.status || '?'})`).join('; '),
             residual: res,
-            residualBand: band(scheme, res).name,
+            residualBand: computedRisk?.residualBand.name || 'Unavailable',
+            residualColor: computedRisk?.residualBand.color || null,
             evidence: ctrls
                 .flatMap((c) => [...(c.ticketUrls || []), c.ticketUrl, c.verificationUrl])
                 .filter(Boolean)
@@ -388,6 +393,12 @@ export function buildTraceability({ system, threats, requirements, countermeasur
             status: t.status || '',
             ratedBy: t.ratedBy || '',
             signoff: t.status === 'accepted' ? [t.acceptedBy && `by ${t.acceptedBy}`, t.reviewDate && `review ${t.reviewDate}`, t.acceptanceRationale].filter(Boolean).join(' · ') : '',
+            ...(!computedRisk ? {
+                likelihood: t.likelihood ?? null,
+                impact: t.impact ?? null,
+                residualLikelihood: rl,
+                residualImpact: ri,
+            } : {}),
         };
     });
 }
@@ -594,15 +605,18 @@ function traceabilityCsv(rows) {
 
 /** Assemble every report artifact for a project (in memory). */
 export async function buildReport(id) {
-    const scheme = await loadScheme();
     const p = await readProject(id);
     const { project, assumptions, system, dfd, useCases, threats: td, requirements: rd, countermeasures: cd, attackTrees, defects: dd } = p;
+    const schemeResolution = await resolveProjectScheme(project);
+    const scheme = schemeResolution.scheme;
+    const reportRiskEngine = scheme ? globalThis.RiskEngine.createRiskEngine(scheme, project) : null;
     const threats = td.threats || [];
     const reqs = rd.requirements || [];
     const cms = cd.countermeasures || [];
     const defects = dd.defects || [];
-    const issues = validate({ project, assumptions, system, threats: td, requirements: rd, countermeasures: cd, dfd, useCases, attackTrees, defects: dd });
+    const issues = validate({ project, assumptions, system, threats: td, requirements: rd, countermeasures: cd, dfd, useCases, attackTrees, defects: dd, riskScheme: scheme, riskSchemeWarning: schemeResolution.warning });
     const trace = buildTraceability({ system, threats, requirements: reqs, countermeasures: cms, scheme });
+    const lookupScheme = scheme?.classification?.kind === 'lookup';
     const assumptionsFlat = [
         ...(assumptions.device || []).map((a) => ({ id: a.id, text: a.text || '', source: 'Device' })),
         ...(assumptions.system || []).map((a) => ({ id: a.id, text: a.text || '', source: 'System' })),
@@ -623,6 +637,26 @@ export async function buildReport(id) {
     const sbomMode = project.sbom?.mode || 'in-tool';
     const sbomFormat = project.sbom?.format || 'cyclonedx';
     const sbomFile = sbomMode !== 'in-tool' ? project.sbom?.url || '(external, no URL)' : sbomFormat === 'spdx' ? 'report/sbom.spdx.json' : 'report/sbom.cdx.json';
+    const riskSchemeSection = reportRiskEngine
+        ? (() => {
+            const likelihoods = reportRiskEngine.likelihoodLevels();
+            const impacts = reportRiskEngine.impactLevels().slice().reverse();
+            const matrixRows = impacts.map((impact) => {
+                const cells = likelihoods.map((likelihood) => {
+                    const level = reportRiskEngine.classify(likelihood.value, impact.value);
+                    const score = likelihood.value * impact.value;
+                    const label = scheme.classification.kind === 'lookup' ? level.label : score;
+                    return `<td style='background:${esc(level.color)};color:#fff' title='${esc(likelihood.code)} × ${esc(impact.code)} · ${esc(level.label)}'>${esc(label)}</td>`;
+                }).join('');
+                return `<tr><th>${esc(impact.code)} · ${esc(impact.label)}</th>${cells}</tr>`;
+            }).join('');
+            const legend = scheme.classification.levels.map((level) =>
+                `<span style='display:inline-flex;align-items:center;gap:4px;margin-right:10px'><i style='display:inline-block;width:10px;height:10px;background:${esc(level.color)}'></i>${esc(level.label)}</span>`
+            ).join('');
+            const headers = likelihoods.map((level) => `<th>${esc(level.code)}</th>`).join('');
+            return `<h2>Risk scheme</h2><p><b>${esc(scheme.title)}</b> · v${esc(scheme.version)} · fingerprint <code>${schemeResolution.fingerprint}</code></p><div>${legend}</div><table aria-label='Active risk matrix'><thead><tr><th>Impact / Likelihood</th>${headers}</tr></thead><tbody>${matrixRows}</tbody></table>`;
+        })()
+        : '';
     const strideCov = buildStrideCoverage(system, threats);
     const strideTbSection = project.reportOptions?.includeStrideBoundaryAnalysis ? strideBoundaryTablesHtml(system, dfd) : '';
     const acceptedNotices = new Set(project.acceptedNotices || []);
@@ -666,8 +700,8 @@ export async function buildReport(id) {
                 .join('');
             return (
                 `<tr id='threat-${esc(r.threat)}'><td>${esc(r.asset)}</td><td>${esc(r.cias)}</td><td><b>${esc(r.threat)}</b> ${esc(r.title)} <span class=mono>${esc(r.stride)}</span></td>` +
-                `<td style='color:${band(scheme, r.initial).color}'>${r.initial} ${esc(r.initialBand)}</td><td>${esc(r.requirement) || '—'}</td>` +
-                `<td>${esc(r.control) || '—'}</td><td style='color:${band(scheme, r.residual).color}'>${r.residual} ${esc(r.residualBand)}</td>` +
+                `<td${r.initialColor ? ` style='color:${esc(r.initialColor)}'` : ''}>${r.initial === null ? `L${esc(r.likelihood ?? '—')} / I${esc(r.impact ?? '—')} (${esc(r.initialBand)})` : lookupScheme ? esc(r.initialBand) : `${r.initial} ${esc(r.initialBand)}`}</td><td>${esc(r.requirement) || '—'}</td>` +
+                `<td>${esc(r.control) || '—'}</td><td${r.residualColor ? ` style='color:${esc(r.residualColor)}'` : ''}>${r.residual === null ? `L${esc(r.residualLikelihood ?? '—')} / I${esc(r.residualImpact ?? '—')} (${esc(r.residualBand)})` : lookupScheme ? esc(r.residualBand) : `${r.residual} ${esc(r.residualBand)}`}</td>` +
                 `<td>${r.evidence ? r.evidence.split(' ').map((u) => `<a href='${esc(u)}'>link</a>`).join(' ') : '—'}${support}</td><td>${esc(r.status)}${r.signoff ? `<br><span class=mono style='font-size:11px'>${esc(r.signoff)}</span>` : ''}${r.ratedBy ? `<br><span class=mono style='font-size:11px'>rated: ${esc(r.ratedBy)}</span>` : ''}</td></tr>`
             );
         })
@@ -777,6 +811,7 @@ export async function buildReport(id) {
         `<p><b>Scope:</b> ${esc(project.scope?.boundary || '')}</p>` +
         (project.intendedUse ? `<p><b>Intended purpose:</b> ${esc(project.intendedUse)}</p>` : '') +
         (project.foreseeableUse?.length ? `<p><b>Reasonably foreseeable use:</b></p><ul>${project.foreseeableUse.map((m) => `<li>${esc(m)}</li>`).join('')}</ul>` : '') +
+        (schemeResolution.warning ? `<div class='warn' role='alert'>${esc(schemeResolution.warning)} Risk-axis values are shown without classification.</div>` : '') +
         `<h2>Traceability matrix</h2><div class='trace-note'>This matrix shows the full chain from protected asset to assessed threat, required security response, implemented countermeasure, residual risk and linked evidence. Machine-readable exports are written alongside the report as <code>report/traceability.csv</code>, <code>report/traceability.json</code> and <code>${esc(sbomFile)}</code>.</div>` +
         `<table><tr><th>Asset</th><th>C/I/A/S</th><th>Threat</th><th>Initial</th><th>Requirement</th><th>Control</th><th>Residual</th><th>Evidence</th><th>Status</th></tr>${traceRows}</table>` +
         `<h2>Data flow diagram (all layers)</h2>${dfdHtml}` +
@@ -787,6 +822,7 @@ export async function buildReport(id) {
         `<h2>Attacker profiles</h2><ul>${atk}</ul>` +
         (assumptionSection ? `<h2>Assumptions</h2>${assumptionSection}` : '') +
         `<h2>Assets</h2><ul>${assets}</ul>` +
+        riskSchemeSection +
         (ifaceList ? `<h2>External interfaces</h2><ul>${ifaceList}</ul>` : '') +
         (reqRows ? `<h2>Security requirements</h2><table><tr><th>ID</th><th>Requirement</th><th>Standard / SL·FR</th><th>From threats</th><th>Satisfied by</th></tr>${reqRows}</table>` : '') +
         `<h2>Countermeasures</h2><ul>${cmrows}</ul>` +

@@ -74,6 +74,8 @@ export interface Project {
     scope?: Scope;
     slTarget?: string;
     riskScoringMethod?: 'exposure-exploitability-impact' | 'cost-based';
+    riskSchemeId?: string;
+    riskSchemeFingerprint?: string;
     costFactorWeights?: Partial<Record<keyof AdCost, number>>;
     accessProbabilities?: Partial<Record<1 | 2 | 3 | 4 | 5, number>>;
     likelihoodProbabilityThresholds?: Partial<Record<2 | 3 | 4 | 5, number>>; // lower probability bounds for L2-L5; L1 covers remaining positive values
@@ -83,6 +85,7 @@ export interface Project {
     sbom?: SbomConfig;
     rigorousMode?: boolean; // when on, the structured Bug Bar + factor rubric is mandatory per threat
     acceptableRisk?: number; // residual risk at or below this value is acceptable; above it the checker warns (default 12)
+    acceptableLevel?: string;
     acceptedNotices?: string[]; // keys of plausibility notices the user has explicitly accepted (no longer open points)
     reportOptions?: ReportOptions;
     steps?: Record<string, string>;
@@ -299,6 +302,8 @@ export interface Threat {
     interfaceRefs?: string[]; // additional affected interfaces/vectors assessed together with the same threat
     interfaceLabel?: string; // free-text interface/vector when not in the interface list
     impactDimensions?: Objectives; // Bug Bar per-dimension impact (C/I/A/Safety); impact = max(...)
+    likelihoodCriteria?: Record<string, number | null>;
+    impactCriteria?: Record<string, number | null>;
     // Likelihood = f(Exposure × Exploitability), decomposing a single coarse "likelihood" into two
     // objectively-rateable factors (both 1-5, higher = more likely). Exposure = attack-surface
     // reachability; Exploitability = ease of exploitation once the surface is reached.
@@ -336,6 +341,8 @@ export interface CmAddress {
     threat: string;
     residualLikelihood?: number;
     residualImpact?: number;
+    likelihoodCriteria?: Record<string, number | null>;
+    impactCriteria?: Record<string, number | null>;
     attackerRef?: string;
     interfaceRef?: string;
     interfaceRefs?: string[];
@@ -469,8 +476,55 @@ export interface RiskBand {
     min: number;
     max: number;
     color: string;
+    lookup?: boolean; // true for lookup schemes: min/max are the level rank, not a product-score range
 }
-export interface RiskScheme {
+export type RiskDerivationKind = 'criteria-max' | 'geometric-mean' | 'cost-based' | 'manual';
+export interface RiskAxisLevel {
+    value: number;
+    code: string;
+    label: string;
+    description?: string;
+}
+export interface RiskCriterion {
+    id: string;
+    label: string;
+    levelTexts: Record<string, string>;
+}
+export interface RiskLevel {
+    id: string;
+    label: string;
+    rank: number;
+    color: string;
+    treatment: 'auto-accept' | 'optional' | 'required' | 'immediate';
+    acceptanceBy?: 'management';
+    description?: string;
+}
+export interface RiskSchemeV2 {
+    schemaVersion: 2;
+    id: string;
+    title: string;
+    version: string;
+    description?: string;
+    likelihood: {
+        levels: RiskAxisLevel[];
+        derivation: { kind: RiskDerivationKind; probabilityThresholds?: Record<string, number> };
+        criteria: RiskCriterion[];
+    };
+    impact: {
+        levels: RiskAxisLevel[];
+        derivation: { kind: 'criteria-max' | 'manual' };
+        criteria: RiskCriterion[];
+    };
+    classification: {
+        kind: 'lookup' | 'product-bands';
+        levels: RiskLevel[];
+        matrix?: Record<string, Record<string, string>>;
+        bands?: { level: string; min: number; max: number }[];
+    };
+    highLevel?: string;
+    acceptance?: { defaultLevel: string };
+}
+export interface LegacyRiskScheme {
     likelihood: {
         scale: { score: number; label: string; desc: string }[];
         factors: string[];
@@ -482,3 +536,4 @@ export interface RiskScheme {
     cvss?: { role?: string; suggestion?: string };
     attackTree?: { description?: string; costFactors?: { key: string; label: string; weight: number }[] };
 }
+export type RiskScheme = RiskSchemeV2 | LegacyRiskScheme;

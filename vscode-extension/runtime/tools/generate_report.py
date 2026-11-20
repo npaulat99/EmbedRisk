@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """TRA report generator (zero dependencies). Mirrors tools/generate-report.mjs.
 Usage: python tools/generate_report.py <project-dir>"""
+import hashlib
 import html as html_lib
 import json, os, sys
 import textwrap
@@ -30,9 +31,98 @@ def resolve_project_path():
 
 proj, base = resolve_project_path()
 read = lambda p: json.loads((base / p).read_text(encoding="utf8"))
-scheme = json.loads((root / ".assets/knowledge-base/risk-scheme.json").read_text(encoding="utf8"))
 
 project = read("01-project-description/project.json")
+
+def normalize_scheme(source):
+    if source.get("schemaVersion") != 2:
+        raise ValueError("unsupported risk-scheme schema")
+
+    def axis(name):
+        value = source[name]
+        levels = []
+        for index, level in enumerate(value["levels"], 1):
+            if level.get("value") != index:
+                raise ValueError(f"{name} levels must be contiguous")
+            item = {key: level[key] for key in ("value", "code", "label")}
+            if "description" in level:
+                item["description"] = level["description"]
+            levels.append(item)
+        derivation = {"kind": value["derivation"]["kind"]}
+        if "probabilityThresholds" in value["derivation"]:
+            derivation["probabilityThresholds"] = dict(sorted(value["derivation"]["probabilityThresholds"].items(), key=lambda pair: int(pair[0])))
+        criteria = [{"id": item["id"], "label": item["label"], "levelTexts": item["levelTexts"]} for item in value["criteria"]]
+        return {"levels": levels, "derivation": derivation, "criteria": criteria}
+
+    likelihood, impact = axis("likelihood"), axis("impact")
+    classification_source = source["classification"]
+    levels = []
+    for level in classification_source["levels"]:
+        item = {key: level[key] for key in ("id", "label", "rank", "color", "treatment")}
+        for optional in ("acceptanceBy", "description"):
+            if optional in level:
+                item[optional] = level[optional]
+        levels.append(item)
+    classification = {"kind": classification_source["kind"], "levels": levels}
+    if classification["kind"] == "lookup":
+        classification["matrix"] = classification_source["matrix"]
+    elif classification["kind"] == "product-bands":
+        classification["bands"] = sorted(classification_source["bands"], key=lambda item: item["min"])
+    else:
+        raise ValueError("unsupported risk classification")
+    normalized = {
+        "schemaVersion": 2,
+        "id": source["id"],
+        "title": source["title"],
+        "version": source["version"],
+        "likelihood": likelihood,
+        "impact": impact,
+        "classification": classification,
+        "highLevel": source.get("highLevel", "high"),
+    }
+    if "description" in source:
+        normalized["description"] = source["description"]
+    if "acceptance" in source:
+        normalized["acceptance"] = {"defaultLevel": source["acceptance"]["defaultLevel"]}
+    return normalized
+
+def stable_json(value):
+    if isinstance(value, dict):
+        return "{" + ",".join(json.dumps(key, ensure_ascii=False) + ":" + stable_json(value[key]) for key in sorted(value)) + "}"
+    if isinstance(value, list):
+        return "[" + ",".join(stable_json(item) for item in value) + "]"
+    if isinstance(value, float) and value.is_integer():
+        return str(int(value))
+    return json.dumps(value, ensure_ascii=False, separators=(",", ":"))
+
+workspace_root = root if (root / "webapp").is_dir() else root.parents[1]
+builtin_dir = root / "webapp" / ".assets" / "knowledge-base" if (root / "webapp").is_dir() else root / ".assets" / "knowledge-base"
+asset_root = builtin_dir.parent
+scheme_directory = Path(os.environ.get("EMBEDRISK_RISK_SCHEME_DIRECTORY") or workspace_root / "webapp" / ".local" / "risk-schemes")
+schemes = {}
+for path in sorted(builtin_dir.glob("risk-scheme-5x5-*.json")):
+    try:
+        candidate = normalize_scheme(json.loads(path.read_text(encoding="utf8")))
+        schemes[candidate["id"]] = candidate
+    except (OSError, ValueError, KeyError, TypeError, json.JSONDecodeError):
+        continue
+for path in sorted(scheme_directory.glob("*.json")) if scheme_directory.is_dir() else []:
+    try:
+        candidate = normalize_scheme(json.loads(path.read_text(encoding="utf8")))
+        if not candidate["id"].startswith("builtin:"):
+            schemes[candidate["id"]] = candidate
+    except (OSError, ValueError, KeyError, TypeError, json.JSONDecodeError):
+        continue
+scheme_fingerprints = {scheme_id: hashlib.sha256(stable_json(candidate).encode("utf8")).hexdigest() for scheme_id, candidate in schemes.items()}
+legacy_ids = {"exposure-exploitability-impact": "builtin:5x5-exposure", "cost-based": "builtin:5x5-cost"}
+scheme_id = project.get("riskSchemeId") or legacy_ids.get(project.get("riskScoringMethod"), "builtin:5x5-cost")
+scheme = schemes.get(scheme_id)
+scheme_warning = None
+if scheme is None:
+    scheme_warning = f"Risk scheme '{scheme_id}' is unavailable. Raw stored L/I values are shown."
+elif project.get("riskSchemeFingerprint") and project["riskSchemeFingerprint"] != scheme_fingerprints[scheme_id]:
+    scheme_warning = f"Risk scheme '{scheme_id}' has changed since this project was rated. Raw stored L/I values are shown."
+    scheme = None
 _DEFAULT_STEPS = {
     "02-assumptions": "02-assumptions/assumptions.json",
     "03-system-assets": "03-system-assets/system.json",
@@ -78,10 +168,50 @@ def dfd_svg(dfd, layer=1):
             out.append(f"<line x1='{x1+60}' y1='{y1+25}' x2='{x2+60}' y2='{y2+25}' stroke='#666' marker-end='url(#a)'/><text x='{(x1+x2)/2+60}' y='{(y1+y2)/2+20}' font-size='9' fill='#666'>{f.get('label','')}</text>")
     return (f"<svg width='720' height='400' xmlns='http://www.w3.org/2000/svg'><defs><marker id='a' markerWidth='8' markerHeight='8' refX='7' refY='3' orient='auto'><path d='M0,0L7,3L0,6' fill='#666'/></marker></defs>{''.join(out)}</svg>")
 
-def band(r):
-    if r <= 0:
-        return {"name": "None", "min": 0, "max": 0, "color": "#6b7280"}
-    return next((b for b in scheme["matrix"]["bands"] if b["min"] <= r <= b["max"]), scheme["matrix"]["bands"][0])
+def classify(likelihood, impact):
+    if scheme is None or not isinstance(likelihood, int) or not isinstance(impact, int) or likelihood <= 0 or impact <= 0:
+        return None
+    classification = scheme["classification"]
+    score = likelihood * impact
+    if classification["kind"] == "lookup":
+        level_id = classification["matrix"].get(str(impact), {}).get(str(likelihood))
+    else:
+        band = next((item for item in classification["bands"] if item["min"] <= score <= item["max"]), None)
+        level_id = band["level"] if band else None
+    level = next((item for item in classification["levels"] if item["id"] == level_id), None)
+    return {**level, "score": score} if level else None
+
+def _esc(value):
+    return html_lib.escape(str(value), quote=True)
+
+def risk_cell(likelihood, impact):
+    if scheme is None:
+        return f"L{_esc(likelihood if likelihood is not None else '—')} / I{_esc(impact if impact is not None else '—')} (unavailable)"
+    level = classify(likelihood, impact)
+    if not level:
+        return "None"
+    if scheme["classification"]["kind"] == "lookup":
+        return _esc(level["label"])
+    return f"{likelihood}x{impact}=<b style='color:{_esc(level['color'])}'>{level['score']} {_esc(level['label'])}</b>"
+
+def risk_scheme_html():
+    if scheme is None:
+        return f"<div class='warn'><b>Risk classification unavailable:</b> {_esc(scheme_warning)} Raw stored L/I values are shown.</div>"
+    likelihoods = scheme["likelihood"]["levels"]
+    impacts = list(reversed(scheme["impact"]["levels"]))
+    matrix_rows = []
+    for impact_level in impacts:
+        cells = []
+        for likelihood_level in likelihoods:
+            level = classify(likelihood_level["value"], impact_level["value"])
+            label = level["label"] if scheme["classification"]["kind"] == "lookup" else level["score"]
+            cells.append(f"<td style='background:{_esc(level['color'])};color:#fff' title='{_esc(likelihood_level['code'])} x {_esc(impact_level['code'])} · {_esc(level['label'])}'>{_esc(label)}</td>")
+        matrix_rows.append(f"<tr><th>{_esc(impact_level['code'])} · {_esc(impact_level['label'])}</th>{''.join(cells)}</tr>")
+    legend = "".join(f"<span style='display:inline-flex;align-items:center;gap:4px;margin-right:10px'><i style='display:inline-block;width:10px;height:10px;background:{_esc(level['color'])}'></i>{_esc(level['label'])}</span>" for level in scheme["classification"]["levels"])
+    headers = "".join(f"<th>{_esc(level['code'])}</th>" for level in likelihoods)
+    return (f"<h2>Risk scheme</h2><p><b>{_esc(scheme['title'])}</b> · v{_esc(scheme['version'])} · fingerprint "
+            f"<code>{scheme_fingerprints[scheme_id]}</code></p><div>{legend}</div>"
+            f"<table aria-label='Active risk matrix'><thead><tr><th>Impact / Likelihood</th>{headers}</tr></thead><tbody>{''.join(matrix_rows)}</tbody></table>")
 
 def residual(t):
     # Mirrors webapp/server/src/risk.js: unfeasible -> 0/0; only selected countermeasures count;
@@ -151,7 +281,7 @@ def _check(inst, sch, path, out):
         if "minimum" in sch and inst < sch["minimum"]: out.append(f"{path}: below minimum")
         if "maximum" in sch and inst > sch["maximum"]: out.append(f"{path}: above maximum")
     return out
-_sd = root / ".assets/schema"
+_sd = asset_root / "schema"
 for inst, sname in [(project, "tra-project"), (ass, "assumptions"), (sys_def, "system"), (dfd, "dfd"), ({"threats": threats}, "threats"), ({"countermeasures": cms}, "countermeasures")]:
     try:
         for e in _check(inst, json.loads((_sd / f"{sname}.schema.json").read_text(encoding="utf8")), "", [])[:8]:
@@ -166,14 +296,16 @@ def cell(l, i, v):
 rows = ""
 for t in threats:
     unf = t.get("status") == "unfeasible"; na = "<b>n/a (unfeasible)</b>"
-    r = 0 if t.get("status") == "unfeasible" else t["likelihood"] * t["impact"]; rl, ri = residual(t); rr = rl * ri
+    rl, ri = residual(t)
     classification = [
         f"<b>Classification:</b> {html_lib.escape(str(t.get('classification') or '—'), quote=True)}",
         f"<b>Responsibility:</b> {html_lib.escape(str(t.get('responsibility') or '—'), quote=True)}",
     ]
     if t.get("deploymentConstraints"):
         classification.append(f"<b>Deployment constraints:</b> {html_lib.escape(str(t['deploymentConstraints']), quote=True)}")
-    rows += f"<tr><td>{html_lib.escape(str(t['id']), quote=True)}</td><td>{html_lib.escape(str(t['title']), quote=True)}</td><td>{html_lib.escape(''.join(t['stride']), quote=True)}</td><td>{'<br>'.join(classification)}</td><td>{na if unf else cell(t['likelihood'], t['impact'], r)}</td><td>{na if unf else cell(rl, ri, rr)}</td><td>{html_lib.escape(str(t['status']), quote=True)}</td></tr>"
+    initial = na if unf else risk_cell(t.get("likelihood"), t.get("impact"))
+    remaining = na if unf else risk_cell(rl, ri)
+    rows += f"<tr><td>{html_lib.escape(str(t['id']), quote=True)}</td><td>{html_lib.escape(str(t['title']), quote=True)}</td><td>{html_lib.escape(''.join(t['stride']), quote=True)}</td><td>{'<br>'.join(classification)}</td><td>{initial}</td><td>{remaining}</td><td>{html_lib.escape(str(t['status']), quote=True)}</td></tr>"
 
 assets = "".join(f"<li>{a['name']} (C{a['objectives']['confidentiality']}/I{a['objectives']['integrity']}/A{a['objectives']['availability']}/S{a['objectives']['safety']})</li>" for a in sys_def["assets"])
 def cap_label(v):
@@ -183,9 +315,6 @@ def cap_label(v):
 
 atk = "".join(f"<li><b>{html_lib.escape(str(a.get('name','')), quote=True)}</b> {html_lib.escape(cap_label(a.get('capability')), quote=True)}, {html_lib.escape(str(a.get('access','—')), quote=True)}: {html_lib.escape(str(a.get('text','')), quote=True)}</li>" for a in ass["attacker"])
 cmrows = "".join(f"<li><b>{c['id']}</b> {c['title']} → {', '.join(a['threat'] for a in c['addresses'])} ({c.get('status','')})</li>" for c in cms)
-
-def _esc(s):
-    return html_lib.escape(str(s), quote=True)
 
 def _tree_ul(node):
     kids = node.get("children") or []
@@ -229,6 +358,7 @@ html = (f"<!doctype html><meta charset=utf8><title>TRA {project['title']}</title
         f"<p><b>Scope:</b> {project['scope'].get('boundary','')}</p>"
         f"<h2>Data flow diagram (layer 1)</h2>{dfd_svg(dfd)}"
         f"<h2>Attacker profiles</h2><ul>{atk}</ul><h2>Assets</h2><ul>{assets}</ul>"
+        f"{risk_scheme_html()}"
         f"<h2>Threats &amp; risk</h2><table><tr><th>ID</th><th>Threat</th><th>STRIDE</th><th>Classification</th><th>Initial</th><th>Residual</th><th>Status</th></tr>{rows}</table>"
         f"<h2>Countermeasures</h2><ul>{cmrows}</ul>"
         f"{trees_section}"

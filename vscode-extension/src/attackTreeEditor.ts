@@ -1,4 +1,5 @@
 import * as vscode from "vscode";
+import { loadRiskSchemes, resolveProjectRiskScheme } from "./riskSchemes";
 
 // Native attack-defense tree editor (optional artifact). Edits 07-attack-trees/attack-trees.json,
 // a single document holding many trees (schema-identical to the tra-webapp). Each tree decomposes a
@@ -6,7 +7,7 @@ import * as vscode from "vscode";
 // defence/vulnerability nodes. Deterministic metrics are derived bottom-up. Two-way file sync.
 export class AttackTreeEditor implements vscode.CustomTextEditorProvider {
   public pendingTreeId: string | undefined;
-  constructor(private extUri: vscode.Uri) { }
+  constructor(private extUri: vscode.Uri, private globalStorageUri: vscode.Uri) { }
 
   async resolveCustomTextEditor(doc: vscode.TextDocument, panel: vscode.WebviewPanel) {
     const media = vscode.Uri.joinPath(this.extUri, "media");
@@ -25,11 +26,19 @@ export class AttackTreeEditor implements vscode.CustomTextEditorProvider {
       const cms = ((await rd("08-countermeasures/countermeasures.json", { countermeasures: [] })).countermeasures || []).map((c: any) => ({ id: c.id, title: c.title, status: c.status }));
       const threats = ((await rd("06-threats/threats.json", { threats: [] })).threats || []).map((t: any) => ({ id: t.id, title: t.title }));
       const project = await rd("01-project-description/project.json", {});
-      return { cms, threats, costFactorWeights: project?.costFactorWeights };
+      const registry = await loadRiskSchemes({ extensionUri: this.extUri, globalStorageUri: this.globalStorageUri });
+      const selection = resolveProjectRiskScheme(project, registry);
+      const scheme = selection.scheme;
+      return {
+        cms, threats, costFactorWeights: project?.costFactorWeights,
+        likelihoodDerivationKind: scheme?.likelihood?.derivation?.kind,
+        probabilityThresholds: { ...(scheme?.likelihood?.derivation?.probabilityThresholds || {}), ...(project?.likelihoodProbabilityThresholds || {}) },
+        schemeWarning: selection.warning,
+      };
     };
 
     let lastText = "";
-    const post = async () => { const r = await readRefs(); const selectId = this.pendingTreeId; this.pendingTreeId = undefined; panel.webview.postMessage({ type: "load", doc: doc.getText() || '{"trees":[]}', cms: r.cms, threats: r.threats, costFactorWeights: r.costFactorWeights, selectId }); };
+    const post = async () => { const r = await readRefs(); const selectId = this.pendingTreeId; this.pendingTreeId = undefined; panel.webview.postMessage({ type: "load", doc: doc.getText() || '{"trees":[]}', cms: r.cms, threats: r.threats, costFactorWeights: r.costFactorWeights, likelihoodDerivationKind: r.likelihoodDerivationKind, probabilityThresholds: r.probabilityThresholds, schemeWarning: r.schemeWarning, selectId }); };
     const save = async (text: string) => {
       lastText = text;
       const ed = new vscode.WorkspaceEdit();
@@ -43,7 +52,16 @@ export class AttackTreeEditor implements vscode.CustomTextEditorProvider {
       if (e.document.uri.toString() === doc.uri.toString() && e.document.getText() !== lastText) post();
       if (e.document.uri.toString() === projectUri.toString()) {
         // Use the edited text (which may not be saved yet), without resetting tree selection/history.
-        try { panel.webview.postMessage({ type: "weights", costFactorWeights: JSON.parse(e.document.getText())?.costFactorWeights }); }
+        try {
+          const project = JSON.parse(e.document.getText());
+          void readRefs().then((refs) => panel.webview.postMessage({
+            type: "riskConfig",
+            costFactorWeights: project?.costFactorWeights,
+            likelihoodDerivationKind: refs.likelihoodDerivationKind,
+            probabilityThresholds: { ...(refs.probabilityThresholds || {}), ...(project?.likelihoodProbabilityThresholds || {}) },
+            schemeWarning: refs.schemeWarning,
+          }));
+        }
         catch { /* Keep the last valid weights while project JSON is incomplete. */ }
       }
     });
@@ -118,7 +136,7 @@ const COST_LEVELS={
   prep:[[1,'None'],[2,'Software setup'],[3,'Test environment'],[4,'Procure'],[5,'Infrastructure']],
   abort:[[1,'Robust'],[2,'Rare'],[3,'Moderate'],[4,'Frequent'],[5,'Very Likely']]
 };
-let doc={trees:[]}, ti=0, focus=null, cms=[], threats=[], costFactorWeights;
+let doc={trees:[]}, ti=0, focus=null, cms=[], threats=[], costFactorWeights, likelihoodDerivationKind='cost-based', probabilityThresholds={}, schemeWarning=null;
 const $=id=>document.getElementById(id);
 function esc(s){return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
 function tree(){return doc.trees[ti];}
@@ -148,7 +166,7 @@ function drawCanvas(){
   var r=M.render(t,focus);
   cv.setAttribute('width',Math.max(r.width,400));cv.setAttribute('height',Math.max(r.height,180));cv.innerHTML=r.svg;
   var m=M.evaluate(t.root,cmMap(),costFactorWeights);
-  $('metrics').textContent='success ≈ '+Math.round(m.prob*100)+'% · suggests likelihood '+M.likelihoodFromProb(m.prob)+' · access '+m.accessReq+' · skill '+EmbedRiskAttackerScale.actorLevelLabel(m.skillReq)+' · '+m.defenses+' defence(s)';
+  $('metrics').textContent=schemeWarning||('success ≈ '+Math.round(m.prob*100)+'% · '+(likelihoodDerivationKind==='cost-based'?'cost-based likelihood proposal L'+M.likelihoodFromProb(m.prob,probabilityThresholds):'probability is informational for this risk scheme')+' · access '+m.accessReq+' · skill '+EmbedRiskAttackerScale.actorLevelLabel(m.skillReq)+' · '+m.defenses+' defence(s)');
 }
 function renderTreeSel(){
   $('treesel').innerHTML=doc.trees.map(function(t,i){var refs=M.threatRefsOf(t);var pfx=refs.length?(refs.join(', ')+' \u00b7 '):'';return '<option value="'+i+'"'+(i===ti?' selected':'')+'>'+esc(pfx+(t.title||t.id))+'</option>';}).join('')||'<option>(no trees)</option>';
@@ -234,7 +252,7 @@ window.addEventListener('keydown',function(e){
   else if(e.key==='e'||e.key==='F2'){rename();e.preventDefault();}
   else if(e.key==='d'||e.key==='Delete'){del();e.preventDefault();}
 });
-window.addEventListener('message',function(ev){var m=ev.data;if(m.type==='weights'){costFactorWeights=m.costFactorWeights;drawCanvas();}if(m.type==='load'){costFactorWeights=m.costFactorWeights;try{doc=JSON.parse(m.doc);}catch(_){doc={trees:[]};}if(!doc.trees)doc.trees=[];if(m.cms)cms=m.cms;if(m.threats)threats=m.threats;if(m.selectId){var si=doc.trees.findIndex(function(t){return t.id===m.selectId;});if(si>=0){ti=si;focus=null;}}if(ti>=doc.trees.length)ti=0;var r=root();if(r&&!M.find(r,focus))focus=r.id;baseState=snap();updUndo();draw();}});
+window.addEventListener('message',function(ev){var m=ev.data;if(m.type==='weights'||m.type==='riskConfig'){costFactorWeights=m.costFactorWeights;likelihoodDerivationKind=m.likelihoodDerivationKind||likelihoodDerivationKind;probabilityThresholds=m.probabilityThresholds||probabilityThresholds;schemeWarning=m.schemeWarning||null;drawCanvas();}if(m.type==='load'){costFactorWeights=m.costFactorWeights;likelihoodDerivationKind=m.likelihoodDerivationKind||'cost-based';probabilityThresholds=m.probabilityThresholds||{};schemeWarning=m.schemeWarning||null;try{doc=JSON.parse(m.doc);}catch(_){doc={trees:[]};}if(!doc.trees)doc.trees=[];if(m.cms)cms=m.cms;if(m.threats)threats=m.threats;if(m.selectId){var si=doc.trees.findIndex(function(t){return t.id===m.selectId;});if(si>=0){ti=si;focus=null;}}if(ti>=doc.trees.length)ti=0;var r=root();if(r&&!M.find(r,focus))focus=r.id;baseState=snap();updUndo();draw();}});
 vs.postMessage({type:'ready'});
 </script></body></html>`;
   }

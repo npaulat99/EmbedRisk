@@ -1,5 +1,5 @@
 ---
-description: "Read-only TRA subagent. Use to identify STRIDE threat scenarios and propose Likelihood x Impact risk ratings for an EmbedRisk project's assets, components, and interfaces, with rationale tied to evidence in the project files and knowledge-base. Never writes to threats.json directly."
+description: "Read-only TRA subagent. Use to identify STRIDE threat scenarios and propose active-risk-scheme ratings for an EmbedRisk project's assets, components, and interfaces, with rationale tied to project evidence and the knowledge base. Never writes to threats.json directly."
 tools: [read, search]
 user-invocable: false
 ---
@@ -28,29 +28,37 @@ exposure level), say so explicitly instead of guessing a number.
 For each proposed threat, use the `Threat` schema field names exactly (see
 [.github/instructions/tra-json-editing.instructions.md](../instructions/tra-json-editing.instructions.md)):
 `title`, `stride` (subset of S/T/R/I/D/E), `components`, `assets`, `attackerRef`, `interfaceRef`,
-`likelihood` (1-5), `impact` (1-5), `likelihoodRationale`, `impactRationale`.
+`likelihood`, `impact`, `likelihoodRationale`, and `impactRationale`.
 
-Read `project.riskScoringMethod` before rating threats. Both schemes retain the common 1-5
-`likelihood` and `impact` fields because they drive the shared risk matrix and traceability chain.
-For `exposure-exploitability-impact`, assess `likelihoodFactors` (`exposure` and
-`exploitability`) and `impactDimensions` when rigorous mode is enabled. For `cost-based`, also
-assess `requiredSkill`, `requiredAccess`, every `costFactors` dimension (`time`, `exploitability`,
-`window`, `detection`, `notoriety`, `prep`, `abort`), and a `costRationales` entry for each one.
-Use the project's cost weights, access probabilities, and likelihood thresholds when available.
-Report the calculated `costLikelihood` (0-1) and the resulting `costLikelihoodProposal` (1-5),
-then state whether the selected matrix `likelihood` agrees with that proposal. Do not invent missing
-weights, thresholds, attacker capability, or cost evidence; turn each missing item into a focused
-question for the Facilitator.
+Resolve `project.riskSchemeId` and `riskSchemeFingerprint` before assigning ratings. Use the active
+scheme's axis values, codes, labels, criteria, and classification. Built-in schemes are 5x5, but a
+local scheme may have different axis sizes; never assume a 1-5 range. If the scheme is unavailable or
+stale, do not invent classified ratings: report the raw evidence and ask the Facilitator to resolve
+the scheme.
+
+For criteria-based schemes, assess the named `likelihoodCriteria` and `impactCriteria` using the
+scheme's criterion IDs and value ranges, then state the resulting axis value and which evidence
+supports the highest factor or other configured derivation. For the built-in exposure scheme, assess
+`likelihoodFactors` (`exposure` and `exploitability`) and `impactDimensions` when rigorous mode is
+enabled. When the active likelihood derivation is `cost-based`, also assess `requiredSkill`,
+`requiredAccess`, every `costFactors` dimension (`time`, `exploitability`, `window`, `detection`,
+`notoriety`, `prep`, `abort`), and a `costRationales` entry for each one. Use the project's cost
+weights, access probabilities, and scheme probability thresholds when available. Report
+`costLikelihood` (0-1), its proposed active-scheme likelihood value, and whether the selected
+`likelihood` agrees. Do not invent missing weights, thresholds, attacker capability, matrix cells,
+or cost evidence; turn each missing item into a focused question for the Facilitator.
 
 Present each as:
 
 - **Threat**: title + STRIDE categories.
 - **Evidence**: the specific component/interface/attacker ids that justify it existing at all.
-- **Proposed rating**: likelihood, impact, each with one sentence of rationale referencing the
-  attacker's capability/access vs. the interface's exposure.
+- **Proposed rating**: likelihood and impact values with their scheme codes/labels, each with one
+  sentence of rationale referencing the attacker's capability/access vs. the interface's exposure.
 - **Cost-based assessment** (when selected): required access/skill, the seven cost-factor values,
   rationale for each factor, calculated probability, proposed likelihood, and any manual override.
 - **Confidence**: state if this is a strong or weak inference, and what would firm it up.
+
+For scheme design or scheme JSON changes, use [docs/RISK-SCHEMES.md](../../docs/RISK-SCHEMES.md).
 
 Do not propose a rating you cannot justify from cited evidence — flag it as an open question for the
 Facilitator to ask the user instead.

@@ -8,11 +8,12 @@ import { RiskPill, sortStride } from '../common';
 export default function ReviewPanel() {
     const data = useStore((s) => s.data)!;
     const scheme = useStore((s) => s.scheme);
+    const schemeWarning = useStore((s) => s.schemeWarning);
     const report = useStore((s) => s.report);
     const save = useStore((s) => s.save);
     const activeId = useStore((s) => s.activeId);
     const goto = useStore((s) => s.goto);
-    const allIssues = validate(data);
+    const allIssues = validate(data, scheme, schemeWarning);
     const accepted = data.project?.acceptedNotices || [];
     const open = openIssues(allIssues, accepted);
     const acceptedList = allIssues.filter((i) => isAccepted(i, accepted));
@@ -123,6 +124,7 @@ export default function ReviewPanel() {
                 </div>
             )}
 
+            {schemeWarning && <div className="settings-error-banner" role="alert">{schemeWarning} Risk fields are shown as stored axes without classification.</div>}
             <div className="card">
                 <h3>Plausibility check</h3>
                 <ul className="issues">
@@ -196,10 +198,10 @@ export default function ReviewPanel() {
                                         {sortStride(t.stride).join('')}
                                     </td>
                                     <td style={{ padding: 6 }}>
-                                        <RiskPill score={r.initial} band={r.initialBand} />
+                                        {schemeWarning ? `L${t.likelihood ?? '—'} / I${t.impact ?? '—'}` : <RiskPill score={r.initial} band={r.initialBand} />}
                                     </td>
                                     <td style={{ padding: 6 }}>
-                                        <RiskPill score={r.residual} band={r.residualBand} />
+                                        {schemeWarning ? `L${r.residualLikelihood ?? '—'} / I${r.residualImpact ?? '—'}` : <RiskPill score={r.residual} band={r.residualBand} />}
                                     </td>
                                     <td style={{ padding: 6, textTransform: 'capitalize' }}>{t.status}</td>
                                 </tr>

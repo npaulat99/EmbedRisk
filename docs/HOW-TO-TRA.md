@@ -112,6 +112,10 @@ Output: testable, traceable requirements linked to threats and controls.
 
 Identify threats (typically STRIDE-oriented), link them to affected elements, and rate initial risk (Likelihood x Impact).
 
+Use the scheme selected for the project: it defines valid likelihood and impact values, their
+criteria, and how each pair is classified. Do not assume every project uses a 1-5 scale or a fixed
+numeric high-risk threshold. To add a local scheme, follow the [risk-scheme guide](RISK-SCHEMES.md).
+
 Output: prioritized threat list with rationale.
 
 ### Step 07: Attack trees (optional but recommended for critical threats)
@@ -142,7 +146,7 @@ Output: auditable TRA baseline for release or milestone decisions.
 
 Before closing a TRA iteration, verify:
 
-- Every high and critical risk has a treatment decision.
+- Every risk at or above the active scheme's `highLevel` has a treatment decision.
 - Threats have clear links to assets and affected components.
 - Requirements are testable and mapped to controls.
 - Assumptions are explicit and dated (so they can be revisited later).

@@ -7,9 +7,10 @@
 //   - When a JSON file is edited externally, the backend pushes an {type:'artifact'}
 //     message which `applyArtifact` merges back into state — so the UI tracks the files live.
 import { create } from 'zustand';
-import type { LaunchConfig, ProjectData, ProjectSummary, RiskScheme, StepKey, ViewKey } from '../types';
+import type { LaunchConfig, ProjectData, ProjectSummary, RiskScheme, RiskSchemeV2, StepKey, ViewKey } from '../types';
 import { tutorialStorageKey } from '../tutorial/tutorialData';
 import { alignedManagedAttacker } from '../lib/slc';
+import { legacyRiskSchemeRegistry, schemeForProject } from '../lib/risk';
 
 const norm = (v: string | null | undefined) => String(v || '').toLowerCase().replace(/[^a-z0-9]+/g, '');
 const isPlaceholderComponentName = (label: string | undefined) => {
@@ -371,12 +372,29 @@ const applyTheme = (t: 'light' | 'dark') => {
     document.documentElement.dataset.theme = t;
 };
 
+function riskValuesChanged(step: StepKey, before: any, after: any): boolean {
+    const threatFields = ['likelihood', 'impact', 'likelihoodCriteria', 'impactCriteria', 'likelihoodFactors', 'impactDimensions', 'costFactors', 'costLikelihood', 'costLikelihoodProposal'];
+    if (step === 'threats') {
+        const values = (doc: any) => (doc?.threats || []).map((threat: any) => [threat.id, ...threatFields.map((field) => threat[field])]);
+        return JSON.stringify(values(before)) !== JSON.stringify(values(after));
+    }
+    if (step === 'countermeasures') {
+        const values = (doc: any) => (doc?.countermeasures || []).map((cm: any) => [cm.id, ...(cm.addresses || []).map((address: any) => [address.threat, address.residualLikelihood, address.residualImpact, address.residualLikelihoodCriteria, address.residualImpactCriteria])]);
+        return JSON.stringify(values(before)) !== JSON.stringify(values(after));
+    }
+    return false;
+}
+
 interface Store {
     connected: boolean;
     projects: ProjectSummary[];
     activeId: string | null;
     data: ProjectData | null;
     scheme: RiskScheme | null;
+    riskSchemes: RiskSchemeV2[];
+    riskSchemeFingerprints: Record<string, string>;
+    riskSchemeErrors: { file: string; message: string }[];
+    schemeWarning: string | null;
     kb: any | null;
     bugBar: any | null;
     theme: 'light' | 'dark';
@@ -431,6 +449,10 @@ export const useStore = create<Store>((set, get) => ({
     activeId: null,
     data: null,
     scheme: null,
+    riskSchemes: [],
+    riskSchemeFingerprints: {},
+    riskSchemeErrors: [],
+    schemeWarning: null,
     kb: null,
     bugBar: null,
     theme: 'light',
@@ -460,14 +482,17 @@ export const useStore = create<Store>((set, get) => ({
                 e.returnValue = '';
             }
         });
-        const [scheme, kb, bugBar, projects, config] = await Promise.all([
-            getJSON<RiskScheme>('/api/risk-scheme').catch(() => null),
+        const [registry, kb, bugBar, projects, config] = await Promise.all([
+            getJSON<{ schemes: RiskSchemeV2[]; fingerprints: Record<string, string>; errors: { file: string; message: string }[] }>('/api/risk-schemes').catch(async () => {
+                const legacyScheme = await getJSON<RiskScheme>('/api/risk-scheme').catch(() => null);
+                return legacyScheme ? legacyRiskSchemeRegistry(legacyScheme) : null;
+            }),
             getJSON<any>('/api/kb').catch(() => null),
             getJSON<any>('/api/bug-bar').catch(() => null),
             getJSON<ProjectSummary[]>('/api/projects').catch(() => []),
             getJSON<LaunchConfig>('/api/config').catch(() => ({ preselectProjectId: null })),
         ]);
-        set({ scheme, kb, bugBar, theme: saved, projects });
+        set({ riskSchemes: registry?.schemes || [], riskSchemeFingerprints: registry?.fingerprints || {}, riskSchemeErrors: registry?.errors || [], scheme: null, schemeWarning: null, kb, bugBar, theme: saved, projects });
         connect();
         if (projects.length) {
             const preferred = config?.preselectProjectId;
@@ -488,7 +513,8 @@ export const useStore = create<Store>((set, get) => ({
 
     async selectProject(id) {
         const data = await getJSON<ProjectData>(`/api/projects/${id}`);
-        set({ activeId: id, data, dfdPath: [], selectedNodeId: null, selectedEdgeId: null, ucDiagramId: null, ucSelection: null });
+        const selection = schemeForProject(data.project || {}, get().riskSchemes, get().riskSchemeFingerprints);
+        set({ activeId: id, data, ...selection, dfdPath: [], selectedNodeId: null, selectedEdgeId: null, ucDiagramId: null, ucSelection: null });
         const aligned = alignedManagedAttacker(data.project?.slTarget, data.assumptions?.attacker);
         if (aligned) get().save('assumptions', { ...data.assumptions, attacker: [aligned] });
         clearHistory();
@@ -589,6 +615,7 @@ export const useStore = create<Store>((set, get) => ({
     save(step, value) {
         const data = get().data;
         if (!data) return;
+        if (get().schemeWarning && riskValuesChanged(step, (data as any)[step], value)) return;
         if (!histSuppress) pushHistory(data, step);
         const nextData = { ...data, [step]: value } as ProjectData;
         if (step === 'project') {
@@ -613,7 +640,10 @@ export const useStore = create<Store>((set, get) => ({
         const enforced = ensureDeviceHousing(nextData.system, nextData.dfd);
         nextData.system = enforced.system;
         nextData.dfd = enforced.dfd;
-        set({ data: nextData });
+        const schemeSelection = step === 'project'
+            ? schemeForProject(nextData.project, get().riskSchemes, get().riskSchemeFingerprints)
+            : {};
+        set({ data: nextData, ...schemeSelection });
         const id = get().activeId;
         if (!id) return;
         clearTimeout(saveTimers[step]);
@@ -739,7 +769,11 @@ export const useStore = create<Store>((set, get) => ({
         const activeTag = (document.activeElement as HTMLElement | null)?.tagName;
         if (activeTag === 'INPUT' || activeTag === 'TEXTAREA') return;
         if (JSON.stringify((data as any)[step]) === JSON.stringify(value)) return;
-        set({ data: { ...data, [step]: value } });
+        const nextData = { ...data, [step]: value };
+        const schemeSelection = step === 'project'
+            ? schemeForProject(nextData.project, get().riskSchemes, get().riskSchemeFingerprints)
+            : {};
+        set({ data: nextData, ...schemeSelection });
     },
 
     async report() {

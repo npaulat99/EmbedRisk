@@ -534,14 +534,16 @@ ok("weight helpers match webapp defaults, normalization, zero/negative/nullish w
 ok("public stepProb retains unassessed=1 while weightedCost uses default cost=3",
   AtModel.stepProb() === 1 && AtModel.stepProb({}) === 1 && Math.abs(AtModel.weightedCost() - 3) < 1e-9);
 
-// Execute the actual calculator's pre-effect body and update callback, not copied formulas.
-// Loud anchors deliberately fail if the source moves: the React auto-effect is NOT our read API.
+// Execute the actual calculator's pre-render body and update callback, not copied formulas.
 const ThreatModel = require(path.join(root, "vscode-extension/media/threat-model.js"));
 const vm = require("node:vm");
 const calculatorSource = fs.readFileSync(path.join(root, "webapp/client/src/components/panels/RiskCalculator.tsx"), "utf8");
 const calculatorStart = calculatorSource.indexOf("function CostRiskCalculator(");
-const calculatorEnd = calculatorSource.indexOf("    useEffect(() => {", calculatorStart);
-assert(calculatorStart >= 0 && calculatorEnd > calculatorStart, "CostRiskCalculator pre-effect anchors changed");
+const calculatorEnd = calculatorSource.indexOf("    return (", calculatorStart);
+const calculatorComponentEnd = calculatorSource.indexOf("export default function RiskCalculator(", calculatorStart);
+assert(calculatorStart >= 0 && calculatorEnd > calculatorStart && calculatorComponentEnd > calculatorStart, "CostRiskCalculator pre-render anchors changed");
+assert(!calculatorSource.slice(calculatorStart, calculatorComponentEnd).includes("useEffect("), "CostRiskCalculator must not auto-write a proposal on mount");
+assert(calculatorSource.includes("Apply likelihood"), "CostRiskCalculator explicit apply action missing");
 const calculatorBody = calculatorSource.slice(calculatorStart, calculatorEnd);
 assert(calculatorBody.includes("const update = (patch: Partial<Threat>) => {") &&
   calculatorBody.includes("upd({ ...patch, status, costLikelihood:"), "CostRiskCalculator update anchor changed");
@@ -767,11 +769,32 @@ ok("band(0) is None", RiskModel.band(0, null).name === "None");
 
 /* ---------- Read-only matrix against the actual webapp client risk engine ---------- */
 const clientRiskModule = { exports: {} };
-require("node:vm").runInNewContext(esbuild.transformSync(
+const clientRiskEngineModule = { exports: {} };
+vm.runInNewContext(fs.readFileSync(path.join(root, "webapp/shared/riskEngine.js"), "utf8"), {
+  module: clientRiskEngineModule,
+  TextEncoder,
+});
+vm.runInNewContext(esbuild.transformSync(
   fs.readFileSync(path.join(root, "webapp/client/src/lib/risk.ts"), "utf8"),
   { loader: "ts", format: "cjs" },
-).code, { module: clientRiskModule });
+).code, {
+  module: clientRiskModule,
+  RiskEngine: clientRiskEngineModule.exports,
+  require: (id) => id === "@shared/riskEngine.js" ? clientRiskEngineModule.exports : require(id),
+});
 const clientRisk = clientRiskModule.exports;
+const legacyRiskScheme = JSON.parse(fs.readFileSync(path.join(root, "webapp/.assets/knowledge-base/risk-scheme.json"), "utf8"));
+const legacyRegistry = clientRisk.legacyRiskSchemeRegistry(legacyRiskScheme);
+ok("legacy risk API fallback: both built-in scoring methods resolve with fingerprints",
+  legacyRegistry.schemes.map((scheme) => scheme.id).sort().join(",") === "builtin:5x5-cost,builtin:5x5-exposure"
+  && legacyRegistry.schemes.every((scheme) => /^[a-f0-9]{64}$/.test(legacyRegistry.fingerprints[scheme.id])));
+const legacyDefault = clientRisk.schemeForProject({ riskScoringMethod: "cost-based" }, legacyRegistry.schemes, legacyRegistry.fingerprints);
+ok("legacy risk API fallback: project without scheme ID resolves to builtin:5x5-cost and stays editable",
+  legacyDefault.scheme?.id === "builtin:5x5-cost" && legacyDefault.schemeWarning === null);
+ok("legacy risk API fallback: exposure method resolves to builtin:5x5-exposure",
+  clientRisk.schemeForProject({ riskScoringMethod: "exposure-exploitability-impact" }, legacyRegistry.schemes, legacyRegistry.fingerprints).scheme?.id === "builtin:5x5-exposure");
+const legacyStale = clientRisk.schemeForProject({ riskScoringMethod: "cost-based", riskSchemeFingerprint: "stale" }, legacyRegistry.schemes, legacyRegistry.fingerprints);
+ok("legacy risk API fallback: explicit stale fingerprint remains read-only", legacyStale.scheme === null && /has changed/.test(legacyStale.schemeWarning));
 const matrixThreats = freezeThreatInput([
   { id: "M", likelihood: 5, impact: 5, future: { keep: ["metadata"] } },
   ...[[0, 4], [4, 0], [6, 4], [1.5, 4], [3, 2]].map(([likelihood, impact], n) => ({ id: "E" + n, likelihood, impact })),
@@ -807,18 +830,21 @@ ok("matrix: frozen threats/controls and unknown metadata remain unchanged", JSON
 
 /* ---------- Threat schema: cost-based feasibility includes unfeasible L0 ---------- */
 const Ajv2020 = require(path.join(root, "vscode-extension/node_modules/ajv/dist/2020"));
-const threatSchema = JSON.parse(fs.readFileSync(path.join(root, "vscode-extension/runtime/.assets/schema/threats.schema.json"), "utf8"));
+const schemaDir = path.join(root, "vscode-extension/runtime/.assets/schema");
+const threatSchema = JSON.parse(fs.readFileSync(path.join(schemaDir, "threats.schema.json"), "utf8"));
 const validateThreats = new Ajv2020().compile(threatSchema);
 const schemaThreat = { id: "T-SCHEMA", title: "Schema boundary", stride: ["S"], components: ["C1"], likelihood: 1, impact: 3 };
-for (const likelihood of [0, 1, 2, 3, 4, 5]) {
+for (const likelihood of [0, 1, 2, 3, 4, 5, 6, 9]) {
   ok("threat schema accepts likelihood " + likelihood,
     validateThreats({ threats: [{ ...schemaThreat, likelihood }] }));
 }
-for (const likelihood of [-1, 6, 1.5, "0", null]) {
+for (const likelihood of [-1, 1.5, "0", null]) {
   ok("threat schema rejects likelihood " + JSON.stringify(likelihood),
     !validateThreats({ threats: [{ ...schemaThreat, likelihood }] }));
   assert.ok(validateThreats.errors.some((error) => error.instancePath === "/threats/0/likelihood"));
 }
+ok("threat schema accepts scheme-specific criterion maps",
+  validateThreats({ threats: [{ ...schemaThreat, likelihoodCriteria: { custom: 6, other: null }, impactCriteria: { severity: 4 } }] }));
 for (const status of ["open", "mitigated", "accepted", "transferred", "unfeasible"]) {
   ok("threat schema accepts status " + status,
     validateThreats({ threats: [{ ...schemaThreat, status, likelihood: status === "unfeasible" ? 0 : 3 }] }));
@@ -827,9 +853,15 @@ ok("threat schema still rejects unknown status",
   !validateThreats({ threats: [{ ...schemaThreat, status: "unknown" }] }));
 ok("threat schema still requires likelihood",
   !validateThreats({ threats: [{ ...schemaThreat, likelihood: undefined }] }));
+const validateCountermeasures = new Ajv2020().compile(JSON.parse(fs.readFileSync(path.join(schemaDir, "countermeasures.schema.json"), "utf8")));
+ok("countermeasure schema accepts residual values beyond the built-in 5-level range",
+  validateCountermeasures({ countermeasures: [{ id: "CM-SCHEMA", title: "Dynamic range", addresses: [{ threat: "T-SCHEMA", residualLikelihood: 6, residualImpact: 7, likelihoodCriteria: { exposure: 6 }, impactCriteria: { safety: 7 } }] }] }));
+const validateProjectSchema = new Ajv2020().compile(JSON.parse(fs.readFileSync(path.join(schemaDir, "tra-project.schema.json"), "utf8")));
+ok("project schema accepts risk-scheme bindings and acceptable level",
+  validateProjectSchema({ traVersion: "1.0", device: { name: "Device", type: "Controller" }, steps: {}, riskSchemeId: "local:4x4", riskSchemeFingerprint: "a".repeat(64), acceptableLevel: "medium" }));
 
 /* ---------- Bundled knowledge-base drift (extension runtime vs webapp) ---------- */
-["risk-scheme.json", "bug-bar.json", "field-device-library.json"].forEach((file) => {
+["risk-scheme.json", "risk-scheme-5x5-exposure.json", "risk-scheme-5x5-cost.json", "bug-bar.json", "field-device-library.json"].forEach((file) => {
   const webappFile = path.join(root, "webapp/.assets/knowledge-base", file);
   const extFile = path.join(root, "vscode-extension/runtime/.assets/knowledge-base", file);
   const inSync = fs.existsSync(extFile) && fs.readFileSync(webappFile).equals(fs.readFileSync(extFile));
@@ -858,14 +890,473 @@ async function checkWebappParity() {
   threats.forEach((t, i) => {
     const ext = RiskModel.riskOf(t, cms, scheme);
     const web = webapp[i];
-    // webapp/server computeRisk does not zero the initial risk of unfeasible threats (the client's riskOf does),
-    // so initial parity is only checked for feasible threats; RiskModel follows the client.
-    if (t.status !== "unfeasible") {
-      ok("parity initial " + t.id, ext.initial === web.initial && ext.initialBand.name === web.initialBand.name);
-    }
+    ok("parity initial " + t.id, ext.initial === web.initial && ext.initialBand.name === web.initialBand.name);
     ok("parity residual " + t.id, ext.residual === web.residual && ext.residualBand.name === web.residualBand.name);
     ok("parity residual L/I " + t.id, ext.residualLikelihood === web.residualLikelihood && ext.residualImpact === web.residualImpact);
   });
+}
+
+async function runRiskGoldenTests() {
+  const { pathToFileURL } = require("node:url");
+  const fixtureDir = path.join(root, "tools/fixtures/RL-100");
+  const readFixture = (file) => JSON.parse(fs.readFileSync(path.join(fixtureDir, file), "utf8"));
+  const golden = JSON.parse(fs.readFileSync(path.join(root, "tools/fixtures/risk-golden.json"), "utf8"));
+  const project = readFixture("01-project-description/project.json");
+  const threats = readFixture("06-threats/threats.json").threats;
+  const cms = readFixture("08-countermeasures/countermeasures.json").countermeasures;
+  const scheme = JSON.parse(fs.readFileSync(path.join(root, "webapp/.assets/knowledge-base/risk-scheme.json"), "utf8"));
+  const serverRisk = await import(pathToFileURL(path.join(root, "webapp/server/src/risk.js")));
+  const serverReport = await import(pathToFileURL(path.join(root, "webapp/server/src/report.js")));
+  const serverValidation = await import(pathToFileURL(path.join(root, "webapp/server/src/validate.js")));
+  const riskSignature = (rows) => rows.map((row) => {
+    const initialBand = typeof row.initialBand === "string" ? row.initialBand : row.initialBand.name;
+    const residualBand = typeof row.residualBand === "string" ? row.residualBand : row.residualBand.name;
+    const residualAxes = row.residualLikelihood == null ? "" : `${row.residualLikelihood}x${row.residualImpact}=`;
+    return `${row.id || row.threat}:${row.initial}/${initialBand}>${residualAxes}${row.residual}/${residualBand}`;
+  });
+  const system = readFixture("03-system-assets/system.json");
+  const serverTrace = serverReport.buildTraceability({
+    system,
+    threats,
+    requirements: readFixture("05-requirements/requirements.json").requirements,
+    countermeasures: cms,
+    scheme,
+  });
+  const reportTemp = fs.mkdtempSync(path.join(os.tmpdir(), "embedrisk-risk-golden-"));
+  let runtimeTrace;
+  try {
+    const projectCopy = path.join(reportTemp, "RL-100");
+    fs.cpSync(fixtureDir, projectCopy, { recursive: true });
+    execFileSync(process.execPath, [path.join(root, "vscode-extension/runtime/tools/generate-report.mjs"), projectCopy], {
+      cwd: root,
+      stdio: "pipe",
+    });
+    runtimeTrace = JSON.parse(fs.readFileSync(path.join(projectCopy, "report/traceability.json"), "utf8"));
+  } finally {
+    fs.rmSync(reportTemp, { recursive: true, force: true });
+  }
+
+  const matrixSignature = (mode) => RiskModel.matrix(threats, cms, scheme, project.acceptableRisk, mode).cells
+    .map((cell) => `${cell.likelihood},${cell.impact}:${cell.score}:${cell.band.name}:${cell.ids.join("+")}`);
+  const exposureDerivation = threats.map((threat) =>
+    `${threat.id}:${RiskModel.deriveLikelihood(threat.likelihoodFactors)}x${RiskModel.deriveImpact(threat.impactDimensions)}`);
+  const validationInput = {
+    project: { acceptableRisk: 0 },
+    assumptions: { attacker: [{ id: "A1", access: "remote", capability: 3 }] },
+    system: { components: [{ id: "C1" }] },
+    threats: { threats: [{ id: "GOLD-RISK", likelihood: 3, impact: 5, stride: ["S"], components: ["C1"] }] },
+    requirements: { requirements: [{ id: "R1", derivedFromThreat: ["GOLD-RISK"] }] },
+  };
+  const validationMessages = serverValidation.validate(validationInput)
+    .filter((issue) => /risk|likelihood/i.test(issue.message))
+    .map(({ severity, message, key }) => ({ severity, message, key }));
+
+  ok("risk golden: RL-100 server risk scores and bands", JSON.stringify(riskSignature(serverRisk.computeRisk(scheme, threats, cms))) === JSON.stringify(golden.risk));
+  ok("risk golden: server report risk columns", JSON.stringify(riskSignature(serverTrace)) === JSON.stringify(golden.report));
+  ok("risk golden: runtime report risk columns", JSON.stringify(riskSignature(runtimeTrace)) === JSON.stringify(golden.report));
+  ok("risk golden: exposure-derived RL-100 criteria", JSON.stringify(exposureDerivation) === JSON.stringify(golden.exposureDerivation));
+  ok("risk golden: all initial matrix cells", JSON.stringify(matrixSignature("initial")) === JSON.stringify(golden.matrixInitial));
+  ok("risk golden: all residual matrix cells", JSON.stringify(matrixSignature("residual")) === JSON.stringify(golden.matrixResidual));
+  ok("risk golden: deterministic risk validation message", JSON.stringify(validationMessages) === JSON.stringify(golden.validation));
+
+  const unfeasible = serverRisk.computeRisk(scheme, [{ id: "UNFEASIBLE", likelihood: 4, impact: 5, status: "unfeasible" }], [])[0];
+  ok("risk golden: unfeasible threats have zero initial and residual risk", unfeasible.initial === 0
+    && unfeasible.initialBand.name === "None" && unfeasible.residual === 0 && unfeasible.residualBand.name === "None");
+}
+
+async function runRiskSchemeTests() {
+  const { pathToFileURL } = require("node:url");
+  const { MAX_SCHEME_BYTES, normalizeScheme, fingerprint } = await import(pathToFileURL(path.join(root, "webapp/shared/riskScheme.js")));
+  const Ajv2020 = require(path.join(root, "vscode-extension/node_modules/ajv/dist/2020"));
+  const schema = JSON.parse(fs.readFileSync(path.join(root, "webapp/shared/risk-scheme.schema.json"), "utf8"));
+  const validateSchema = new Ajv2020({ allErrors: true }).compile(schema);
+  const webappKb = path.join(root, "webapp/.assets/knowledge-base");
+  const extensionKb = path.join(root, "vscode-extension/runtime/.assets/knowledge-base");
+  const exposureFile = "risk-scheme-5x5-exposure.json";
+  const costFile = "risk-scheme-5x5-cost.json";
+  const exposure = JSON.parse(fs.readFileSync(path.join(webappKb, exposureFile), "utf8"));
+  const cost = JSON.parse(fs.readFileSync(path.join(webappKb, costFile), "utf8"));
+
+  for (const file of [exposureFile, costFile]) {
+    const webappFile = path.join(webappKb, file);
+    const extensionFile = path.join(extensionKb, file);
+    ok("risk scheme: " + file + " is mirrored byte-for-byte", fs.readFileSync(webappFile).equals(fs.readFileSync(extensionFile)));
+    const raw = JSON.parse(fs.readFileSync(webappFile, "utf8"));
+    ok("risk scheme: " + file + " matches v2 JSON Schema", validateSchema(raw));
+    const normalized = normalizeScheme(raw);
+    ok("risk scheme: " + file + " normalizes and fingerprints", normalized.id === raw.id && /^[a-f0-9]{64}$/.test(fingerprint(raw)));
+  }
+
+  const sharedSource = fs.readFileSync(path.join(root, "webapp/shared/riskScheme.js"), "utf8");
+  const vendoredSource = fs.readFileSync(path.join(root, "vscode-extension/src/vendor/risk-scheme.js"), "utf8");
+  const sharedImport = 'import { createHash } from "node:crypto";\n';
+  const sharedExport = "export { MAX_SCHEME_BYTES, normalizeScheme, fingerprint };";
+  const sharedBody = sharedSource.slice(sharedImport.length, sharedSource.trimEnd().length - sharedExport.length).trim();
+  ok("risk scheme: extension validator vendor matches webapp/shared/riskScheme.js (regenerate the ESM-to-CJS copy if this fails)",
+    sharedSource.startsWith(sharedImport) && vendoredSource.includes(sharedBody));
+
+  const clone = (value) => JSON.parse(JSON.stringify(value));
+  const lookup = clone(exposure);
+  lookup.id = "test-lookup";
+  const levels = lookup.classification.levels;
+  const bands = lookup.classification.bands;
+  const matrix = {};
+  for (const impact of lookup.impact.levels) {
+    matrix[String(impact.value)] = {};
+    for (const likelihood of lookup.likelihood.levels) {
+      const score = impact.value * likelihood.value;
+      matrix[String(impact.value)][String(likelihood.value)] = bands.find((band) => score >= band.min && score <= band.max).level;
+    }
+  }
+  lookup.classification = { kind: "lookup", levels, matrix };
+  const reversedKeys = (value) => Array.isArray(value)
+    ? value.map(reversedKeys)
+    : value && typeof value === "object"
+      ? Object.fromEntries(Object.entries(value).reverse().map(([key, item]) => [key, reversedKeys(item)]))
+      : value;
+  ok("risk scheme: fingerprints ignore JSON object key order", fingerprint(lookup) === fingerprint(reversedKeys(lookup)));
+
+  const rejects = (name, mutate, pattern) => {
+    const invalidScheme = clone(lookup);
+    mutate(invalidScheme);
+    assert.throws(() => normalizeScheme(invalidScheme), pattern, name);
+    passed++;
+  };
+  rejects("unknown derivation kind", (scheme) => { scheme.likelihood.derivation.kind = "unknown"; }, /unknown kind/);
+  rejects("non-contiguous axis values", (scheme) => { scheme.likelihood.levels[1].value = 3; }, /contiguous/);
+  rejects("lookup matrix gap", (scheme) => { delete scheme.classification.matrix["1"]["1"]; }, /matrix cell is missing/);
+  rejects("unknown lookup level", (scheme) => { scheme.classification.matrix["1"]["1"] = "unknown"; }, /unknown level id/);
+  rejects("duplicate classification ids", (scheme) => { scheme.classification.levels[1].id = scheme.classification.levels[0].id; }, /duplicate level id/);
+  rejects("invalid classification colour", (scheme) => { scheme.classification.levels[0].color = "#xyz"; }, /six-digit hex/);
+  rejects("oversized scheme", (scheme) => { scheme.description = "x".repeat(262145); }, /256 KB/);
+  assert.throws(() => normalizeScheme(JSON.stringify(lookup) + " ".repeat(MAX_SCHEME_BYTES)), /256 KB/);
+  passed++;
+  ok("risk scheme: local IDs are accepted", normalizeScheme(lookup, { local: true }).id === "test-lookup");
+  const builtinLookup = clone(lookup);
+  builtinLookup.id = "builtin:test-lookup";
+  assert.throws(() => normalizeScheme(builtinLookup, { local: true }), /prefix is reserved/);
+  passed++;
+  ok("risk scheme: built-in cost thresholds match existing defaults", JSON.stringify(cost.likelihood.derivation.probabilityThresholds)
+    === JSON.stringify({ 2: 0.3, 3: 0.5, 4: 0.7, 5: 0.9 }));
+
+  const reportScheme = clone(exposure);
+  reportScheme.id = "test-report-4x4";
+  reportScheme.likelihood.levels = reportScheme.likelihood.levels.slice(0, 4);
+  reportScheme.impact.levels = reportScheme.impact.levels.slice(0, 4);
+  for (const axis of [reportScheme.likelihood, reportScheme.impact]) {
+    for (const criterion of axis.criteria) {
+      for (const level of Object.keys(criterion.levelTexts)) if (Number(level) > 4) delete criterion.levelTexts[level];
+    }
+  }
+  const reportMatrix = {};
+  for (const impact of reportScheme.impact.levels) {
+    reportMatrix[String(impact.value)] = {};
+    for (const likelihood of reportScheme.likelihood.levels) {
+      const score = impact.value * likelihood.value;
+      reportMatrix[String(impact.value)][String(likelihood.value)] = bands.find((band) => score >= band.min && score <= band.max).level;
+    }
+  }
+  reportMatrix["3"]["2"] = "critical";
+  reportScheme.classification = { kind: "lookup", levels, matrix: reportMatrix };
+  const reportFingerprint = fingerprint(reportScheme);
+  const reportTemp = fs.mkdtempSync(path.join(os.tmpdir(), "embedrisk-report-schemes-"));
+  try {
+    const projectCopy = path.join(reportTemp, "project");
+    const schemeDirectory = path.join(reportTemp, "schemes");
+    fs.cpSync(path.join(root, "tools/fixtures/RL-100"), projectCopy, { recursive: true });
+    fs.mkdirSync(schemeDirectory);
+    fs.writeFileSync(path.join(schemeDirectory, "report-4x4.json"), JSON.stringify(reportScheme));
+    const projectFile = path.join(projectCopy, "01-project-description/project.json");
+    const project = JSON.parse(fs.readFileSync(projectFile, "utf8"));
+    project.riskSchemeId = reportScheme.id;
+    project.riskSchemeFingerprint = reportFingerprint;
+    fs.writeFileSync(projectFile, JSON.stringify(project));
+    const environment = { ...process.env, EMBEDRISK_RISK_SCHEME_DIRECTORY: schemeDirectory };
+    const python = process.env.PYTHON || (process.platform === "win32" ? "python" : "python3");
+    const generators = [
+      [process.execPath, path.join(root, "tools/generate-report.mjs")],
+      [python, path.join(root, "tools/generate_report.py")],
+      [process.execPath, path.join(root, "vscode-extension/runtime/tools/generate-report.mjs")],
+      [python, path.join(root, "vscode-extension/runtime/tools/generate_report.py")],
+    ];
+    for (const [command, script] of generators) {
+      execFileSync(command, [script, projectCopy], { cwd: root, env: environment, stdio: "pipe" });
+      const html = fs.readFileSync(path.join(projectCopy, "report/index.html"), "utf8");
+      const matrixHtml = html.match(/<table aria-label=["']Active risk matrix["']>([\s\S]*?)<\/table>/);
+      assert.ok(matrixHtml, `${script} omitted the active risk matrix`);
+      assert.strictEqual((matrixHtml[1].match(/<td style=/g) || []).length, 16, `${script} did not render a 4x4 matrix`);
+      assert.ok(html.includes(`<code>${reportFingerprint}</code>`), `${script} omitted the normalized scheme fingerprint`);
+    }
+    const serverProject = path.join(reportTemp, "server-project");
+    fs.cpSync(path.join(root, "tools/fixtures/RL-100"), serverProject, { recursive: true });
+    const serverProjectFile = path.join(serverProject, "01-project-description/project.json");
+    const serverProjectData = JSON.parse(fs.readFileSync(serverProjectFile, "utf8"));
+    serverProjectData.riskSchemeId = cost.id;
+    serverProjectData.riskSchemeFingerprint = fingerprint(cost);
+    fs.writeFileSync(serverProjectFile, JSON.stringify(serverProjectData));
+    const reportModuleUrl = pathToFileURL(path.join(root, "webapp/server/src/report.js")).href;
+    const serverProbe = `import { buildReport } from ${JSON.stringify(reportModuleUrl)}; const report = await buildReport("server-project"); process.stdout.write(report.html);`;
+    const serverHtml = execFileSync(process.execPath, ["--input-type=module", "-e", serverProbe], {
+      cwd: root,
+      env: { ...process.env, TRA_PROJECTS_DIR: reportTemp },
+      stdio: "pipe",
+    }).toString();
+    const serverMatrix = serverHtml.match(/<table aria-label=['"]Active risk matrix['"]>([\s\S]*?)<\/table>/);
+    assert.ok(serverMatrix, "webapp server report omitted the active risk matrix");
+    assert.strictEqual((serverMatrix[1].match(/<td style=/g) || []).length, 25);
+    assert.ok(serverHtml.includes(`<code>${fingerprint(cost)}</code>`), "webapp server report omitted the scheme fingerprint");
+    ok("risk reports: server and four generators render scheme matrices and fingerprints", true);
+  } finally {
+    fs.rmSync(reportTemp, { recursive: true, force: true });
+  }
+}
+
+function runRiskEngineTests() {
+  const canonicalPath = path.join(root, "webapp/shared/riskEngine.js");
+  const extensionPath = path.join(root, "vscode-extension/media/risk-engine.js");
+  const canonicalSource = fs.readFileSync(canonicalPath, "utf8");
+  const extensionSource = fs.readFileSync(extensionPath, "utf8");
+  ok("risk engine: extension vendor matches canonical source", canonicalSource === extensionSource);
+
+  const engineModule = { exports: {} };
+  vm.runInNewContext(canonicalSource, { module: engineModule, TextEncoder });
+  const browser = { window: {}, TextEncoder };
+  vm.runInNewContext(extensionSource, browser);
+  ok("risk engine: browser global exposes the same API", browser.window.RiskEngine
+    && Object.keys(browser.window.RiskEngine).sort().join(",") === Object.keys(engineModule.exports).sort().join(","));
+
+  const axisLevels = (prefix) => [1, 2, 3, 4].map((value) => ({ value, code: prefix + value, label: "Level " + value }));
+  const scheme = {
+    schemaVersion: 2,
+    id: "inline-engine-4x4",
+    title: "Inline 4x4",
+    version: "1",
+    likelihood: {
+      levels: axisLevels("E"),
+      derivation: { kind: "criteria-max" },
+      criteria: ["a", "b", "ignored"].map((id) => ({ id, label: id, levelTexts: {} })),
+    },
+    impact: {
+      levels: axisLevels("S"),
+      derivation: { kind: "criteria-max" },
+      criteria: ["x", "y", "ignored"].map((id) => ({ id, label: id, levelTexts: {} })),
+    },
+    classification: {
+      kind: "lookup",
+      levels: [
+        { id: "low", label: "low", rank: 1, color: "#2e7d32", treatment: "auto-accept" },
+        { id: "medium", label: "medium", rank: 2, color: "#f9a825", treatment: "optional" },
+        { id: "high", label: "high", rank: 3, color: "#ef6c00", treatment: "required", acceptanceBy: "management" },
+        { id: "critical", label: "critical", rank: 4, color: "#c62828", treatment: "immediate", acceptanceBy: "management" },
+      ],
+      matrix: {
+        "4": { "1": "medium", "2": "high", "3": "critical", "4": "critical" },
+        "3": { "1": "medium", "2": "high", "3": "high", "4": "critical" },
+        "2": { "1": "low", "2": "medium", "3": "medium", "4": "high" },
+        "1": { "1": "low", "2": "low", "3": "medium", "4": "medium" },
+      },
+    },
+    highLevel: "high",
+    acceptance: { defaultLevel: "medium" },
+  };
+  const engine = engineModule.exports.createRiskEngine(scheme);
+  const expected = {
+    "4": ["medium", "high", "critical", "critical"],
+    "3": ["medium", "high", "high", "critical"],
+    "2": ["low", "medium", "medium", "high"],
+    "1": ["low", "low", "medium", "medium"],
+  };
+  let allCellsMatch = true;
+  for (let impact = 1; impact <= 4; impact++) {
+    for (let likelihood = 1; likelihood <= 4; likelihood++) {
+      allCellsMatch = allCellsMatch && engine.classify(likelihood, impact).id === expected[String(impact)][likelihood - 1];
+    }
+  }
+  ok("risk engine: all 16 lookup cells classify by axes, not product", allCellsMatch
+    && engine.classify(2, 3).id === "high" && engine.classify(3, 2).id === "medium");
+  ok("risk engine: criteria-max derives each axis and leaves all-null unrated",
+    engine.deriveLikelihood({ likelihoodCriteria: { a: 2, b: 3, ignored: null } }) === 3
+    && engine.deriveImpact({ impactCriteria: { x: 1, y: 3, ignored: null } }) === 3
+    && engine.deriveLikelihood({ likelihoodCriteria: { a: null, b: null, ignored: null } }) === null);
+
+  const residualThreat = { id: "RESIDUAL", likelihood: 3, impact: 3 };
+  const residualCms = [{ addresses: [{ threat: "RESIDUAL", residualLikelihood: 1, residualImpact: 3 }] }];
+  ok("risk engine: residual control reduction classifies and meets acceptableLevel",
+    engine.riskOf(residualThreat, residualCms).residualBand.id === "medium"
+    && engine.isAcceptable(residualThreat, residualCms, { acceptableLevel: "medium" }));
+  ok("risk engine: high and critical require management acceptance",
+    !engine.isAcceptable({ id: "HIGH", likelihood: 2, impact: 3 }, [], { acceptableLevel: "medium" })
+    && !engine.isAcceptable({ id: "CRITICAL", likelihood: 3, impact: 4 }, [], { acceptableLevel: "medium" })
+    && engine.isAcceptable({ id: "HIGH", likelihood: 2, impact: 3, status: "accepted", acceptedBy: "manager" }, [], { acceptableLevel: "medium" }));
+  ok("risk engine: low is acceptable and out-of-range values are not", engine.isAcceptable({ id: "LOW", likelihood: 1, impact: 1 }, [], { acceptableLevel: "medium" })
+    && !engine.inRange("likelihood", 5) && engine.classify(5, 3).id === "none"
+    && !engine.isAcceptable({ id: "INVALID", likelihood: 5, impact: 3 }, [], { acceptableLevel: "medium" }));
+}
+
+async function runRiskRegistryTests() {
+  const { pathToFileURL } = require("node:url");
+  const { loadRiskSchemes, resolveProjectScheme } = await import(pathToFileURL(path.join(root, "webapp/server/src/risk.js")));
+  const { buildTraceability } = await import(pathToFileURL(path.join(root, "webapp/server/src/report.js")));
+  const { validate } = await import(pathToFileURL(path.join(root, "webapp/server/src/validate.js")));
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "embedrisk-risk-registry-"));
+  const options = { localDirectory: tempDir };
+  const localScheme = JSON.parse(fs.readFileSync(path.join(root, "webapp/.assets/knowledge-base/risk-scheme-5x5-exposure.json"), "utf8"));
+  localScheme.id = "local-test-scheme";
+  try {
+    let registry = await loadRiskSchemes(options);
+    ok("risk registry: built-ins load when local directory is absent", registry.schemes.length === 2 && registry.errors.length === 0);
+
+    fs.writeFileSync(path.join(tempDir, "local.json"), JSON.stringify(localScheme));
+    fs.writeFileSync(path.join(tempDir, "malformed.json"), "{ invalid");
+    const builtinCollision = { ...localScheme, id: "builtin:5x5-cost" };
+    fs.writeFileSync(path.join(tempDir, "reserved.json"), JSON.stringify(builtinCollision));
+    registry = await loadRiskSchemes(options);
+    ok("risk registry: valid local scheme loads and invalid files report errors", registry.schemes.some((scheme) => scheme.id === "local-test-scheme")
+      && registry.schemes.some((scheme) => scheme.id === "builtin:5x5-cost") && registry.errors.length === 2
+      && registry.errors.some((issue) => issue.file === "malformed.json" && /JSON/.test(issue.message))
+      && registry.errors.some((issue) => issue.file === "reserved.json" && /reserved/.test(issue.message)));
+
+    const selected = await resolveProjectScheme({ riskSchemeId: "local-test-scheme" }, options);
+    ok("risk registry: project selects a scheme by ID", selected.scheme?.id === "local-test-scheme" && selected.fingerprint?.length === 64);
+    const changed = await resolveProjectScheme({ riskSchemeId: "local-test-scheme", riskSchemeFingerprint: "stale" }, options);
+    ok("risk registry: fingerprint mismatch disables classification with warning", changed.scheme === null && /has changed/.test(changed.warning));
+    const rawReport = buildTraceability({ system: { assets: [] }, threats: [{ id: "RAW", likelihood: 5, impact: 3, stride: [] }], requirements: [], countermeasures: [], scheme: null })[0];
+    ok("risk registry: unavailable report scheme preserves raw axes without risk labels", rawReport.initial === null
+      && rawReport.residual === null && rawReport.initialBand === "Unavailable"
+      && rawReport.likelihood === 5 && rawReport.impact === 3 && rawReport.residualLikelihood === 5 && rawReport.residualImpact === 3);
+    const lookupAxis = (prefix) => [1, 2, 3, 4].map((value) => ({ value, code: prefix + value, label: prefix + value }));
+    const lookupScheme = {
+      schemaVersion: 2, id: "trace-lookup", title: "Trace lookup", version: "1",
+      likelihood: { levels: lookupAxis("E"), derivation: { kind: "manual" }, criteria: [] },
+      impact: { levels: lookupAxis("S"), derivation: { kind: "manual" }, criteria: [] },
+      classification: {
+        kind: "lookup",
+        levels: [
+          { id: "low", label: "niedrig", rank: 1, color: "#2e7d32", treatment: "auto-accept" },
+          { id: "medium", label: "mittel", rank: 2, color: "#f9a825", treatment: "optional" },
+          { id: "high", label: "hoch", rank: 3, color: "#ef6c00", treatment: "required" },
+          { id: "critical", label: "kritisch", rank: 4, color: "#c62828", treatment: "immediate" },
+        ],
+        matrix: {
+          "4": { "1": "medium", "2": "high", "3": "critical", "4": "critical" },
+          "3": { "1": "medium", "2": "high", "3": "high", "4": "critical" },
+          "2": { "1": "low", "2": "medium", "3": "medium", "4": "high" },
+          "1": { "1": "low", "2": "low", "3": "medium", "4": "medium" },
+        },
+      },
+      highLevel: "high",
+    };
+    const lookupTrace = buildTraceability({
+      system: { assets: [] }, requirements: [], countermeasures: [], scheme: lookupScheme,
+      threats: [{ id: "E2S3", likelihood: 2, impact: 3, stride: [] }, { id: "E3S2", likelihood: 3, impact: 2, stride: [] }],
+    });
+    ok("lookup trace: equal products get different level and priority (hoch 3 vs mittel 2)",
+      lookupTrace[0].initialBand === "hoch" && lookupTrace[1].initialBand === "mittel"
+      && lookupTrace[0].initial === 3 && lookupTrace[1].initial === 2);
+    const warningIssues = validate({ project: {}, threats: { threats: [{ id: "RAW", likelihood: 5, impact: 3 }] }, riskSchemeWarning: changed.warning });
+    ok("risk registry: unavailable scheme warns and skips stale risk threshold checks", warningIssues.some((issue) => issue.key === "risk-scheme-unavailable")
+      && !warningIssues.some((issue) => issue.key === "risk-over-acceptable:RAW"));
+    const invalidRatingIssues = validate({ project: {}, riskScheme: localScheme, threats: { threats: [{ id: "INVALID", likelihood: 6, impact: 3 }] } });
+    ok("risk registry: out-of-range stored values are errors", invalidRatingIssues.some((issue) => issue.severity === "error" && issue.key === "risk-range:INVALID"));
+    const invalidControlIssues = validate({
+      project: {}, riskScheme: localScheme,
+      threats: { threats: [{ id: "INVALID-CONTROL", likelihood: 3, impact: 3 }] },
+      countermeasures: { countermeasures: [{ id: "CM-INVALID", addresses: [{ threat: "INVALID-CONTROL", residualLikelihood: 6, residualImpact: 2 }] }] },
+    });
+    ok("risk registry: out-of-range individual countermeasure axes are errors even when minima mask them",
+      invalidControlIssues.some((issue) => issue.severity === "error" && issue.key === "risk-range:INVALID-CONTROL"));
+    const invalidCriteriaIssues = validate({
+      project: {}, riskScheme: localScheme,
+      threats: { threats: [{ id: "INVALID-CRITERION", likelihood: 3, impact: 3, likelihoodCriteria: { exposure: 6 } }] },
+    });
+    ok("risk registry: out-of-range per-threat criteria are errors",
+      invalidCriteriaIssues.some((issue) => issue.severity === "error" && issue.key === "risk-range:INVALID-CRITERION"));
+    const unfeasibleIssues = validate({ project: {}, riskScheme: localScheme, threats: { threats: [{ id: "UNFEASIBLE", likelihood: 2, impact: 3, status: "unfeasible" }] } });
+    ok("risk registry: unfeasible residual zero is not an out-of-range error", !unfeasibleIssues.some((issue) => issue.key === "risk-range:UNFEASIBLE"));
+    const zeroResidualIssues = validate({
+      project: {}, riskScheme: localScheme,
+      threats: { threats: [{ id: "ZERO-RESIDUAL", likelihood: 2, impact: 3 }] },
+      countermeasures: { countermeasures: [{ id: "CM-ZERO", addresses: [{ threat: "ZERO-RESIDUAL", residualLikelihood: 0, residualImpact: 3 }] }] },
+    });
+    ok("risk registry: zero residual axis remains valid", !zeroResidualIssues.some((issue) => issue.key === "risk-range:ZERO-RESIDUAL"));
+    const legacy = await resolveProjectScheme({ riskScoringMethod: "exposure-exploitability-impact", riskSchemePath: path.join(tempDir, "untrusted.json") }, options);
+    ok("risk registry: legacy scoring maps to built-in and project paths are ignored", legacy.scheme?.id === "builtin:5x5-exposure");
+    const unknown = await resolveProjectScheme({ riskSchemeId: "../outside" }, options);
+    ok("risk registry: unknown IDs do not become filesystem paths", unknown.scheme === null && /unavailable/.test(unknown.warning));
+  } finally {
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  }
+}
+
+function runClientRiskValidationTests() {
+  const validationSource = fs.readFileSync(path.join(root, "webapp/client/src/lib/validate.ts"), "utf8");
+  const validationModule = { exports: {} };
+  const supportModules = {
+    "../types": { DEFAULT_ACCEPTABLE_RISK: 12 },
+    "./ids": { ID_PATTERN: /^[A-Za-z0-9 _\-:.]+$/, idCollisions: () => [] },
+    "./risk": clientRiskModule.exports,
+    "./attackTree": { costWeightTotal: () => 1 },
+    "@shared/attackerScale.js": { normalizeActorLevel: (value) => value },
+  };
+  vm.runInNewContext(esbuild.transformSync(validationSource, { loader: "ts", format: "cjs" }).code, {
+    module: validationModule,
+    require: (id) => supportModules[id],
+  });
+  const axis = (prefix) => [1, 2, 3, 4].map((value) => ({ value, code: prefix + value, label: prefix + value }));
+  const scheme = {
+    schemaVersion: 2, id: "client-validation-4x4", title: "Validation 4x4", version: "1",
+    likelihood: { levels: axis("E"), derivation: { kind: "criteria-max" }, criteria: [{ id: "exposure", label: "Exposure", levelTexts: { "1": "1", "2": "2", "3": "3", "4": "4" } }] },
+    impact: { levels: axis("S"), derivation: { kind: "criteria-max" }, criteria: [{ id: "safety", label: "Safety", levelTexts: { "1": "1", "2": "2", "3": "3", "4": "4" } }] },
+    classification: {
+      kind: "lookup",
+      levels: [
+        { id: "low", label: "low", rank: 1, color: "#2e7d32", treatment: "auto-accept" },
+        { id: "medium", label: "medium", rank: 2, color: "#f9a825", treatment: "optional" },
+        { id: "high", label: "high", rank: 3, color: "#ef6c00", treatment: "required", acceptanceBy: "management" },
+        { id: "critical", label: "critical", rank: 4, color: "#c62828", treatment: "immediate", acceptanceBy: "management" },
+      ],
+      matrix: {
+        "4": { "1": "medium", "2": "high", "3": "critical", "4": "critical" },
+        "3": { "1": "medium", "2": "high", "3": "high", "4": "critical" },
+        "2": { "1": "low", "2": "medium", "3": "medium", "4": "high" },
+        "1": { "1": "low", "2": "low", "3": "medium", "4": "medium" },
+      },
+    },
+    highLevel: "high", acceptance: { defaultLevel: "medium" },
+  };
+  const makeData = (threat) => ({
+    project: { acceptableLevel: "medium" }, assumptions: { attacker: [] },
+    system: { components: [{ id: "C1" }], assets: [], interfaces: [], trustBoundaries: [] },
+    threats: { threats: [threat] }, requirements: { requirements: [] }, countermeasures: { countermeasures: [] },
+    dfd: { nodes: [] }, useCases: { diagrams: [] }, attackTrees: { trees: [] }, defects: { defects: [] },
+  });
+  const high = validationModule.exports.validate(makeData({ id: "HIGH", likelihood: 2, impact: 3, components: ["C1"], stride: [] }), scheme);
+  ok("client validation: lookup rank drives high requirement and management acceptance", high.some((issue) => issue.key === "risk-acceptance:HIGH")
+    && high.some((issue) => issue.message.includes("high/critical threat has no security requirement")));
+  const accepted = validationModule.exports.validate(makeData({ id: "ACCEPTED", likelihood: 2, impact: 3, components: ["C1"], stride: [], status: "accepted", acceptedBy: "manager" }), scheme);
+  ok("client validation: management owner satisfies scheme acceptance rule", !accepted.some((issue) => issue.key === "risk-acceptance:ACCEPTED"));
+  const low = validationModule.exports.validate(makeData({ id: "LOW", likelihood: 1, impact: 1, components: ["C1"], stride: [] }), scheme);
+  ok("client validation: auto-accept low level produces no risk warning", !low.some((issue) => issue.key === "risk-over-acceptable:LOW" || issue.key === "risk-acceptance:LOW"));
+  const invalid = validationModule.exports.validate(makeData({ id: "INVALID", likelihood: 5, impact: 3, components: ["C1"], stride: [] }), scheme);
+  ok("client validation: out-of-range stored axis is an error", invalid.some((issue) => issue.severity === "error" && issue.key === "risk-range:INVALID"));
+  const invalidCriteria = validationModule.exports.validate(makeData({ id: "INVALID-CRITERION", likelihood: 2, impact: 2, likelihoodCriteria: { exposure: 5 }, components: ["C1"], stride: [] }), scheme);
+  ok("client validation: out-of-range criterion rating is an error", invalidCriteria.some((issue) => issue.severity === "error" && issue.key === "risk-range:INVALID-CRITERION"));
+  const invalidCountermeasure = makeData({ id: "INVALID-CONTROL", likelihood: 3, impact: 3, components: ["C1"], stride: [] });
+  invalidCountermeasure.countermeasures.countermeasures = [{ id: "CM-INVALID", addresses: [{ threat: "INVALID-CONTROL", residualLikelihood: 5, residualImpact: 2 }] }];
+  const invalidCountermeasureIssues = validationModule.exports.validate(invalidCountermeasure, scheme);
+  ok("client validation: out-of-range countermeasure axis is an error even when minima mask it", invalidCountermeasureIssues.some((issue) => issue.severity === "error" && issue.key === "risk-range:INVALID-CONTROL"));
+  const zeroResidual = makeData({ id: "ZERO", likelihood: 2, impact: 3, components: ["C1"], stride: [] });
+  zeroResidual.countermeasures.countermeasures = [{ id: "CM-ZERO", addresses: [{ threat: "ZERO", residualLikelihood: 0, residualImpact: 3 }] }];
+  const zeroResidualIssues = validationModule.exports.validate(zeroResidual, scheme);
+  ok("client validation: zero residual axis remains valid", !zeroResidualIssues.some((issue) => issue.key === "risk-range:ZERO"));
+
+  const e2s3 = clientRisk.riskOf({ id: "E2S3", likelihood: 2, impact: 3 }, [], scheme);
+  const e3s2 = clientRisk.riskOf({ id: "E3S2", likelihood: 3, impact: 2 }, [], scheme);
+  ok("client lookup risk: equal products rank by level (E2/S3 high above E3/S2 medium)",
+    e2s3.initialBand.name === "high" && e3s2.initialBand.name === "medium" && e2s3.initialBand.lookup === true
+    && e2s3.initial === 3 && e3s2.initial === 2);
+  const builtinRisk = clientRisk.riskOf({ id: "P", likelihood: 3, impact: 4 }, [], legacyRegistry.schemes[0]);
+  ok("client product-bands risk keeps numeric scores", builtinRisk.initial === 12 && !builtinRisk.initialBand.lookup);
 }
 
 function runDfdEngineTests() {
@@ -1301,6 +1792,54 @@ function runDashboardTests() {
     model.initial.maxScore === 16 && model.initial.highCount === 2
     && model.residual.maxScore === 12 && model.residual.highCount === 1
     && model.threats[0].description.includes("Residual 4 (Low)"));
+  const lookupScheme = JSON.parse(fs.readFileSync(path.join(root, "webapp/.assets/knowledge-base/risk-scheme-5x5-exposure.json"), "utf8"));
+  lookupScheme.id = "dashboard-lookup-test";
+  lookupScheme.likelihood.levels = lookupScheme.likelihood.levels.slice(0, 4);
+  lookupScheme.impact.levels = lookupScheme.impact.levels.slice(0, 4);
+  lookupScheme.likelihood.criteria.forEach((criterion) => { delete criterion.levelTexts["5"]; });
+  lookupScheme.impact.criteria.forEach((criterion) => { delete criterion.levelTexts["5"]; });
+  lookupScheme.classification = {
+    kind: "lookup",
+    levels: lookupScheme.classification.levels,
+    matrix: {
+      "4": { "1": "medium", "2": "high", "3": "critical", "4": "critical" },
+      "3": { "1": "medium", "2": "high", "3": "high", "4": "critical" },
+      "2": { "1": "low", "2": "medium", "3": "medium", "4": "high" },
+      "1": { "1": "low", "2": "low", "3": "medium", "4": "medium" },
+    },
+  };
+  const lookupDashboard = DashboardModel.buildDashboard({
+    project: input.project,
+    system: input.system,
+    threats: {
+      threats: [
+        { id: "E2S3", title: "High lookup cell", likelihood: 2, impact: 3, status: "open" },
+        { id: "E3S2", title: "Medium lookup cell", likelihood: 3, impact: 2, status: "open" },
+      ]
+    },
+    requirements: { requirements: [] },
+    scheme: lookupScheme,
+  });
+  ok("dashboard: v2 lookup high+ count uses rank and non-product bands", lookupDashboard.initial.highCount === 1
+    && lookupDashboard.initial.maxLabel === "High" && lookupDashboard.threats[0].description.includes("Initial High"));
+  const germanScheme = JSON.parse(JSON.stringify(lookupScheme));
+  germanScheme.id = "dashboard-german-test";
+  ["niedrig", "mittel", "hoch", "kritisch"].forEach((label, index) => { germanScheme.classification.levels[index].label = label; });
+  const germanDashboard = DashboardModel.buildDashboard({
+    project: input.project, system: input.system, requirements: { requirements: [] }, scheme: germanScheme,
+    threats: { threats: [{ id: "E2S3", title: "hoch", likelihood: 2, impact: 3, status: "open" }, { id: "E3S4", title: "kritisch", likelihood: 3, impact: 4, status: "open" }, { id: "E1S1", title: "niedrig", likelihood: 1, impact: 1, status: "open" }] },
+  });
+  const highBandFlags = Object.fromEntries(germanDashboard.initial.bands.map((band) => [band.name, band.high]));
+  ok("dashboard: German level labels keep high+ band flags and counts by rank",
+    highBandFlags.hoch === true && highBandFlags.kritisch === true && highBandFlags.mittel === false && highBandFlags.niedrig === false
+    && germanDashboard.initial.highCount === 2 && germanDashboard.initial.maxLabel === "kritisch");
+  ok("dashboard: built-in English high+ flags are unchanged",
+    model.initial.bands.filter((band) => band.high).map((band) => band.name).join(",") === "High,Critical");
+  ok("dashboard: tree icons are chosen from the model's high flag, not English labels",
+    !/band\.name\s*===\s*"(Critical|High)"/.test(fs.readFileSync(path.join(root, "vscode-extension/src/dashboard.ts"), "utf8")));
+  const unavailableDashboard = DashboardModel.buildDashboard({ project: input.project, threats: input.threats, schemeWarning: "Scheme unavailable" });
+  ok("dashboard: unavailable scheme exposes warning and omits risk classification", unavailableDashboard.schemeWarning === "Scheme unavailable"
+    && unavailableDashboard.threats.every((threat) => threat.description.includes("classification unavailable")));
   ok("dashboard: malformed project subobjects default safely and inputs are unchanged",
     JSON.stringify(input) === before && DashboardModel.buildDashboard({
       project: null, system: { components: "invalid" }, threats: { threats: [null, "bad"] },
@@ -1372,6 +1911,11 @@ runImportedKbTests()
   .then(() => runDfdOverviewTests())
   .then(() => runDashboardTests())
   .then(() => checkWebappParity())
+  .then(() => runRiskGoldenTests())
+  .then(() => runRiskSchemeTests())
+  .then(() => runRiskEngineTests())
+  .then(() => runRiskRegistryTests())
+  .then(() => runClientRiskValidationTests())
   .then(() => runValidationCoreTests())
   .then(() => runValidationDiagnosticsTests())
   .then(async () => {

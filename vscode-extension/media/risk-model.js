@@ -9,15 +9,28 @@
     { name: "High", min: 12, max: 19, color: "#ef6c00" },
     { name: "Critical", min: 20, max: 25, color: "#c62828" },
   ];
+  var riskEngineApi = typeof module !== "undefined" && module.exports ? require("./risk-engine.js") : g.RiskEngine;
+  var engineCache = typeof WeakMap !== "undefined" ? new WeakMap() : null;
+  function engineOf(scheme) {
+    if (!riskEngineApi) throw new Error("Risk engine script was not loaded.");
+    if (scheme && typeof scheme === "object" && engineCache && engineCache.has(scheme)) return engineCache.get(scheme);
+    var engine = riskEngineApi.createRiskEngine(scheme || {});
+    if (scheme && typeof scheme === "object" && engineCache) engineCache.set(scheme, engine);
+    return engine;
+  }
+  function riskBand(engine, likelihood, impact, score) {
+    if (score <= 0) return NONE_BAND;
+    if (engine.scheme.classification.kind === "product-bands") return engine.band(score);
+    var level = engine.classify(likelihood, impact);
+    return level.id === "none" ? NONE_BAND : { name: level.label, min: level.rank, max: level.rank, color: level.color };
+  }
   function bandsOf(scheme) {
-    return scheme && scheme.matrix && scheme.matrix.bands && scheme.matrix.bands.length ? scheme.matrix.bands : DEFAULT_BANDS;
+    return engineOf(scheme).bands();
   }
   /* A zero likelihood or impact means the threat is not possible — risk 0, its own band. */
   var NONE_BAND = { name: "None", min: 0, max: 0, color: "#6b7280" };
   function band(score, scheme) {
-    if (score <= 0) return NONE_BAND;
-    var bands = bandsOf(scheme);
-    return bands.find(function (b) { return score >= b.min && score <= b.max; }) || bands[0];
+    return engineOf(scheme).band(score);
   }
 
   /* Residual [likelihood, impact] across all selected countermeasure links (selected === false is skipped).
@@ -25,76 +38,71 @@
      each axis: the residual likelihood is the LOWEST residual likelihood any single control achieves (the
      most protective control dominates), and likewise for impact. Unfeasible threats have no residual. */
   function residual(threat, cms) {
-    if (threat.status === "unfeasible") return [0, 0];
-    var links = [];
-    (cms || []).forEach(function (c) {
-      if (c.selected === false) return;
-      (c.addresses || []).forEach(function (a) { if (a.threat === threat.id) links.push(a); });
-    });
-    if (!links.length) return [threat.likelihood, threat.impact];
-    var rl = threat.likelihood;
-    var ri = threat.impact;
-    links.forEach(function (a) {
-      rl = Math.min(rl, a.residualLikelihood == null ? threat.likelihood : a.residualLikelihood);
-      ri = Math.min(ri, a.residualImpact == null ? threat.impact : a.residualImpact);
-    });
-    return [rl, ri];
+    return engineOf(null).residual(threat, cms);
   }
 
   function riskOf(threat, cms, scheme) {
-    var initial = threat.status === "unfeasible" ? 0 : (threat.likelihood || 0) * (threat.impact || 0);
-    var r = residual(threat, cms);
-    var res = (r[0] || 0) * (r[1] || 0);
+    var engine = engineOf(scheme);
+    var risk = engine.riskOf(threat, cms);
     return {
-      initial: initial,
-      initialBand: band(initial, scheme),
-      residual: res,
-      residualBand: band(res, scheme),
-      residualLikelihood: r[0],
-      residualImpact: r[1],
+      initial: risk.initial,
+      initialBand: riskBand(engine, threat.likelihood, threat.impact, risk.initial),
+      residual: risk.residual,
+      residualBand: riskBand(engine, risk.residualLikelihood, risk.residualImpact, risk.residual),
+      residualLikelihood: risk.residualLikelihood,
+      residualImpact: risk.residualImpact,
     };
   }
 
   /* Read-only matrix, ordered like the webapp: impact descending, likelihood ascending.
      Off-grid values are deliberately omitted, never clamped or written back. */
   function matrix(threats, cms, scheme, acceptableRisk, mode) {
+    var engine = engineOf(scheme);
     var threshold = typeof acceptableRisk === "number" ? acceptableRisk : 12;
     var ids = {}, cells = [];
     (threats || []).forEach(function (t) {
       if (t.status === "unfeasible") return;
-      var r = riskOf(t, cms, scheme);
+      var r = engine.riskOf(t, cms);
       var l = mode === "initial" ? t.likelihood : r.residualLikelihood;
       var i = mode === "initial" ? t.impact : r.residualImpact;
       (ids[l + "-" + i] = ids[l + "-" + i] || []).push(t.id);
     });
-    for (var i = 5; i >= 1; i--) {
-      for (var l = 1; l <= 5; l++) {
-        var score = l * i, acceptable = score <= threshold;
-        cells.push({ likelihood: l, impact: i, score: score, band: band(score, scheme),
-          ids: ids[l + "-" + i] || [],
-          boundaryTop: i < 5 && acceptable !== (l * (i + 1) <= threshold),
-          boundaryRight: l < 5 && acceptable !== ((l + 1) * i <= threshold) });
-      }
-    }
+    var maxLikelihood = engine.likelihoodLevels().length;
+    var maxImpact = engine.impactLevels().length;
+    engine.matrixCells().forEach(function (cell) {
+      var acceptable = cell.score <= threshold;
+      cells.push({
+        likelihood: cell.likelihood, impact: cell.impact, score: cell.score, band: riskBand(engine, cell.likelihood, cell.impact, cell.score),
+        ids: ids[cell.likelihood + "-" + cell.impact] || [],
+        boundaryTop: cell.impact < maxImpact && acceptable !== (cell.likelihood * (cell.impact + 1) <= threshold),
+        boundaryRight: cell.likelihood < maxLikelihood && acceptable !== ((cell.likelihood + 1) * cell.impact <= threshold)
+      });
+    });
     return { cells: cells, bands: bandsOf(scheme), threshold: threshold };
   }
 
   /* Bug Bar: impact is the worst plausible dimension (max of C/I/A/Safety). */
   function deriveImpact(d) {
-    if (!d) return null;
-    var vals = [d.confidentiality, d.integrity, d.availability, d.safety].filter(function (x) { return typeof x === "number"; });
-    return vals.length ? Math.max.apply(null, vals) : null;
+    return engineOf(null).deriveImpact({ impactDimensions: d });
   }
 
   /* Likelihood = geometric mean of Exposure x Exploitability, remapped to the 1-5 axis
      (P11 interview finding: a single coarse likelihood is insufficient). */
   function deriveLikelihood(f) {
-    if (!f) return null;
-    var has = typeof f.exposure === "number" || typeof f.exploitability === "number";
-    if (!has) return null;
-    var e = typeof f.exposure === "number" ? f.exposure : 3;
-    var x = typeof f.exploitability === "number" ? f.exploitability : 3;
-    return Math.min(5, Math.max(1, Math.round(Math.sqrt(e * x))));
+    return engineOf(null).deriveLikelihood({ likelihoodFactors: f });
+  }
+
+  function classify(likelihood, impact, scheme) {
+    return engineOf(scheme).classify(likelihood, impact);
+  }
+  function isHighOrAbove(likelihood, impact, scheme) {
+    return engineOf(scheme).isHighOrAbove(engineOf(scheme).classify(likelihood, impact));
+  }
+  /* Display names of the classification levels at or above the scheme's high level. */
+  function highBandNames(scheme) {
+    var engine = engineOf(scheme);
+    return engine.scheme.classification.levels.filter(function (level) { return engine.isHighOrAbove(level); })
+      .map(function (level) { return level.label; });
   }
 
   function bandClass(name) { return String(name || "").toLowerCase(); }
@@ -257,7 +265,7 @@
     return cvss3BaseScore(vector);
   }
 
-  var api = { matrix: matrix, DEFAULT_BANDS: DEFAULT_BANDS, bandsOf: bandsOf, band: band, residual: residual, riskOf: riskOf, deriveImpact: deriveImpact, deriveLikelihood: deriveLikelihood, bandClass: bandClass, cvss3BaseScore: cvss3BaseScore, cvss4BaseScore: cvss4BaseScore, cvssBaseScore: cvssBaseScore, cvssExploitability: cvssExploitability, exposureFromInterface: exposureFromInterface };
+  var api = { matrix: matrix, DEFAULT_BANDS: DEFAULT_BANDS, bandsOf: bandsOf, band: band, residual: residual, riskOf: riskOf, deriveImpact: deriveImpact, deriveLikelihood: deriveLikelihood, classify: classify, isHighOrAbove: isHighOrAbove, highBandNames: highBandNames, bandClass: bandClass, cvss3BaseScore: cvss3BaseScore, cvss4BaseScore: cvss4BaseScore, cvssBaseScore: cvssBaseScore, cvssExploitability: cvssExploitability, exposureFromInterface: exposureFromInterface };
   g.RiskModel = api;
   if (typeof module !== "undefined" && module.exports) module.exports = api;
 })(typeof window !== "undefined" ? window : globalThis);

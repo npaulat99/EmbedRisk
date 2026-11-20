@@ -17,6 +17,11 @@ export const projectsDir = process.env.TRA_PROJECTS_DIR
 export const assetsDir = join(webappRoot, '.assets');
 export const knowledgeBaseDir = join(assetsDir, 'knowledge-base');
 export const riskSchemePath = join(knowledgeBaseDir, 'risk-scheme.json');
+export const localRiskSchemesDir = join(webappRoot, '.local', 'risk-schemes');
+export const builtinRiskSchemePaths = Object.freeze({
+    'builtin:5x5-exposure': join(knowledgeBaseDir, 'risk-scheme-5x5-exposure.json'),
+    'builtin:5x5-cost': join(knowledgeBaseDir, 'risk-scheme-5x5-cost.json'),
+});
 export const fieldLibraryPath = join(knowledgeBaseDir, 'field-device-library.json');
 export const bugBarPath = join(knowledgeBaseDir, 'bug-bar.json');
 

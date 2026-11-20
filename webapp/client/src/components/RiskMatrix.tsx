@@ -1,6 +1,6 @@
 import { Fragment, useState } from 'react';
 import { useStore } from '../state/store';
-import { riskOf, band, bandsOf, descendantComponentIds } from '../lib/risk';
+import { riskOf, bandForRisk, bandsOf, createRiskEngine, descendantComponentIds } from '../lib/risk';
 import { DEFAULT_ACCEPTABLE_RISK } from '../types';
 
 /**
@@ -12,8 +12,13 @@ import { DEFAULT_ACCEPTABLE_RISK } from '../types';
 export default function RiskMatrix({ componentRef }: { componentRef?: string }) {
     const data = useStore((s) => s.data)!;
     const scheme = useStore((s) => s.scheme);
+    const schemeWarning = useStore((s) => s.schemeWarning);
     const goto = useStore((s) => s.goto);
     const [previewIds, setPreviewIds] = useState<string[]>([]);
+    if (!scheme || schemeWarning) {
+        return <div className="settings-error-banner" role="alert">{schemeWarning || 'Risk scheme is not available; matrix classification is disabled.'}</div>;
+    }
+    const engine = createRiskEngine(scheme);
     let threats = data.threats.threats || [];
     const cms = data.countermeasures.countermeasures || [];
     let rolledUp = false;
@@ -31,15 +36,22 @@ export default function RiskMatrix({ componentRef }: { componentRef?: string }) 
         (cellThreats[k] = cellThreats[k] || []).push(t.id);
     }
 
-    const impacts = [5, 4, 3, 2, 1];
-    const likes = [1, 2, 3, 4, 5];
+    const impacts = engine.impactLevels().slice().reverse();
+    const likes = engine.likelihoodLevels();
     const acceptableRisk = typeof data.project.acceptableRisk === 'number' ? data.project.acceptableRisk : DEFAULT_ACCEPTABLE_RISK;
-    const isAcceptable = (likelihood: number, impact: number) => likelihood * impact <= acceptableRisk;
+    const acceptableLevel = data.project.acceptableLevel || (engine.scheme.classification.kind === 'lookup' ? engine.scheme.acceptance?.defaultLevel : undefined);
+    const acceptableRank = acceptableLevel ? engine.scheme.classification.levels.find((level: any) => level.id === acceptableLevel)?.rank : undefined;
+    const isAcceptable = (likelihood: number, impact: number) => {
+        const level = engine.classify(likelihood, impact);
+        if (level.treatment === 'auto-accept') return true;
+        if (Number.isInteger(acceptableRank)) return level.rank <= acceptableRank;
+        return likelihood * impact <= acceptableRisk;
+    };
     const boundaryClass = (likelihood: number, impact: number) => {
         const acceptable = isAcceptable(likelihood, impact);
         const classes: string[] = [];
-        if (impact < 5 && acceptable !== isAcceptable(likelihood, impact + 1)) classes.push('boundary-top');
-        if (likelihood < 5 && acceptable !== isAcceptable(likelihood + 1, impact)) classes.push('boundary-right');
+        if (impact < impacts.length && acceptable !== isAcceptable(likelihood, impact + 1)) classes.push('boundary-top');
+        if (likelihood < likes.length && acceptable !== isAcceptable(likelihood + 1, impact)) classes.push('boundary-right');
         return classes.join(' ');
     };
     const openCell = (ids: string[]) => {
@@ -49,26 +61,28 @@ export default function RiskMatrix({ componentRef }: { componentRef?: string }) 
 
     return (
         <div>
-            <div className="matrix">
+            <div className="matrix" style={{ gridTemplateColumns: `22px repeat(${likes.length}, minmax(0, 1fr))` }}>
                 {impacts.map((I) => (
                     <Fragment key={`r-${I}`}>
                         <div className="cell axis" style={{ writingMode: 'vertical-rl' as any }}>
-                            {I}
+                            {I.code}
                         </div>
                         {likes.map((L) => {
-                            const score = L * I;
-                            const b = band(score, scheme);
-                            const ids = cellThreats[`${L}-${I}`] || [];
+                            const score = L.value * I.value;
+                            const level = engine.classify(L.value, I.value);
+                            const b = bandForRisk(L.value, I.value, scheme);
+                            const ids = cellThreats[`${L.value}-${I.value}`] || [];
                             const n = ids.length;
+                            const cellLabel = engine.scheme.classification.kind === 'product-bands' ? String(score) : level.label;
                             return (
                                 <div
-                                    className={'cell ' + boundaryClass(L, I) + (n ? ' hit' : '')}
-                                    key={`${L}-${I}`}
+                                    className={'cell ' + boundaryClass(L.value, I.value) + (n ? ' hit' : '')}
+                                    key={`${L.value}-${I.value}`}
                                     role={n ? 'button' : undefined}
                                     tabIndex={n ? 0 : undefined}
-                                    aria-label={n ? `Likelihood ${L} by impact ${I}, ${b.name}, ${n} threat(s): ${ids.join(', ')}. Activate to open.` : undefined}
+                                    aria-label={n ? `${L.label} by ${I.label}, ${level.label}, ${n} threat(s): ${ids.join(', ')}. Activate to open.` : `${L.label} by ${I.label}, ${level.label}`}
                                     style={{ background: b.color, opacity: n ? 1 : 0.42, cursor: n ? 'pointer' : 'default' }}
-                                    title={n ? `L${L} × I${I} = ${score} (${b.name}) — ${ids.join(', ')} · click to open` : `L${L} × I${I} = ${score} (${b.name})`}
+                                    title={n ? `${L.code} × ${I.code}: ${level.label} — ${ids.join(', ')} · click to open` : `${L.code} × ${I.code}: ${level.label}`}
                                     onClick={() => openCell(ids)}
                                     onKeyDown={(e) => {
                                         if (n && (e.key === 'Enter' || e.key === ' ')) {
@@ -77,24 +91,24 @@ export default function RiskMatrix({ componentRef }: { componentRef?: string }) 
                                         }
                                     }}
                                 >
-                                    {score}
-                                    <span className="bandmark" aria-hidden="true">{b.name[0]}</span>
+                                    {cellLabel}
+                                    <span className="bandmark" aria-hidden="true">{level.label[0]}</span>
                                     {n > 0 && <span className="n">{n}</span>}
                                 </div>
                             );
                         })}
                     </Fragment>
                 ))}
-                <div className="matrix-boundaries" aria-hidden="true">
+                <div className="matrix-boundaries" aria-hidden="true" style={{ gridTemplateColumns: `22px repeat(${likes.length}, minmax(0, 1fr))`, gridTemplateRows: `repeat(${impacts.length + 1}, 30px)` }}>
                     {impacts.map((I, rowIndex) =>
                         likes.map((L) => {
-                            const boundary = boundaryClass(L, I);
+                            const boundary = boundaryClass(L.value, I.value);
                             if (!boundary) return null;
                             return (
                                 <span
-                                    key={`${L}-${I}`}
+                                    key={`${L.value}-${I.value}`}
                                     className={boundary}
-                                    style={{ gridColumn: L + 1, gridRow: rowIndex + 1 }}
+                                    style={{ gridColumn: L.value + 1, gridRow: rowIndex + 1 }}
                                 />
                             );
                         }),
@@ -102,8 +116,8 @@ export default function RiskMatrix({ componentRef }: { componentRef?: string }) 
                 </div>
                 <div className="cell axis" />
                 {likes.map((L) => (
-                    <div className="cell axis" key={`l-${L}`}>
-                        {L}
+                    <div className="cell axis" key={`l-${L.value}`}>
+                        {L.code}
                     </div>
                 ))}
             </div>

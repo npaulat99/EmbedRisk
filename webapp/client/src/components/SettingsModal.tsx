@@ -6,12 +6,16 @@ import { useStore } from '../state/store';
 import { DEFAULT_ACCEPTABLE_RISK } from '../types';
 import { Field } from './common';
 import { accessProbability, costWeightTotal, COST_FACTORS, DEFAULT_LIKELIHOOD_PROBABILITY_THRESHOLDS, likelihoodFromProb, stepProb } from '../lib/attackTree';
-import { deriveImpact } from '../lib/risk';
+import { createRiskEngine, deriveImpact } from '../lib/risk';
 import { normalizeActorLevel } from '@shared/attackerScale.js';
 
 export default function SettingsModal() {
     const data = useStore((s) => s.data);
     const save = useStore((s) => s.save);
+    const scheme = useStore((s) => s.scheme);
+    const schemes = useStore((s) => s.riskSchemes);
+    const fingerprints = useStore((s) => s.riskSchemeFingerprints);
+    const schemeWarning = useStore((s) => s.schemeWarning);
     const open = useStore((s) => s.settingsOpen);
     const setOpen = useStore((s) => s.openSettings);
 
@@ -27,9 +31,16 @@ export default function SettingsModal() {
     const set = (patch: any) => save('project', { ...p, ...patch });
     const setReport = (patch: any) => set({ reportOptions: { ...(p.reportOptions || {}), ...patch } });
     const acceptable = typeof p.acceptableRisk === 'number' ? p.acceptableRisk : DEFAULT_ACCEPTABLE_RISK;
+    const activeScheme = scheme && 'schemaVersion' in scheme ? scheme : null;
+    const activeSchemeId = p.riskSchemeId || (p.riskScoringMethod === 'exposure-exploitability-impact' ? 'builtin:5x5-exposure' : 'builtin:5x5-cost');
+    const maxRisk = activeScheme ? activeScheme.likelihood.levels.length * activeScheme.impact.levels.length : 25;
+    const rankLevels = activeScheme?.classification.levels || [];
+    const schemeThresholds = activeScheme?.likelihood.derivation.kind === 'cost-based' ? activeScheme.likelihood.derivation.probabilityThresholds : undefined;
+    const effectiveThresholds = { ...(schemeThresholds || {}), ...(p.likelihoodProbabilityThresholds || {}) };
+    const costBasedScheme = activeScheme?.likelihood.derivation.kind === 'cost-based' || (!activeScheme && p.riskScoringMethod === 'cost-based');
     const weightTotal = costWeightTotal(p.costFactorWeights);
     const weightsInvalid = Math.abs(weightTotal - 1) > 0.000001;
-    const syncCostLikelihoods = (nextWeights = p.costFactorWeights, nextAccessProbabilities = p.accessProbabilities, nextThresholds = p.likelihoodProbabilityThresholds) => {
+    const syncCostLikelihoods = (nextWeights = p.costFactorWeights, nextAccessProbabilities = p.accessProbabilities, nextThresholds = effectiveThresholds) => {
         const attacker = data.assumptions.attacker?.[0];
         save('threats', {
             threats: data.threats.threats.map((threat) => {
@@ -48,9 +59,68 @@ export default function SettingsModal() {
             }),
         });
     };
-    const setScoringMethod = (method: string) => {
-        set({ riskScoringMethod: method });
-        if (method === 'cost-based') syncCostLikelihoods();
+    const setRiskScheme = (id: string) => {
+        const nextScheme = schemes.find((item) => item.id === id);
+        if (!nextScheme) return;
+        const currentId = p.riskSchemeId || (p.riskScoringMethod === 'exposure-exploitability-impact' ? 'builtin:5x5-exposure' : 'builtin:5x5-cost');
+        if (id === currentId && !schemeWarning) return;
+        const ratedThreats = data.threats.threats.filter((threat) => typeof threat.likelihood === 'number' || typeof threat.impact === 'number'
+            || Object.values(threat.likelihoodCriteria || {}).some((value) => typeof value === 'number')
+            || Object.values(threat.impactCriteria || {}).some((value) => typeof value === 'number'));
+        if (ratedThreats.length && !window.confirm(`Switch risk scheme to "${nextScheme.title}"? Existing ratings on these threats will be checked and invalid values cleared only after confirmation:\n\n${ratedThreats.map((threat) => `${threat.id} · ${threat.title}`).join('\n')}`)) return;
+
+        const engine = createRiskEngine(nextScheme);
+        let threatsChanged = false;
+        const nextThreats = data.threats.threats.map((threat) => {
+            const next: any = { ...threat };
+            if (typeof threat.likelihood === 'number' && !(threat.status === 'unfeasible' && threat.likelihood === 0) && !engine.inRange('likelihood', threat.likelihood)) {
+                next.likelihood = undefined;
+                next.likelihoodCriteria = undefined;
+                threatsChanged = true;
+            } else if (threat.likelihoodCriteria) {
+                const validIds = new Set(nextScheme.likelihood.criteria.map((criterion) => criterion.id));
+                const criteria = Object.fromEntries(Object.entries(threat.likelihoodCriteria).map(([key, value]) => [key,
+                    validIds.has(key) && (value == null || engine.inRange('likelihood', value)) ? value : null]));
+                if (JSON.stringify(criteria) !== JSON.stringify(threat.likelihoodCriteria)) {
+                    next.likelihoodCriteria = criteria;
+                    threatsChanged = true;
+                }
+            }
+            if (typeof threat.impact === 'number' && !engine.inRange('impact', threat.impact)) {
+                next.impact = undefined;
+                next.impactCriteria = undefined;
+                threatsChanged = true;
+            } else if (threat.impactCriteria) {
+                const validIds = new Set(nextScheme.impact.criteria.map((criterion) => criterion.id));
+                const criteria = Object.fromEntries(Object.entries(threat.impactCriteria).map(([key, value]) => [key,
+                    validIds.has(key) && (value == null || engine.inRange('impact', value)) ? value : null]));
+                if (JSON.stringify(criteria) !== JSON.stringify(threat.impactCriteria)) {
+                    next.impactCriteria = criteria;
+                    threatsChanged = true;
+                }
+            }
+            return next;
+        });
+        let countermeasuresChanged = false;
+        const nextCountermeasures = data.countermeasures.countermeasures.map((cm) => ({
+            ...cm,
+            addresses: (cm.addresses || []).map((address) => {
+                const next: any = { ...address };
+                if (typeof address.residualLikelihood === 'number' && address.residualLikelihood !== 0 && !engine.inRange('likelihood', address.residualLikelihood)) {
+                    next.residualLikelihood = undefined;
+                    countermeasuresChanged = true;
+                }
+                if (typeof address.residualImpact === 'number' && address.residualImpact !== 0 && !engine.inRange('impact', address.residualImpact)) {
+                    next.residualImpact = undefined;
+                    countermeasuresChanged = true;
+                }
+                return next;
+            }),
+        }));
+        const compatibilityMethod = id === 'builtin:5x5-cost' ? 'cost-based' : id === 'builtin:5x5-exposure' ? 'exposure-exploitability-impact' : p.riskScoringMethod;
+        set({ riskSchemeId: id, riskSchemeFingerprint: fingerprints[id], ...(compatibilityMethod ? { riskScoringMethod: compatibilityMethod } : {}) });
+        if (threatsChanged) save('threats', { threats: nextThreats });
+        if (countermeasuresChanged) save('countermeasures', { countermeasures: nextCountermeasures });
     };
     const setWeight = (key: string, value: number) => {
         const otherWeights = { ...(p.costFactorWeights || {}), [key]: 0 };
@@ -70,13 +140,14 @@ export default function SettingsModal() {
         syncCostLikelihoods(p.costFactorWeights, nextAccessProbabilities);
     };
     const setLikelihoodThreshold = (level: 2 | 3 | 4 | 5, value: number) => {
-        const nextThresholds = { ...(p.likelihoodProbabilityThresholds || {}), [level]: Math.max(0.01, Math.min(1, value || 0.01)) };
+        const nextThresholds = { ...effectiveThresholds, [level]: Math.max(0.01, Math.min(1, value || 0.01)) };
         set({ likelihoodProbabilityThresholds: nextThresholds });
         syncCostLikelihoods(p.costFactorWeights, p.accessProbabilities, nextThresholds);
     };
     const restoreDefaultLikelihoodThresholds = () => {
-        set({ likelihoodProbabilityThresholds: DEFAULT_LIKELIHOOD_PROBABILITY_THRESHOLDS });
-        syncCostLikelihoods(p.costFactorWeights, p.accessProbabilities, DEFAULT_LIKELIHOOD_PROBABILITY_THRESHOLDS);
+        const defaults = schemeThresholds || DEFAULT_LIKELIHOOD_PROBABILITY_THRESHOLDS;
+        set({ likelihoodProbabilityThresholds: defaults });
+        syncCostLikelihoods(p.costFactorWeights, p.accessProbabilities, defaults);
     };
 
     return (
@@ -91,13 +162,15 @@ export default function SettingsModal() {
 
                 <div className="card" style={{ marginBottom: 12 }}>
                     <h3 style={{ marginTop: 0 }}>Risk scoring</h3>
-                    <Field label="Scoring method">
-                        <select value={p.riskScoringMethod || 'cost-based'} onChange={(e) => setScoringMethod(e.target.value)}>
-                            <option value="exposure-exploitability-impact">Exposure x Exploitability x Impact</option>
-                            <option value="cost-based">Cost-based</option>
+                    {schemeWarning && <div className="settings-error-banner" role="alert">{schemeWarning}</div>}
+                    <Field label="Risk scheme">
+                        <select value={activeSchemeId} onChange={(e) => setRiskScheme(e.target.value)}>
+                            {!schemes.some((item) => item.id === activeSchemeId) && <option value={activeSchemeId}>Unavailable scheme · {activeSchemeId}</option>}
+                            {schemes.map((item) => <option key={item.id} value={item.id}>{item.title} · v{item.version}</option>)}
                         </select>
                     </Field>
-                    {p.riskScoringMethod === 'cost-based' && (
+                    {activeScheme?.description && <p className="hint">{activeScheme.description}</p>}
+                    {costBasedScheme && (
                         <>
                             <p className="hint">Configured weight total: {weightTotal.toFixed(2)}. Weights must combine to 1.00.</p>
                             {weightsInvalid && <div className="settings-error-banner" role="alert">Cost-factor weights currently total {weightTotal.toFixed(2)}. Set the combined weight to exactly 1.00 before assessing threats.</div>}
@@ -141,7 +214,7 @@ export default function SettingsModal() {
                             <div className="settings-weight-grid">
                                 {([2, 3, 4, 5] as const).map((level) => (
                                     <Field key={level} label={`L${level} or higher`}>
-                                        <input className="inp" type="number" min={0.01} max={1} step={0.05} value={p.likelihoodProbabilityThresholds?.[level] ?? DEFAULT_LIKELIHOOD_PROBABILITY_THRESHOLDS[level]} onChange={(e) => setLikelihoodThreshold(level, Number(e.target.value))} />
+                                        <input className="inp" type="number" min={0.01} max={1} step={0.05} value={effectiveThresholds[level] ?? DEFAULT_LIKELIHOOD_PROBABILITY_THRESHOLDS[level]} onChange={(e) => setLikelihoodThreshold(level, Number(e.target.value))} />
                                     </Field>
                                 ))}
                                 <div className="settings-weight-restore"><button className="btn sm" type="button" onClick={restoreDefaultLikelihoodThresholds}>Restore defaults</button></div>
@@ -152,23 +225,29 @@ export default function SettingsModal() {
 
                 <div className="card" style={{ marginBottom: 12 }}>
                     <h3 style={{ marginTop: 0 }}>Risk acceptance</h3>
-                    <Field
-                        label="Acceptable residual risk"
-                        hint="Warnings appear above this residual-risk threshold. Default: 12."
+                    <Field label="Acceptable risk level">
+                        <select className="inp" value={p.acceptableLevel || activeScheme?.acceptance?.defaultLevel || ''} onChange={(e) => set({ acceptableLevel: e.target.value || undefined })}>
+                            <option value="">Use scheme default</option>
+                            {rankLevels.map((level) => <option key={level.id} value={level.id}>{level.label}</option>)}
+                        </select>
+                    </Field>
+                    {activeScheme?.classification.kind === 'product-bands' && <Field
+                        label="Acceptable risk score"
+                        hint="Numeric threshold retained for product-band schemes."
                     >
                         <input
                             className="inp"
                             type="number"
                             min={0}
-                            max={25}
+                            max={maxRisk}
                             style={{ width: 100 }}
                             value={acceptable}
                             onChange={(e) => {
                                 const v = Number(e.target.value);
-                                set({ acceptableRisk: Number.isFinite(v) ? Math.max(0, Math.min(25, v)) : DEFAULT_ACCEPTABLE_RISK });
+                                set({ acceptableRisk: Number.isFinite(v) ? Math.max(0, Math.min(maxRisk, v)) : DEFAULT_ACCEPTABLE_RISK });
                             }}
                         />
-                    </Field>
+                    </Field>}
                 </div>
 
                 <div className="card" style={{ marginBottom: 12 }}>

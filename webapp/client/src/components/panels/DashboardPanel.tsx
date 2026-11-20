@@ -2,7 +2,7 @@
 // threats and countermeasure status with the traceability links required for an audit.
 import type React from 'react';
 import { useStore } from '../../state/store';
-import { riskOf } from '../../lib/risk';
+import { createRiskEngine, riskOf } from '../../lib/risk';
 import { Jump, HelpButton, RiskPill, sortStride } from '../common';
 
 function Stat({ label, value, warn, onClick }: { label: string; value: number | string; warn?: boolean; onClick?: () => void }) {
@@ -20,6 +20,8 @@ function Stat({ label, value, warn, onClick }: { label: string; value: number | 
 export default function DashboardPanel() {
     const data = useStore((s) => s.data)!;
     const scheme = useStore((s) => s.scheme);
+    const schemeWarning = useStore((s) => s.schemeWarning);
+    const riskEngine = scheme ? createRiskEngine(scheme) : null;
     const setView = useStore((s) => s.setView);
     const sys = data.system;
     const project = data.project;
@@ -36,7 +38,9 @@ export default function DashboardPanel() {
     const reqs = data.requirements?.requirements || [];
     const defects = data.defects?.defects || [];
     const openDefects = defects.filter((d) => d.status !== 'fixed' && d.status !== 'wont-fix');
-    const highNoReq = threats.filter((t) => (t.likelihood || 0) * (t.impact || 0) >= 12 && t.status !== 'accepted' && !reqs.some((r) => (r.derivedFromThreat || []).includes(t.id)));
+    const highNoReq = threats.filter((t) => riskEngine && riskEngine.inRange('likelihood', t.likelihood) && riskEngine.inRange('impact', t.impact)
+        && riskEngine.isHighOrAbove(riskEngine.classify(t.likelihood, t.impact)) && t.status !== 'accepted'
+        && !reqs.some((r) => (r.derivedFromThreat || []).includes(t.id)));
     const protocolLimitations = threats.filter((t) => t.classification === 'protocol-limitation').length;
     const deploymentRisks = threats.filter((t) => t.classification === 'deployment-risk').length;
     const sharedResponsibility = threats.filter((t) => t.classification === 'shared-responsibility').length;
@@ -45,6 +49,7 @@ export default function DashboardPanel() {
 
     return (
         <div className="panel">
+            {schemeWarning && <div className="settings-error-banner" role="alert">{schemeWarning} Ratings are shown as stored axes without scheme classification.</div>}
             <div className="panelhead">
                 <h1>Compliance dashboard</h1>
                 <HelpButton title="IEC 62443-4-1 / CRA overview">
@@ -187,10 +192,12 @@ export default function DashboardPanel() {
                                     <td>{t.title}</td>
                                     <td className="mono">{sortStride(t.stride).join('')}</td>
                                     <td>
-                                        <RiskPill score={r.initial} band={r.initialBand} />
+                                        {schemeWarning
+                                            ? `L${t.likelihood ?? '—'} / I${t.impact ?? '—'}`
+                                            : <RiskPill score={r.initial} band={r.initialBand} />}
                                     </td>
                                     <td>
-                                        <RiskPill score={r.residual} band={r.residualBand} />
+                                        {schemeWarning ? `L${r.residualLikelihood ?? '—'} / I${r.residualImpact ?? '—'}` : <RiskPill score={r.residual} band={r.residualBand} />}
                                     </td>
                                     <td style={{ textTransform: 'capitalize' }}>{t.status}</td>
                                 </tr>

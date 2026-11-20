@@ -58,6 +58,7 @@ class Harness {
     this.dom = null;
     this.openDialogUri = undefined;
     this.saveDialogUri = undefined;
+    this.confirmHandler = () => true;
     this.dialogOptions = [];
   }
 
@@ -82,6 +83,7 @@ class Harness {
     const disposable = () => ({ dispose() { } });
     return {
       Uri,
+      FileType: { File: 1, Directory: 2, SymbolicLink: 64 },
       RelativePattern: class RelativePattern { constructor(baseUri, pattern) { this.baseUri = baseUri; this.pattern = pattern; } },
       ViewColumn: { One: 1, Two: 2, Beside: -2, Active: -1 },
       Range: class Range { constructor(...a) { this.args = a; } },
@@ -116,6 +118,23 @@ class Harness {
         },
         fs: {
           readFile: async (u) => Buffer.from(h.readText(u.fsPath)),
+          readDirectory: async (u) => {
+            const dir = u.fsPath;
+            const entries = new Map();
+            if (fs.existsSync(dir)) {
+              for (const entry of fs.readdirSync(dir, { withFileTypes: true }))
+                entries.set(entry.name, entry.isDirectory() ? 2 : 1);
+            }
+            for (const file of [...h.overlay.keys(), ...h.externalFiles.keys()]) {
+              if (path.dirname(file) === dir) entries.set(path.basename(file), 1);
+            }
+            if (!entries.size && !fs.existsSync(dir)) {
+              const error = new Error(`ENOENT (test stub): ${dir}`);
+              error.code = "ENOENT";
+              throw error;
+            }
+            return [...entries.entries()];
+          },
           stat: async () => { throw new Error("ENOENT (test stub)"); }, // forces the hosted draw.io URL (never fetched)
           writeFile: async (u, data) => h.recordWrite(u.fsPath, Buffer.from(data).toString("utf8")),
           createDirectory: async () => { },
@@ -210,6 +229,7 @@ class Harness {
       virtualConsole,
       beforeParse(window) {
         let acquired = false, state;
+        window.confirm = (message) => h.confirmHandler(message);
         window.acquireVsCodeApi = () => {
           if (acquired) throw new Error("acquireVsCodeApi() may only be called once per webview");
           acquired = true;
@@ -826,8 +846,10 @@ async function checkDocumentEnvelopes(h, mod) {
     ["cms", "08-countermeasures/countermeasures.json", "countermeasures", '[data-ci="0"][data-k="title"]'],
   ];
   const threat = { ...readProjectJson(cases[0][1]).threats[0], likelihood: 3, impact: 3 };
-  const cm = { id: "CM-ENVELOPE", title: "Envelope control", type: "corrective", status: "proposed",
-    addresses: [{ threat: threat.id, residualLikelihood: 2, residualImpact: 2 }] };
+  const cm = {
+    id: "CM-ENVELOPE", title: "Envelope control", type: "corrective", status: "proposed",
+    addresses: [{ threat: threat.id, residualLikelihood: 2, residualImpact: 2 }]
+  };
   const metadata = { futureMetadata: { nested: ["preserve", { enabled: false }] }, revision: 0, note: null };
   for (const [i, [, rel, key]] of cases.entries()) {
     h.overlay.set(path.join(projectDir, rel), JSON.stringify({ ...metadata, [key]: [i ? cm : threat] }));
@@ -872,18 +894,25 @@ async function checkThreatCostPersistence(h, mod) {
   const compIds = JSON.parse(h.readText(path.join(projectDir, "03-system-assets/system.json"))).components.map((c) => c.id);
   const envelope = { revision: 0, futureMetadata: { nested: ["keep envelope"] } };
   const metadata = { nested: ["keep row", { enabled: false }] };
-  const costs = { requiredSkill: 2, requiredAccess: 4,
+  const costs = {
+    requiredSkill: 2, requiredAccess: 4,
     costFactors: { time: 5, exploitability: 2, futureMetadata: metadata },
     costRationales: { time: "Assessed time", exploitability: "", futureMetadata: metadata },
-    costLikelihood: 0, costLikelihoodProposal: 0 };
+    costLikelihood: 0, costLikelihoodProposal: 0
+  };
   const keys = Object.keys(costs);
-  const bare = { id: "T-COST", title: "Cost persistence", stride: ["T"], components: [compIds[0]],
-    likelihood: 3, impact: 3, status: "open", assets: [], futureMetadata: metadata };
+  const bare = {
+    id: "T-COST", title: "Cost persistence", stride: ["T"], components: [compIds[0]],
+    likelihood: 3, impact: 3, status: "open", assets: [], futureMetadata: metadata
+  };
   const saved = () => JSON.parse(h.readText(file)).threats[0];
   const absent = (row) => keys.forEach((key) => assert.ok(!Object.hasOwn(row, key), `${key} must remain absent`));
   const reopen = async () => {
     h.close(); await mod.openWizard(ctx); h.openDom(); await h.settle();
     assert.deepStrictEqual(h.toWebview.filter((m) => m.cmd === "init").at(-1).data.threats, [saved()]);
+    const init = h.toWebview.filter((m) => m.cmd === "init").at(-1);
+    assert.equal(init.scheme?.id, "builtin:5x5-cost", "legacy cost-based project did not resolve its built-in scheme");
+    assert.equal(init.schemeWarning, null, "legacy cost-based project unexpectedly entered read-only mode");
   };
   const save = async (mode, row) => {
     const start = h.writes.length;
@@ -905,15 +934,18 @@ async function checkThreatCostPersistence(h, mod) {
     // New row with zero probability/proposal and an independently accepted likelihood.
     let expected = { ...bare, id: `T-COST-${mode}`, likelihood: 4, ...costs, incomingMetadata: metadata };
     assert.deepStrictEqual(await save(mode, expected), expected);
-    expected = { ...expected, requiredSkill: 5, requiredAccess: 1, costLikelihood: 0.75,
+    expected = {
+      ...expected, requiredSkill: 5, requiredAccess: 1, costLikelihood: 0.75,
       costLikelihoodProposal: 5, costFactors: { ...costs.costFactors, time: 1 },
-      costRationales: { ...costs.costRationales, time: "Reassessed" } };
+      costRationales: { ...costs.costRationales, time: "Reassessed" }
+    };
     assert.deepStrictEqual(await save(mode, expected), expected, "existing cost edits lost or accepted automatically");
     expected = { ...expected, likelihood: 0 };
     assert.deepStrictEqual(await save(mode, expected), expected, "manual zero likelihood replaced by proposal");
     await reopen();
-    assert.strictEqual(h.must('[data-i="0"][data-k="likelihood"]').value, "0");
-    assert.strictEqual(h.must('[data-i="0"][data-k="likelihood"]').min, "0");
+    const likelihoodInput = h.must('[data-i="0"][data-k="likelihood"]');
+    assert.strictEqual(likelihoodInput.value, "0", `L0 was not rendered in the scheme selector: ${likelihoodInput.outerHTML}`);
+    assert.ok(likelihoodInput.querySelector('option[value="0"]'), "likelihood selector omitted the L0 option");
     const omitted = { ...expected, title: "Unrelated edit" }; keys.forEach((key) => delete omitted[key]);
     if (mode === "explicit") delete omitted.futureMetadata;
     assert.deepStrictEqual(await save(mode, omitted), mode === "explicit" ? { ...expected, title: omitted.title } : omitted,
@@ -934,7 +966,9 @@ async function checkThreatCostPersistence(h, mod) {
   const assessed = { ...bare, likelihood: 0, ...costs, costLikelihoodProposal: 4 };
   await save("explicit", { ...assessed, likelihood: 3 }); await reopen();
   const likelihood = '[data-i="0"][data-k="likelihood"]';
-  h.setValue(likelihood, "0"); await h.settle(1700);
+  h.setValue(likelihood, "0");
+  assert.strictEqual(h.must(likelihood).value, "0", `wizard did not retain the selected L0 option: ${h.must(likelihood).outerHTML}`);
+  await h.settle(1700);
   assert.deepStrictEqual(saved(), assessed, "UI likelihood zero must survive autosave independently of proposal");
   h.click("#undoBtn"); await h.settle(1700);
   assert.deepStrictEqual(saved(), { ...assessed, likelihood: 3 }, "undo must restore selected likelihood");
@@ -975,9 +1009,11 @@ async function checkManagedAttackerSync(h, mod) {
   const originals = [projectFile, asmFile].map((p) => [p, h.readText(p)]);
   const reopen = async () => { h.close(); await mod.openWizard(ctx); h.openDom(); await h.settle(); };
   const asmWrites = (from) => h.writes.slice(from).filter((w) => w.path === asmFile).length;
-  const legacy = { id: "ATK-SLC-4", name: "Threat Actor 4: State-Sponsored/Professional Attacks", capability: 5,
+  const legacy = {
+    id: "ATK-SLC-4", name: "Threat Actor 4: State-Sponsored/Professional Attacks", capability: 5,
     motivation: "Intentional highly sophisticated attack", resources: "Extensive resources, deep ACS expertise, very high motivation",
-    text: "SL-C 4 attacker profile managed by EmbedRisk.", access: "remote", futureMetadata: { keep: true } };
+    text: "SL-C 4 attacker profile managed by EmbedRisk.", access: "remote", futureMetadata: { keep: true }
+  };
   const envelope = { ...JSON.parse(originals[1][1]), futureEnvelope: ["keep"] };
   const canonical = require(path.join(extDir, "media/attacker-scale.js")).managedSlcAttacker(4);
   h.overlay.set(projectFile, JSON.stringify({ ...JSON.parse(originals[0][1]), slTarget: "SL4" }));
@@ -1003,8 +1039,10 @@ async function checkThreatCostControls(h, mod) {
   const project = { ...JSON.parse(h.readText(projectFile)), slTarget: "SL2" };
   for (const key of ["riskScoringMethod", "costFactorWeights", "accessProbabilities", "likelihoodProbabilityThresholds"]) delete project[key];
   const metadata = { nested: ["preserve", { enabled: false }] };
-  const bare = { id: "T-CONTROLS", title: "Cost controls", stride: ["T"], components: [compIds[0]], assets: [],
-    likelihood: 4, impact: 3, status: "mitigated", futureMetadata: metadata };
+  const bare = {
+    id: "T-CONTROLS", title: "Cost controls", stride: ["T"], components: [compIds[0]], assets: [],
+    likelihood: 4, impact: 3, status: "mitigated", futureMetadata: metadata
+  };
   const saved = () => JSON.parse(h.readText(file)).threats[0];
   const field = (key) => `[data-i="0"][data-k="${key}"]`;
   const cost = (key) => `[data-i="0"][data-cost="${key}"]`;
@@ -1027,7 +1065,7 @@ async function checkThreatCostControls(h, mod) {
   h.overlay.set(projectFile, JSON.stringify(project));
   h.overlay.set(file, JSON.stringify({ threats: [bare] }));
   await reopen();
-  assert.strictEqual(h.must("#p-risk").value, "cost-based");
+  assert.strictEqual(h.must("#p-risk").value, "builtin:5x5-cost");
   assert.strictEqual(h.must(cost("requiredSkill")).value, "1");
   assert.strictEqual(h.must(cost("requiredAccess")).value, "3");
   assert.deepStrictEqual(Array.from(h.document.querySelectorAll(cost("costFactors")), (el) => el.dataset.costKey), factors.map(([key]) => key));
@@ -1055,13 +1093,17 @@ async function checkThreatCostControls(h, mod) {
   await persist({ ...bare, requiredSkill: 4, status: "unfeasible", likelihood: 0, costLikelihood: 0, costLikelihoodProposal: 0 });
   preview("0.0%", "L0 · None");
 
-  const configured = { ...project, riskScoringMethod: "cost-based",
+  const configured = {
+    ...project, riskScoringMethod: "cost-based",
     costFactorWeights: { time: 1, exploitability: 0, window: 0, detection: 0, notoriety: 0, prep: 0, abort: 0 },
-    accessProbabilities: { 1: 0.5, 4: 0.625 }, likelihoodProbabilityThresholds: { 2: 0.1, 3: 0.125, 4: 0.3, 5: 0.8 } };
-  let expected = { ...bare, requiredSkill: 2, requiredAccess: 3,
+    accessProbabilities: { 1: 0.5, 4: 0.625 }, likelihoodProbabilityThresholds: { 2: 0.1, 3: 0.125, 4: 0.3, 5: 0.8 }
+  };
+  let expected = {
+    ...bare, requiredSkill: 2, requiredAccess: 3,
     costFactors: { time: 5, exploitability: 1, futureMetadata: metadata },
     costRationales: { time: "Keep rationale", futureMetadata: metadata },
-    costLikelihood: 0.99, costLikelihoodProposal: 5 };
+    costLikelihood: 0.99, costLikelihoodProposal: 5
+  };
   h.overlay.set(projectFile, JSON.stringify(configured));
   h.overlay.set(file, JSON.stringify({ threats: [expected] }));
   await reopen();
@@ -1073,15 +1115,21 @@ async function checkThreatCostControls(h, mod) {
   assert.ok(!h.must("[data-cost-warning]").textContent.includes("saved proposal"));
   assert.ok(h.must("[data-cost-warning]").textContent.includes("Accepted likelihood L5"));
   await persist(expected);
-  for (const mode of ["exposure-exploitability-impact", "cost-based"]) {
-    h.setValue("#p-risk", mode);
+  const confirmations = [];
+  h.confirmHandler = (message) => { confirmations.push(message); return false; };
+  h.setValue("#p-risk", "builtin:5x5-exposure");
+  assert.strictEqual(h.must("#p-risk").value, "builtin:5x5-cost", "cancelled risk scheme switch changed the selection");
+  assert.ok(confirmations.at(-1)?.includes("T-CONTROLS"), `risk scheme confirmation omitted affected rated threats: ${JSON.stringify(confirmations)}`);
+  h.confirmHandler = () => true;
+  for (const [schemeId, mode] of [["builtin:5x5-exposure", "exposure-exploitability-impact"], ["builtin:5x5-cost", "cost-based"]]) {
+    h.setValue("#p-risk", schemeId);
     assert.strictEqual(h.document.querySelector(cost("requiredSkill")) !== null, mode === "cost-based");
     assert.strictEqual(h.document.querySelector('[data-i="0"][data-fac="exposure"]') !== null, mode !== "cost-based");
     if (mode !== "cost-based") assert.ok(h.must('[data-i="0"][data-cvss="vector"]'));
     assert.ok(h.must('[data-i="0"][data-dim="safety"]').closest(".bbselect"));
     await persist(expected);
     assert.strictEqual(JSON.parse(h.readText(projectFile)).riskScoringMethod, mode);
-    await reopen(); assert.strictEqual(h.must("#p-risk").value, mode);
+    await reopen(); assert.strictEqual(h.must("#p-risk").value, schemeId);
     assert.deepStrictEqual(saved(), expected);
   }
   const access = h.must(cost("requiredAccess")); access.focus();
@@ -1189,8 +1237,10 @@ async function checkBugBar(h, mod) {
   };
   const cm = {
     id: "CM-BUGBAR", title: "Bug Bar regression", selected: true, futureMetadata: { nested: ["keep CM"] },
-    addresses: [{ threat: threat.id, residualLikelihood: 2, residualImpact: 2, impactDimensions: unknownDims,
-      ratedAt: "2020-01-02", ratedBy: "Reviewer", futureMetadata: { nested: ["keep link"] } }],
+    addresses: [{
+      threat: threat.id, residualLikelihood: 2, residualImpact: 2, impactDimensions: unknownDims,
+      ratedAt: "2020-01-02", ratedBy: "Reviewer", futureMetadata: { nested: ["keep link"] }
+    }],
   };
   h.overlay.set(path.join(projectDir, threatPath), JSON.stringify({ threats: [threat] }));
   h.overlay.set(path.join(projectDir, cmPath), JSON.stringify({ countermeasures: [cm] }));
@@ -1242,8 +1292,10 @@ async function checkBugBar(h, mod) {
     h.key("z", { ctrlKey: true });
     assert.strictEqual(h.must(numeric).value, "3");
     await h.settle(1700);
-    assert.deepStrictEqual(saved(), { ...expected, [residual ? "residualImpact" : "impact"]: 3,
-      impactDimensions: { ...unknownDims, confidentiality: 3 } }, "undo was not persisted");
+    assert.deepStrictEqual(saved(), {
+      ...expected, [residual ? "residualImpact" : "impact"]: 3,
+      impactDimensions: { ...unknownDims, confidentiality: 3 }
+    }, "undo was not persisted");
     h.key("y", { ctrlKey: true });
     assert.strictEqual(h.must(numeric).value, "0");
     await h.settle(1700);
@@ -1285,7 +1337,7 @@ async function checkBugBar(h, mod) {
 async function checkRiskMatrices(h, mod) {
   await h.settle(1700);
   const tp = "06-threats/threats.json", cp = "08-countermeasures/countermeasures.json", pp = "01-project-description/project.json";
-  const kb = path.join(extDir, "runtime/.assets/knowledge-base/risk-scheme.json");
+  const kb = path.join(ctx.globalStorageUri.fsPath, "risk-schemes", "wizard-matrix.json");
   const futureMetadata = { nested: ["preserve matrix metadata"] };
   const threats = [
     { id: "M1", title: "Matrix", likelihood: 5, impact: 5, futureMetadata },
@@ -1299,15 +1351,44 @@ async function checkRiskMatrices(h, mod) {
     { id: "C2", addresses: [{ threat: "M1", residualImpact: 3 }] },
     { id: "C3", selected: false, addresses: [{ threat: "M1", residualLikelihood: 0, residualImpact: 0 }] },
   ];
-  const project = { ...JSON.parse(h.readText(path.join(projectDir, pp))), acceptableRisk: 6, futureMetadata };
+  const project = { ...JSON.parse(h.readText(path.join(projectDir, pp))), acceptableRisk: 6, riskSchemeId: "wizard-matrix", riskSchemeFingerprint: undefined, futureMetadata };
   const name = '<img src=x onerror="alert(1)"> & "band"';
   for (const [rel, data] of [[tp, { threats }], [cp, { countermeasures: cms }], [pp, project]]) h.overlay.set(path.join(projectDir, rel), JSON.stringify(data));
-  h.overlay.set(kb, JSON.stringify({ matrix: { bands: [{ name, min: 1, max: 25, color: "#123456" }] } }));
+  const scheme = JSON.parse(fs.readFileSync(path.join(root, "webapp/.assets/knowledge-base/risk-scheme-5x5-exposure.json"), "utf8"));
+  scheme.id = "wizard-matrix";
+  scheme.title = "Wizard matrix test";
+  scheme.likelihood.derivation = { kind: "manual" };
+  scheme.likelihood.criteria = [];
+  scheme.impact.derivation = { kind: "manual" };
+  scheme.impact.criteria = [];
+  scheme.classification.levels[0].label = name;
+  scheme.classification.levels[0].color = "#123456";
+  scheme.classification.bands = [{ level: "low", min: 1, max: 25 }];
+  h.overlay.set(kb, JSON.stringify(scheme));
   const reopen = async (focusThreatId) => { h.close(); await mod.openWizard(ctx, focusThreatId); h.openDom(); await h.settle(); };
   const cell = (mount, l, i) => h.must(`#${mount}-matrix td[data-l="${l}"][data-i="${i}"]`);
   const count = (l, i, n) => { for (const mount of ["threats", "cms"]) assert.strictEqual(cell(mount, l, i).querySelector(".n").textContent, n ? String(n) : ""); };
   const mode = (value, mount = "threats") => h.click(`#${mount}-matrix [data-mode="${value}"]`);
   const saves = () => h.toHost.filter((m) => m.cmd === "autoSave").length;
+  await reopen();
+  const init = h.toWebview.filter((message) => message.cmd === "init").at(-1);
+  assert.equal(init?.scheme?.id, "wizard-matrix", `wizard failed to resolve local matrix scheme: ${init?.schemeWarning}`);
+  const malformedPath = path.join(ctx.globalStorageUri.fsPath, "risk-schemes", "malformed.json");
+  const malformed = JSON.parse(JSON.stringify(scheme));
+  malformed.id = "malformed-extra-cells";
+  malformed.unsupported = true;
+  malformed.classification = { kind: "lookup", levels: scheme.classification.levels, matrix: {} };
+  for (const impact of [1, 2, 3, 4, 5, 6]) {
+    malformed.classification.matrix[String(impact)] = Object.fromEntries([1, 2, 3, 4, 5].map((likelihood) => [String(likelihood), "low"]));
+  }
+  h.overlay.set(malformedPath, JSON.stringify(malformed));
+  await reopen();
+  const parityInit = h.toWebview.filter((message) => message.cmd === "init").at(-1);
+  const loadedIds = (parityInit?.riskSchemes || []).map((item) => item.id);
+  assert.ok(!loadedIds.includes("malformed-extra-cells"), "extension accepted a scheme the shared validator rejects");
+  assert.ok(["builtin:5x5-exposure", "builtin:5x5-cost", "wizard-matrix"].every((id) => loadedIds.includes(id)),
+    `built-in or valid local schemes missing after a malformed file: ${loadedIds.join(", ")}`);
+  h.overlay.delete(malformedPath);
   await reopen();
   const before = saves(), diskBefore = [tp, cp, pp].map((p) => h.readText(path.join(projectDir, p)));
   for (const mount of ["threats", "cms"]) {
@@ -1376,7 +1457,8 @@ async function checkRiskMatrices(h, mod) {
   h.deliverToHost({ cmd: "ready" }); await h.settle(); count(1, 2, 1);
   assert.ok(h.must("#cms-matrix").textContent.includes("acceptable risk: 6"));
   const savedProject = JSON.parse(h.readText(path.join(projectDir, pp))); delete savedProject.acceptableRisk;
-  h.overlay.set(path.join(projectDir, pp), JSON.stringify(savedProject)); h.overlay.set(kb, "");
+  savedProject.riskSchemeId = "builtin:5x5-cost"; delete savedProject.riskSchemeFingerprint;
+  h.overlay.set(path.join(projectDir, pp), JSON.stringify(savedProject));
   await reopen(); count(1, 2, 1);
   assert.ok(h.must("#threats-matrix").textContent.includes("acceptable risk: 12"));
   assert.ok(h.must("#cms-matrix .matrix-legend").textContent.includes("Critical"));
@@ -1390,14 +1472,18 @@ async function checkRiskMatrices(h, mod) {
 
 async function checkThreatCmImportExport(h, mod) {
   const tp = "06-threats/threats.json", cp = "08-countermeasures/countermeasures.json", sp = "03-system-assets/system.json";
-  const threatEnvelope = { envelopeMetadata: { keep: ["threats"] }, threats: [
-    { id: "T-1", title: "Existing", futureThreatMetadata: { retained: true } },
-    { id: "T-8", title: "Export me", futureThreatMetadata: { nested: ["full record"] } },
-  ] };
-  const cmEnvelope = { envelopeMetadata: { keep: ["countermeasures"] }, countermeasures: [
-    { id: "CM1", title: "Export control", addresses: [{ threat: "T-8", futureAddressMetadata: { retained: true } }], futureCmMetadata: ["full record"] },
-    { id: "CM8", title: "Not selected", addresses: [] },
-  ] };
+  const threatEnvelope = {
+    envelopeMetadata: { keep: ["threats"] }, threats: [
+      { id: "T-1", title: "Existing", futureThreatMetadata: { retained: true } },
+      { id: "T-8", title: "Export me", futureThreatMetadata: { nested: ["full record"] } },
+    ]
+  };
+  const cmEnvelope = {
+    envelopeMetadata: { keep: ["countermeasures"] }, countermeasures: [
+      { id: "CM1", title: "Export control", addresses: [{ threat: "T-8", futureAddressMetadata: { retained: true } }], futureCmMetadata: ["full record"] },
+      { id: "CM8", title: "Not selected", addresses: [] },
+    ]
+  };
   const systemEnvelope = { components: [{ id: "T-2", name: "Project-wide ID collision" }], interfaces: [], trustBoundaries: [], assets: [] };
   h.overlay.set(path.join(projectDir, tp), JSON.stringify(threatEnvelope));
   h.overlay.set(path.join(projectDir, cp), JSON.stringify(cmEnvelope));
@@ -1826,11 +1912,15 @@ async function attackTreeEditor(h) {
   const projectPath = path.join(projectDir, "01-project-description/project.json");
   const weights = { time: 1, exploitability: 0, window: 0, detection: 0, notoriety: 0, prep: 0, abort: 0 };
   h.overlay.set(projectPath, JSON.stringify({ costFactorWeights: weights }));
-  h.overlay.set(path.join(projectDir, "07-attack-trees/attack-trees.json"), JSON.stringify({ trees: [{
-    id: "AT1", title: "Weighted tree", root: { id: "g", kind: "goal", label: "Goal", gate: "AND", children: [
-      { id: "s", kind: "step", label: "Weighted step", cost: { time: 1, exploitability: 5 }, skill: 2, access: 3 },
-    ] },
-  }] }));
+  h.overlay.set(path.join(projectDir, "07-attack-trees/attack-trees.json"), JSON.stringify({
+    trees: [{
+      id: "AT1", title: "Weighted tree", root: {
+        id: "g", kind: "goal", label: "Goal", gate: "AND", children: [
+          { id: "s", kind: "step", label: "Weighted step", cost: { time: 1, exploitability: 5 }, skill: 2, access: 3 },
+        ]
+      },
+    }]
+  }));
   const stub = h.vscodeStub();
   let changeDocument, subscriptionDisposed = false;
   stub.workspace.onDidChangeTextDocument = (handler) => {
@@ -1991,16 +2081,20 @@ async function nativeDfdEditor(h) {
     { id: "IGNORED", selected: false, addresses: [{ threat: "ROOT", residualLikelihood: 1, residualImpact: 1 }] },
     { id: "APPLIED", addresses: [{ threat: "GRANDCHILD", residualLikelihood: 1, residualImpact: 2 }] },
   ];
-  const project = { ...readProjectJson(projectPath), acceptableRisk: 6 };
-  const schemePath = path.join(extDir, "runtime/.assets/knowledge-base/risk-scheme.json");
-  const scheme = JSON.parse(h.readText(schemePath));
-  scheme.matrix.bands = [{ name: "Custom", min: 1, max: 25, color: "#123456" }];
+  const project = { ...readProjectJson(projectPath), acceptableRisk: 6, riskSchemeId: "native-custom" };
+  const schemePath = path.join(ctx.globalStorageUri.fsPath, "risk-schemes", "native-custom.json");
+  const scheme = JSON.parse(fs.readFileSync(path.join(root, "webapp/.assets/knowledge-base/risk-scheme-5x5-exposure.json"), "utf8"));
+  scheme.id = "native-custom";
+  scheme.title = "Native custom scheme";
+  scheme.classification.levels[0].label = "Custom";
+  scheme.classification.levels[0].color = "#123456";
+  scheme.classification.bands = [{ level: "low", min: 1, max: 25 }];
   h.overlay.set(path.join(projectDir, threatPath), JSON.stringify({ threats }));
   h.overlay.set(path.join(projectDir, cmPath), JSON.stringify({ countermeasures: cms }));
   h.overlay.set(path.join(projectDir, projectPath), JSON.stringify(project));
   h.overlay.set(schemePath, JSON.stringify(scheme));
   const mod = await load(h, "nativeDfdEditor.ts");
-  const provider = new mod.NativeDfdEditor(ctx.extensionUri);
+  const provider = new mod.NativeDfdEditor(ctx.extensionUri, ctx.globalStorageUri);
   const panel = h.createPanel();
   await provider.resolveCustomTextEditor(h.createDocument("04-dfd/dfd.json"), panel, {});
   h.openDom();

@@ -1,7 +1,77 @@
 // Client-side mirror of the deterministic risk engine so risk badges update instantly
 // as the user edits, without a server round-trip. Bands fall back to the canonical
 // scheme until the live scheme is fetched.
-import type { Component, Countermeasure, Objectives, RiskBand, RiskScheme, Threat } from '../types';
+import type { Component, Countermeasure, Objectives, RiskBand, RiskScheme, RiskSchemeV2, Threat } from '../types';
+import '@shared/riskEngine.js';
+
+type RiskEngine = {
+    scheme: any;
+    likelihoodLevels(): { value: number; code: string; label: string }[];
+    impactLevels(): { value: number; code: string; label: string }[];
+    bands(): RiskBand[];
+    band(score: number): RiskBand;
+    classify(likelihood: number, impact: number): { id: string; label: string; rank: number; color: string; treatment: string; score?: number; acceptanceBy?: string };
+    criteria(axis: 'likelihood' | 'impact'): { id: string }[];
+    isHighOrAbove(level: string | number | { rank: number }): boolean;
+    inRange(axis: 'likelihood' | 'impact', value: number): boolean;
+    residual(threat: Threat, cms: Countermeasure[]): [number, number];
+    riskOf(threat: Threat, cms: Countermeasure[]): { initial: number; residual: number; residualLikelihood: number; residualImpact: number };
+    deriveImpact(threat: { impact?: number; impactCriteria?: Record<string, number | null>; impactDimensions?: Objectives }): number | null;
+    deriveLikelihood(threat: { likelihood?: number; likelihoodCriteria?: Record<string, number | null>; likelihoodFactors?: { exposure?: number; exploitability?: number } }): number | null;
+};
+
+const engineCache = new WeakMap<object, RiskEngine>();
+function engineOf(scheme: RiskScheme | null): RiskEngine {
+    const api = (globalThis as any).RiskEngine;
+    if (!api) throw new Error('Risk engine script was not loaded.');
+    const key = scheme && typeof scheme === 'object' ? scheme as object : null;
+    if (key && engineCache.has(key)) return engineCache.get(key)!;
+    const engine = api.createRiskEngine(scheme || {});
+    if (key) engineCache.set(key, engine);
+    return engine;
+}
+
+export function createRiskEngine(scheme: RiskScheme | null): RiskEngine {
+    return engineOf(scheme);
+}
+
+export function legacyRiskSchemeRegistry(legacyScheme: RiskScheme): {
+    schemes: RiskSchemeV2[];
+    fingerprints: Record<string, string>;
+    errors: { file: string; message: string }[];
+} {
+    const api = (globalThis as any).RiskEngine;
+    const engines = (['cost-based', 'exposure-exploitability-impact'] as const).map((riskScoringMethod) =>
+        api.createRiskEngine(legacyScheme, { riskScoringMethod }));
+    return {
+        schemes: engines.map((engine) => engine.scheme as RiskSchemeV2),
+        fingerprints: Object.fromEntries(engines.map((engine) => [engine.scheme.id, engine.fingerprint])),
+        errors: [],
+    };
+}
+
+export function schemeForProject(project: { riskSchemeId?: string; riskScoringMethod?: string; riskSchemeFingerprint?: string }, schemes: RiskSchemeV2[], fingerprints: Record<string, string>) {
+    const id = project.riskSchemeId || (project.riskScoringMethod === 'exposure-exploitability-impact' ? 'builtin:5x5-exposure' : 'builtin:5x5-cost');
+    const scheme = schemes.find((item) => item.id === id);
+    if (!scheme) return { scheme: null, schemeWarning: `Risk scheme '${id}' is unavailable. Risk ratings are read-only.` };
+    if (project.riskSchemeFingerprint && project.riskSchemeFingerprint !== fingerprints[id])
+        return { scheme: null, schemeWarning: `Risk scheme '${id}' has changed since this project was assessed. Risk ratings are read-only.` };
+    return { scheme, schemeWarning: null };
+}
+
+export function bandForRisk(likelihood: number, impact: number, scheme: RiskScheme | null): RiskBand {
+    const engine = engineOf(scheme);
+    return riskBand(engine, likelihood, impact, likelihood * impact);
+}
+
+function riskBand(engine: RiskEngine, likelihood: number, impact: number, score: number): RiskBand {
+    if (score <= 0) return NONE_BAND;
+    if (engine.scheme.classification.kind === 'product-bands') return engine.band(score);
+    const level = engine.classify(likelihood, impact);
+    return level.id === 'none'
+        ? NONE_BAND
+        : { name: level.label, min: level.rank, max: level.rank, color: level.color, lookup: true };
+}
 
 /**
  * A component and all of its descendants (transitive children via `parent`). Selecting a
@@ -39,30 +109,16 @@ export const DEFAULT_BANDS: RiskBand[] = [
 export const NONE_BAND: RiskBand = { name: 'None', min: 0, max: 0, color: '#6b7280' };
 
 export function bandsOf(scheme: RiskScheme | null): RiskBand[] {
-    return scheme?.matrix?.bands?.length ? scheme.matrix.bands : DEFAULT_BANDS;
+    return engineOf(scheme).bands();
 }
 
 export function band(score: number, scheme: RiskScheme | null): RiskBand {
-    if (score <= 0) return NONE_BAND;
-    const bands = bandsOf(scheme);
-    return bands.find((b) => score >= b.min && score <= b.max) || bands[0];
+    return engineOf(scheme).band(score);
 }
 
 /** Residual [likelihood, impact] for a threat across all selected countermeasure links. */
 export function residual(threat: Threat, cms: Countermeasure[]): [number, number] {
-    if (threat.status === 'unfeasible') return [0, 0];
-    const links = cms.filter((c) => c.selected !== false).flatMap((c) => (c.addresses || []).filter((a) => a.threat === threat.id));
-    if (!links.length) return [threat.likelihood, threat.impact];
-    // All applied controls are in effect simultaneously, so an attacker must overcome the strongest
-    // one on each axis. The residual likelihood is therefore the LOWEST residual likelihood any
-    // single control achieves (the most protective control dominates), and likewise for impact.
-    let rl = threat.likelihood;
-    let ri = threat.impact;
-    for (const a of links) {
-        rl = Math.min(rl, a.residualLikelihood ?? threat.likelihood);
-        ri = Math.min(ri, a.residualImpact ?? threat.impact);
-    }
-    return [rl, ri];
+    return engineOf(null).residual(threat, cms);
 }
 
 export interface ThreatRisk {
@@ -75,24 +131,23 @@ export interface ThreatRisk {
 }
 
 export function riskOf(threat: Threat, cms: Countermeasure[], scheme: RiskScheme | null): ThreatRisk {
-    const initial = threat.status === 'unfeasible' ? 0 : (threat.likelihood || 0) * (threat.impact || 0);
-    const [rl, ri] = residual(threat, cms);
-    const res = (rl || 0) * (ri || 0);
+    const engine = engineOf(scheme);
+    const risk = engine.riskOf(threat, cms);
+    const initialBand = riskBand(engine, threat.likelihood, threat.impact, risk.initial);
+    const residualBand = riskBand(engine, risk.residualLikelihood, risk.residualImpact, risk.residual);
+    // Lookup schemes have no product score; the level rank is the priority used for sorting.
     return {
-        initial,
-        initialBand: band(initial, scheme),
-        residual: res,
-        residualBand: band(res, scheme),
-        residualLikelihood: rl,
-        residualImpact: ri,
+        ...risk,
+        initial: initialBand.lookup ? initialBand.min : risk.initial,
+        residual: residualBand.lookup ? residualBand.min : risk.residual,
+        initialBand,
+        residualBand,
     };
 }
 
 /** Bug Bar: impact is the worst plausible dimension (max of C/I/A/Safety). */
 export function deriveImpact(d?: Objectives): number | null {
-    if (!d) return null;
-    const vals = [d.confidentiality, d.integrity, d.availability, d.safety].filter((x) => typeof x === 'number') as number[];
-    return vals.length ? Math.max(...vals) : null;
+    return engineOf(null).deriveImpact({ impactDimensions: d });
 }
 
 /**
@@ -106,12 +161,7 @@ export function deriveImpact(d?: Objectives): number | null {
  * excluded here — controls act on the *residual*, not the inherent likelihood (avoids double-counting).
  */
 export function deriveLikelihood(f?: { exposure?: number; exploitability?: number }): number | null {
-    if (!f) return null;
-    const has = typeof f.exposure === 'number' || typeof f.exploitability === 'number';
-    if (!has) return null;
-    const e = typeof f.exposure === 'number' ? f.exposure : 3;
-    const x = typeof f.exploitability === 'number' ? f.exploitability : 3;
-    return Math.min(5, Math.max(1, Math.round(Math.sqrt(e * x))));
+    return engineOf(null).deriveLikelihood({ likelihoodFactors: f });
 }
 
 /**

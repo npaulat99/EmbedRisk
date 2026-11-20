@@ -229,6 +229,12 @@
     "configuration": {
       "title": "EmbedRisk",
       "properties": {
+        "embedrisk.riskSchemeDirectory": {
+          "type": "string",
+          "default": "",
+          "scope": "machine",
+          "description": "Directory containing local risk scheme v2 JSON files. Defaults to this extension's global storage risk-schemes folder; it is never read from a project file."
+        },
         "embedrisk.project.riskScoringMethod": {
           "type": "string",
           "enum": [
@@ -253,13 +259,41 @@
           "scope": "resource",
           "description": "Project cost-factor weights. Values should total 1.00.",
           "properties": {
-            "time": { "type": "number", "minimum": 0, "maximum": 1 },
-            "exploitability": { "type": "number", "minimum": 0, "maximum": 1 },
-            "window": { "type": "number", "minimum": 0, "maximum": 1 },
-            "detection": { "type": "number", "minimum": 0, "maximum": 1 },
-            "notoriety": { "type": "number", "minimum": 0, "maximum": 1 },
-            "prep": { "type": "number", "minimum": 0, "maximum": 1 },
-            "abort": { "type": "number", "minimum": 0, "maximum": 1 }
+            "time": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1
+            },
+            "exploitability": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1
+            },
+            "window": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1
+            },
+            "detection": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1
+            },
+            "notoriety": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1
+            },
+            "prep": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1
+            },
+            "abort": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1
+            }
           }
         },
         "embedrisk.project.accessProbabilities": {
@@ -274,11 +308,31 @@
           "scope": "resource",
           "description": "Project probability of obtaining each required access level.",
           "properties": {
-            "1": { "type": "number", "minimum": 0.05, "maximum": 1 },
-            "2": { "type": "number", "minimum": 0.05, "maximum": 1 },
-            "3": { "type": "number", "minimum": 0.05, "maximum": 1 },
-            "4": { "type": "number", "minimum": 0.05, "maximum": 1 },
-            "5": { "type": "number", "minimum": 0.05, "maximum": 1 }
+            "1": {
+              "type": "number",
+              "minimum": 0.05,
+              "maximum": 1
+            },
+            "2": {
+              "type": "number",
+              "minimum": 0.05,
+              "maximum": 1
+            },
+            "3": {
+              "type": "number",
+              "minimum": 0.05,
+              "maximum": 1
+            },
+            "4": {
+              "type": "number",
+              "minimum": 0.05,
+              "maximum": 1
+            },
+            "5": {
+              "type": "number",
+              "minimum": 0.05,
+              "maximum": 1
+            }
           }
         },
         "embedrisk.project.likelihoodProbabilityThresholds": {
@@ -292,10 +346,26 @@
           "scope": "resource",
           "description": "Lower probability bounds for likelihood levels L2 through L5.",
           "properties": {
-            "2": { "type": "number", "minimum": 0.01, "maximum": 1 },
-            "3": { "type": "number", "minimum": 0.01, "maximum": 1 },
-            "4": { "type": "number", "minimum": 0.01, "maximum": 1 },
-            "5": { "type": "number", "minimum": 0.01, "maximum": 1 }
+            "2": {
+              "type": "number",
+              "minimum": 0.01,
+              "maximum": 1
+            },
+            "3": {
+              "type": "number",
+              "minimum": 0.01,
+              "maximum": 1
+            },
+            "4": {
+              "type": "number",
+              "minimum": 0.01,
+              "maximum": 1
+            },
+            "5": {
+              "type": "number",
+              "minimum": 0.01,
+              "maximum": 1
+            }
           }
         },
         "embedrisk.project.acceptableRisk": {
@@ -336,11 +406,22 @@
     },
     "menus": {
       "commandPalette": [
-        { "command": "embedrisk.dfdOverviewOpen", "when": "false" }
+        {
+          "command": "embedrisk.dfdOverviewOpen",
+          "when": "false"
+        }
       ],
       "view/title": [
-        { "command": "embedrisk.dashboardRefresh", "when": "view == embedrisk.dashboard", "group": "navigation" },
-        { "command": "embedrisk.dfdOverviewRefresh", "when": "view == embedrisk.dfdOverview", "group": "navigation" }
+        {
+          "command": "embedrisk.dashboardRefresh",
+          "when": "view == embedrisk.dashboard",
+          "group": "navigation"
+        },
+        {
+          "command": "embedrisk.dfdOverviewRefresh",
+          "when": "view == embedrisk.dfdOverview",
+          "group": "navigation"
+        }
       ]
     },
     "customEditors": [

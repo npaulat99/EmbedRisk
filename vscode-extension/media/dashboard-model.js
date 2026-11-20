@@ -30,9 +30,12 @@
     var configuredBands = list(matrix.bands).filter(function (band) {
       return typeof band.name === "string" && typeof band.min === "number" && typeof band.max === "number";
     });
-    var scheme = { matrix: Object.assign({}, matrix, {
-      bands: configuredBands.length ? configuredBands : RiskModel.DEFAULT_BANDS,
-    }) };
+    var scheme = schemeInput.schemaVersion === 2 ? schemeInput : {
+      matrix: Object.assign({}, matrix, {
+        bands: configuredBands.length ? configuredBands : RiskModel.DEFAULT_BANDS,
+      })
+    };
+    var schemeWarning = typeof input.schemeWarning === "string" ? input.schemeWarning : null;
     var components = list(system.components);
     var interfaces = list(system.interfaces);
     var assets = list(system.assets);
@@ -54,7 +57,7 @@
       return (item.status === "implemented" || item.status === "verified") && !tickets.length;
     });
     var highNoReq = threats.filter(function (threat) {
-      return (threat.likelihood || 0) * (threat.impact || 0) >= 12
+      return !schemeWarning && RiskModel.isHighOrAbove(threat.likelihood, threat.impact, scheme)
         && threat.status !== "accepted"
         && !requirements.some(function (requirement) {
           return Array.isArray(requirement.derivedFromThreat) && requirement.derivedFromThreat.includes(threat.id);
@@ -74,27 +77,41 @@
       { label: "High threats w/o req.", value: highNoReq.length, file: "06-threats/threats.json", warning: highNoReq.length > 0 },
       { label: "Countermeasures", value: implementedCms.length, file: "08-countermeasures/countermeasures.json" },
       { label: "Missing ticket links", value: missingTicket.length, file: "08-countermeasures/countermeasures.json", warning: missingTicket.length > 0 },
-      { label: "Open defects", value: defects.filter(function (item) {
-        return item.status !== "fixed" && item.status !== "wont-fix";
-      }).length, file: "09-defects/defects.json" },
+      {
+        label: "Open defects", value: defects.filter(function (item) {
+          return item.status !== "fixed" && item.status !== "wont-fix";
+        }).length, file: "09-defects/defects.json"
+      },
     ];
 
     var risks = threats.map(function (threat) {
       var safeThreat = Object.assign({}, threat);
-      return { threat: safeThreat, risk: RiskModel.riskOf(safeThreat, cms, scheme) };
+      return { threat: safeThreat, risk: schemeWarning ? null : RiskModel.riskOf(safeThreat, cms, scheme) };
     });
     function summarize(which) {
-      var values = risks.map(function (item) { return item.risk[which]; });
-      var bands = [{ name: "None", count: 0 }].concat(RiskModel.bandsOf(scheme).map(function (band) {
-        return { name: band.name, count: 0 };
+      var values = risks.filter(function (item) { return item.risk; }).map(function (item) { return item.risk[which]; });
+      var highNames = schemeWarning ? [] : RiskModel.highBandNames(scheme);
+      var bands = [{ name: "None", count: 0, high: false }].concat((schemeWarning ? [] : RiskModel.bandsOf(scheme)).map(function (band) {
+        return { name: band.name, count: 0, high: highNames.indexOf(band.name) >= 0 };
       }));
       risks.forEach(function (item) {
+        if (!item.risk) return;
         var target = bands.find(function (band) { return band.name === item.risk[which + "Band"].name; });
         if (target) target.count++;
       });
       return {
         maxScore: values.reduce(function (max, value) { return Math.max(max, value); }, 0),
-        highCount: values.filter(function (value) { return value >= 12; }).length,
+        maxLabel: values.length ? risks.reduce(function (max, item) {
+          if (!item.risk) return max;
+          var axes = which === "initial" ? [item.threat.likelihood, item.threat.impact] : [item.risk.residualLikelihood, item.risk.residualImpact];
+          var level = RiskModel.classify(axes[0], axes[1], scheme);
+          return level.rank > (max.rank || 0) ? { rank: level.rank, label: level.label } : max;
+        }, {}).label || "None" : "None",
+        highCount: risks.filter(function (item) {
+          if (!item.risk) return false;
+          var axes = which === "initial" ? [item.threat.likelihood, item.threat.impact] : [item.risk.residualLikelihood, item.risk.residualImpact];
+          return RiskModel.isHighOrAbove(axes[0], axes[1], scheme);
+        }).length,
         bands: bands,
       };
     }
@@ -107,14 +124,18 @@
       stats: stats,
       initial: summarize("initial"),
       residual: summarize("residual"),
+      schemeWarning: schemeWarning,
       threats: risks.map(function (item) {
         var threat = item.threat;
         var id = typeof threat.id === "string" ? threat.id : "";
+        var lookupScheme = schemeInput.schemaVersion === 2 && schemeInput.classification && schemeInput.classification.kind === "lookup";
         return {
           id: id,
           label: (id ? id + " · " : "") + text(threat.title, "Untitled threat"),
-          description: "Initial " + item.risk.initial + " (" + item.risk.initialBand.name + ") · Residual "
-            + item.risk.residual + " (" + item.risk.residualBand.name + ") · " + text(threat.status, "unknown status"),
+          description: item.risk
+            ? "Initial " + (lookupScheme ? item.risk.initialBand.name : item.risk.initial + " (" + item.risk.initialBand.name + ")") + " · Residual "
+            + (lookupScheme ? item.risk.residualBand.name : item.risk.residual + " (" + item.risk.residualBand.name + ")") + " · " + text(threat.status, "unknown status")
+            : "Stored L" + (threat.likelihood == null ? "—" : threat.likelihood) + " / I" + (threat.impact == null ? "—" : threat.impact) + " · classification unavailable",
         };
       }),
     };

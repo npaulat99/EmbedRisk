@@ -113,11 +113,24 @@ countermeasure -> residual risk**:
 
 - A threat should reference real `components`/`assets`/`interfaceRef` ids and, where a rating is
   claimed, an `attackerRef` whose `access` can plausibly reach the referenced interface's `exposure`.
-- A high/critical threat (`likelihood * impact >= 12`) should get a `requirement` derived from it
+- A threat at or above the active scheme's `highLevel` should get a `requirement` derived from it
   unless deliberately `status: accepted` (with `acceptedBy`, `acceptanceRationale`, `reviewDate` set).
 - A countermeasure's `addresses[].threat` must reference an existing threat id, and a `preventive`
   countermeasure should lower `residualLikelihood`, not `residualImpact` (and vice versa for
   controls that reduce consequence rather than probability).
+
+## Scheme-bound risk values
+
+- Resolve `project.riskSchemeId` and verify `riskSchemeFingerprint` before interpreting ratings. For
+  legacy projects without an ID, use the built-in mapping documented in
+  [docs/RISK-SCHEMES.md](../../docs/RISK-SCHEMES.md).
+- `likelihood`, `impact`, residual values, and `*Criteria` ratings must use values and criterion IDs
+  defined by that active scheme. Do not assume a 1-5 range or infer a fixed score cutoff from the
+  word "high"; use the scheme's levels, `highLevel`, and classification.
+- If a scheme is unavailable or its fingerprint is stale, report the stored axis values as
+  unclassified and ask for resolution. Do not silently reinterpret, clamp, or rewrite them.
+- To create a user scheme from a requested rubric, follow
+  [docs/RISK-SCHEMES.md](../../docs/RISK-SCHEMES.md); do not put scheme definitions in TRA step JSON.
 
 ## Attacker capability scale
 
