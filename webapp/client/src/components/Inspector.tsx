@@ -32,6 +32,7 @@ const HELP: Record<string, string> = {
 function NodeInspector() {
     const data = useStore((s) => s.data)!;
     const scheme = useStore((s) => s.scheme);
+    const schemeWarning = useStore((s) => s.schemeWarning);
     const save = useStore((s) => s.save);
     const setView = useStore((s) => s.setView);
     const openStrideBoundary = useStore((s) => s.openStrideBoundary);

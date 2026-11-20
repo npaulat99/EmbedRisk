@@ -10,7 +10,8 @@ type RiskEngine = {
     impactLevels(): { value: number; code: string; label: string }[];
     bands(): RiskBand[];
     band(score: number): RiskBand;
-    classify(likelihood: number, impact: number): { id: string; label: string; rank: number; color: string };
+    classify(likelihood: number, impact: number): { id: string; label: string; rank: number; color: string; treatment: string; score?: number; acceptanceBy?: string };
+    criteria(axis: 'likelihood' | 'impact'): { id: string }[];
     isHighOrAbove(level: string | number | { rank: number }): boolean;
     inRange(axis: 'likelihood' | 'impact', value: number): boolean;
     residual(threat: Threat, cms: Countermeasure[]): [number, number];
