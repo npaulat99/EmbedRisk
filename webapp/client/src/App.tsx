@@ -1,6 +1,7 @@
+import { useState } from 'react';
 import { useStore } from './state/store';
 import TopBar from './components/TopBar';
-import StepNav from './components/StepNav';
+import StepNav, { StepPicker } from './components/StepNav';
 import Inspector from './components/Inspector';
 import WizardBar from './components/WizardBar';
 import DfdView from './components/dfd/DfdView';
@@ -20,15 +21,18 @@ import KbPanel from './components/panels/KbPanel';
 import SettingsModal from './components/SettingsModal';
 import StrideBoundaryEditor from './components/StrideBoundaryEditor';
 import TutorialOnboarding from './components/TutorialOnboarding';
+import DialogProvider from './components/DialogProvider';
+import AppDialog from './components/AppDialog';
+import LiveStatus from './components/LiveStatus';
+import { useDialogs } from './lib/useDialogs';
 
-function promptNewProject(): string | null {
-    return window.prompt('New device / project name:', 'New device');
-}
-
-export default function App() {
+function AppContent() {
     const data = useStore((s) => s.data);
     const view = useStore((s) => s.activeView);
     const newProject = useStore((s) => s.newProject);
+    const dialogs = useDialogs();
+    const [inspectorOpen, setInspectorOpen] = useState(false);
+    const hasInspector = view !== 'dashboard' && view !== 'kb' && view !== 'defects' && view !== 'versions';
 
     const main = () => {
         switch (view) {
@@ -69,14 +73,35 @@ export default function App() {
         <div className="app">
             <TopBar />
             {data ? (
-                <div className={'layout' + (view === 'dashboard' || view === 'kb' || view === 'defects' || view === 'versions' ? ' wide' : '')}>
-                    <StepNav />
-                    <main className={'main' + (view === 'dfd' ? ' is-dfd' : '')}>
-                        {main()}
-                        {view !== 'dfd' && <WizardBar />}
-                    </main>
-                    {view !== 'dashboard' && view !== 'kb' && view !== 'defects' && view !== 'versions' && <Inspector />}
-                </div>
+                <>
+                    <div className="shell-compact-tools">
+                        <StepPicker />
+                        {hasInspector && (
+                            <button
+                                className="btn sm inspector-toggle"
+                                type="button"
+                                aria-expanded={inspectorOpen}
+                                aria-controls="inspector-drawer"
+                                onClick={() => setInspectorOpen(true)}
+                            >
+                                Inspector
+                            </button>
+                        )}
+                    </div>
+                    <div className={'layout' + (!hasInspector ? ' wide' : '')}>
+                        <StepNav />
+                        <main className={'main' + (view === 'dfd' ? ' is-dfd' : '')}>
+                            {main()}
+                            {view !== 'dfd' && <WizardBar />}
+                        </main>
+                        {hasInspector && <Inspector />}
+                    </div>
+                    {hasInspector && (
+                        <AppDialog id="inspector-drawer" open={inspectorOpen} onClose={() => setInspectorOpen(false)} title="Inspector" size="md" dismissOnBackdrop className="inspector-drawer">
+                            <Inspector />
+                        </AppDialog>
+                    )}
+                </>
             ) : (
                 <div className="empty">
                     <div className="box">
@@ -88,7 +113,12 @@ export default function App() {
                         <button
                             className="btn primary"
                             onClick={async () => {
-                                const name = promptNewProject();
+                                const name = await dialogs.prompt({
+                                    title: 'New project',
+                                    label: 'Device / project name',
+                                    defaultValue: 'New device',
+                                    validate: (value) => value ? null : 'Enter a project name.',
+                                });
                                 if (name) await newProject(name);
                             }}
                         >
@@ -101,5 +131,14 @@ export default function App() {
             <StrideBoundaryEditor />
             <TutorialOnboarding />
         </div>
+    );
+}
+
+export default function App() {
+    return (
+        <DialogProvider>
+            <AppContent />
+            <LiveStatus />
+        </DialogProvider>
     );
 }

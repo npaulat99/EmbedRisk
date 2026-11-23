@@ -24,6 +24,7 @@ import DfdOverview from './DfdOverview';
 import { riskOf } from '../../lib/risk';
 import { deriveVisibleInterfaceIds, flowBelongsToLayerContext, isParentChildNodeFlow, resolveTargetNodeId } from './layerVisibility.js';
 import { cx, confirmDelete } from '../common';
+import { useDialogs } from '../../lib/useDialogs';
 import type { Dfd, DfdNode, DfdNodeType } from '../../types';
 import { routeAround, roundedPath } from '@shared/dfdEngine.js';
 
@@ -218,6 +219,7 @@ function separateOverlaps(items: { id: string; x: number; y: number; w: number; 
 }
 
 function Canvas({ connMode, setConnMode, overview, setOverview }: { connMode: boolean; setConnMode: (v: boolean) => void; overview: boolean; setOverview: (v: boolean) => void }) {
+    const dialogs = useDialogs();
     const data = useStore((s) => s.data)!;
     const scheme = useStore((s) => s.scheme);
     const schemeWarning = useStore((s) => s.schemeWarning);
@@ -816,43 +818,47 @@ function Canvas({ connMode, setConnMode, overview, setOverview }: { connMode: bo
         [dfd, currentParent],
     );
     const onConnect = useCallback(
-        (c: any) => {
+        async (c: any) => {
             if (!c.source || !c.target) return;
             const strip = (x: string) => (x.startsWith('iface:') ? x.slice(6) : x);
             const from = strip(c.source);
             const to = strip(c.target);
             if (from === to) return;
             if (isParentChildNodeFlow({ from, to }, dfd.nodes)) {
-                window.alert('A container and its own nested component can never be connected directly — model the connection between siblings inside the child layer instead.');
+                await dialogs.alert({ title: 'Invalid connection', message: 'A container and its own nested component can never be connected directly. Model the connection between siblings inside the child layer instead.' });
                 return;
             }
-            const label = window.prompt('Label this data flow — what data or command does it carry? (required)', '');
+            const label = await dialogs.prompt({
+                title: 'Label data flow',
+                label: 'What data or command does this flow carry?',
+                validate: (value) => value ? null : 'A flow label is required.',
+            });
             if (!label || !label.trim()) return;
             const id = uid('F', dfd.flows.map((f) => f.id));
             persist({ flows: [...dfd.flows, { id, from, to, label: label.trim(), sourceHandle: c.sourceHandle || undefined, targetHandle: c.targetHandle || undefined }] });
         },
-        [dfd],
+        [dfd, dialogs],
     );
     const onReconnect = useCallback(
-        (oldEdge: any, conn: any) => {
+        async (oldEdge: any, conn: any) => {
             if (!conn.source || !conn.target) return;
             const strip = (x: string) => (x.startsWith('iface:') ? x.slice(6) : x);
             const from = strip(conn.source);
             const to = strip(conn.target);
             if (isParentChildNodeFlow({ from, to }, dfd.nodes)) {
-                window.alert('A container and its own nested component can never be connected directly — model the connection between siblings inside the child layer instead.');
+                await dialogs.alert({ title: 'Invalid connection', message: 'A container and its own nested component can never be connected directly. Model the connection between siblings inside the child layer instead.' });
                 return;
             }
             persist({
                 flows: dfd.flows.map((f) => (f.id === oldEdge.id ? { ...f, from, to, sourceHandle: conn.sourceHandle || undefined, targetHandle: conn.targetHandle || undefined } : f)),
             });
         },
-        [dfd],
+        [dfd, dialogs],
     );
     const onNodesDelete = useCallback(
-        (deleted: any[]) => {
+        async (deleted: any[]) => {
             const ids = new Set(deleted.map((d) => d.id));
-            if (!confirmDelete(deleted.length > 1 ? `${deleted.length} nodes and their flows` : `node ${deleted[0]?.id}`)) {
+            if (!(await confirmDelete(deleted.length > 1 ? `${deleted.length} nodes and their flows` : `node ${deleted[0]?.id}`))) {
                 setRfNodes(buildNodes());
                 setRfEdges(buildEdges());
                 return;

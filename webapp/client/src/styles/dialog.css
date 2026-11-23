@@ -1,0 +1,95 @@
+.app-dialog {
+    box-sizing: border-box;
+    width: min(calc(100vw - 32px), 640px);
+    max-width: none;
+    max-height: min(86vh, 900px);
+    margin: auto;
+    padding: 18px 20px;
+    overflow: auto;
+    color: var(--text);
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow);
+}
+
+.app-dialog[data-size='sm'] {
+    width: min(calc(100vw - 32px), 460px);
+}
+
+.app-dialog[data-size='lg'] {
+    width: min(calc(100vw - 32px), 900px);
+}
+
+.app-dialog[data-size='xl'] {
+    width: min(calc(100vw - 32px), 1120px);
+}
+
+.app-dialog::backdrop {
+    overflow: hidden;
+    background: rgba(10, 14, 20, 0.5);
+    overscroll-behavior: contain;
+}
+
+.app-dialog:modal {
+    overscroll-behavior: contain;
+}
+
+.app-dialog-head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 16px;
+    margin-bottom: 14px;
+}
+
+.app-dialog-head h2 {
+    margin: 0;
+    font-size: 1.15rem;
+}
+
+.app-dialog-body {
+    min-width: 0;
+}
+
+.app-dialog-body> :first-child {
+    margin-top: 0;
+}
+
+.app-dialog.tutorial-shell .app-dialog-body,
+.app-dialog.adt-page-modal .app-dialog-body {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    overflow: hidden;
+    padding: 0;
+}
+
+.app-dialog-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+    margin-top: 18px;
+}
+
+.app-dialog-label {
+    display: block;
+    margin-bottom: 6px;
+}
+
+.app-dialog-error {
+    display: block;
+    margin-top: 5px;
+    color: var(--danger, #b42318);
+}
+
+@media (max-width: 480px) {
+    .app-dialog {
+        padding: 14px;
+        max-height: 92vh;
+    }
+
+    .app-dialog-head {
+        align-items: center;
+    }
+}

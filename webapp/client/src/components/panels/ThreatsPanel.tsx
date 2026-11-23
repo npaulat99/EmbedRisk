@@ -120,7 +120,7 @@ export default function ThreatsPanel() {
                 <div className="head">
                     <IdInput id={t.id} onRename={setEditingId} />
                     <input className="inp grow" value={t.title} onChange={(e) => upd({ title: e.target.value })} />
-                    <button className="btn sm danger" aria-label={`Delete threat ${t.id}`} onClick={() => confirmDelete(`threat ${t.id}`) && (setThreats(threats.filter((x) => x.id !== t.id)), setEditingId(null))}>
+                    <button className="btn sm danger" aria-label={`Delete threat ${t.id}`} onClick={async () => { if (await confirmDelete(`threat ${t.id}`)) { setThreats(threats.filter((x) => x.id !== t.id)); setEditingId(null); } }}>
                         ✕
                     </button>
                 </div>
@@ -362,7 +362,7 @@ export default function ThreatsPanel() {
                                         <button className="btn sm" onClick={() => setEditingId(t.id)}>
                                             Edit
                                         </button>
-                                        <button className="btn sm danger" aria-label={`Delete threat ${t.id}`} onClick={() => confirmDelete(`threat ${t.id}`) && setThreats(threats.filter((x) => x.id !== t.id))}>
+                                        <button className="btn sm danger" aria-label={`Delete threat ${t.id}`} onClick={async () => { if (await confirmDelete(`threat ${t.id}`)) setThreats(threats.filter((x) => x.id !== t.id)); }}>
                                             ✕
                                         </button>
                                     </div>

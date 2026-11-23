@@ -53,18 +53,11 @@ export default function DfdOverview({ onOpen }: { onOpen: (nodeId: string, path:
         const risk = riskFor(n);
         return (
             <li key={n.id}>
-                <div
+                <button
                     className="ov-node"
-                    role="button"
-                    tabIndex={0}
+                    type="button"
                     title={`Open ${n.label} in the diagram`}
                     onClick={() => onOpen(n.id, path)}
-                    onKeyDown={(e) => {
-                        if (e.key === 'Enter' || e.key === ' ') {
-                            e.preventDefault();
-                            onOpen(n.id, path);
-                        }
-                    }}
                 >
                     <span className="ov-ico">{TYPE_ICON[n.type]}</span>
                     <span>{n.label}</span>
@@ -78,7 +71,7 @@ export default function DfdOverview({ onOpen }: { onOpen: (nodeId: string, path:
                     ))}
                     {risk && <span className="ov-riskdot" style={{ background: risk.color }} title={`${risk.count} threat(s) · worst residual ${risk.score}`} />}
                     {kids.length > 0 && <span className="ov-layer">L{layer + 1} ▾</span>}
-                </div>
+                </button>
                 {kids.length > 0 && <ul>{kids.map((k) => renderNode(k, [...path, n.id], layer + 1))}</ul>}
             </li>
         );

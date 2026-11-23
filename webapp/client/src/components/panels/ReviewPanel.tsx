@@ -3,7 +3,8 @@ import { useStore } from '../../state/store';
 import { validate, openIssues, isAccepted } from '../../lib/validate';
 import { issueTarget } from '../../lib/ids';
 import { riskOf } from '../../lib/risk';
-import { RiskPill, sortStride } from '../common';
+import { RiskPill, sortStride, TableRegion } from '../common';
+import AppDialog from '../AppDialog';
 
 export default function ReviewPanel() {
     const data = useStore((s) => s.data)!;
@@ -105,24 +106,16 @@ export default function ReviewPanel() {
                 </label>
             </div>
 
-            {html && (
-                <div className="modal-overlay" onClick={() => setHtml(null)}>
-                    <div className="modal" role="dialog" aria-modal="true" aria-label="Report preview" style={{ maxWidth: 1000, width: '100%' }} onClick={(e) => e.stopPropagation()}>
-                        <div className="modalhead">
-                            <h3 style={{ margin: 0 }}>Report preview</h3>
-                            <span className="inline">
-                                <button className="btn sm" onClick={download}>
-                                    ↓ Download HTML
-                                </button>
-                                <button className="btn sm" aria-label="Close" onClick={() => setHtml(null)}>
-                                    ✕ Close
-                                </button>
-                            </span>
+            <AppDialog open={!!html} onClose={() => setHtml(null)} title="Report preview" size="xl" dismissOnBackdrop>
+                {html && (
+                    <>
+                        <div className="inline" style={{ justifyContent: 'flex-end', marginBottom: 8 }}>
+                            <button className="btn sm" onClick={download}>↓ Download HTML</button>
                         </div>
                         <iframe title="TRA report" srcDoc={html} style={{ width: '100%', height: '70vh', border: '1px solid var(--border)', borderRadius: 8, background: '#fff' }} />
-                    </div>
-                </div>
-            )}
+                    </>
+                )}
+            </AppDialog>
 
             {schemeWarning && <div className="settings-error-banner" role="alert">{schemeWarning} Risk fields are shown as stored axes without classification.</div>}
             <div className="card">
@@ -176,46 +169,48 @@ export default function ReviewPanel() {
                 <p className="hint" style={{ marginTop: 0 }}>
                     Classification summary: {protocolLimitations} protocol-limitation, {deploymentRisks} deployment-risk, {sharedResponsibility} shared-responsibility.
                 </p>
-                <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-                    <thead>
-                        <tr style={{ textAlign: 'left', color: 'var(--text-dim)', fontSize: 12 }}>
-                            <th style={{ padding: 6 }}>ID</th>
-                            <th style={{ padding: 6 }}>Threat</th>
-                            <th style={{ padding: 6 }}>STRIDE</th>
-                            <th style={{ padding: 6 }}>Initial</th>
-                            <th style={{ padding: 6 }}>Residual</th>
-                            <th style={{ padding: 6 }}>Status</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {threats.map((t) => {
-                            const r = riskOf(t, cms, scheme);
-                            return (
-                                <tr key={t.id} style={{ borderTop: '1px solid var(--border)' }}>
-                                    <td style={{ padding: 6, fontFamily: 'ui-monospace, monospace' }}>{t.id}</td>
-                                    <td style={{ padding: 6 }}>{t.title}</td>
-                                    <td style={{ padding: 6 }} className="stride">
-                                        {sortStride(t.stride).join('')}
-                                    </td>
-                                    <td style={{ padding: 6 }}>
-                                        {schemeWarning ? `L${t.likelihood ?? '—'} / I${t.impact ?? '—'}` : <RiskPill score={r.initial} band={r.initialBand} />}
-                                    </td>
-                                    <td style={{ padding: 6 }}>
-                                        {schemeWarning ? `L${r.residualLikelihood ?? '—'} / I${r.residualImpact ?? '—'}` : <RiskPill score={r.residual} band={r.residualBand} />}
-                                    </td>
-                                    <td style={{ padding: 6, textTransform: 'capitalize' }}>{t.status}</td>
-                                </tr>
-                            );
-                        })}
-                        {!threats.length && (
-                            <tr>
-                                <td colSpan={6} className="hint" style={{ padding: 10 }}>
-                                    No threats defined yet.
-                                </td>
+                <TableRegion label="Threats and risk">
+                    <table className="tbl">
+                        <thead>
+                            <tr style={{ textAlign: 'left', color: 'var(--text-dim)', fontSize: 12 }}>
+                                <th scope="col" style={{ padding: 6 }}>ID</th>
+                                <th scope="col" style={{ padding: 6 }}>Threat</th>
+                                <th scope="col" style={{ padding: 6 }}>STRIDE</th>
+                                <th scope="col" style={{ padding: 6 }}>Initial</th>
+                                <th scope="col" style={{ padding: 6 }}>Residual</th>
+                                <th scope="col" style={{ padding: 6 }}>Status</th>
                             </tr>
-                        )}
-                    </tbody>
-                </table>
+                        </thead>
+                        <tbody>
+                            {threats.map((t) => {
+                                const r = riskOf(t, cms, scheme);
+                                return (
+                                    <tr key={t.id} style={{ borderTop: '1px solid var(--border)' }}>
+                                        <th scope="row" style={{ padding: 6, fontFamily: 'ui-monospace, monospace' }}>{t.id}</th>
+                                        <td style={{ padding: 6 }}>{t.title}</td>
+                                        <td style={{ padding: 6 }} className="stride">
+                                            {sortStride(t.stride).join('')}
+                                        </td>
+                                        <td style={{ padding: 6 }}>
+                                            {schemeWarning ? `L${t.likelihood ?? '—'} / I${t.impact ?? '—'}` : <RiskPill score={r.initial} band={r.initialBand} />}
+                                        </td>
+                                        <td style={{ padding: 6 }}>
+                                            {schemeWarning ? `L${r.residualLikelihood ?? '—'} / I${r.residualImpact ?? '—'}` : <RiskPill score={r.residual} band={r.residualBand} />}
+                                        </td>
+                                        <td style={{ padding: 6, textTransform: 'capitalize' }}>{t.status}</td>
+                                    </tr>
+                                );
+                            })}
+                            {!threats.length && (
+                                <tr>
+                                    <td colSpan={6} className="hint" style={{ padding: 10 }}>
+                                        No threats defined yet.
+                                    </td>
+                                </tr>
+                            )}
+                        </tbody>
+                    </table>
+                </TableRegion>
             </div>
         </div>
     );

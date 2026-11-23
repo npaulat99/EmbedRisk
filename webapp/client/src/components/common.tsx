@@ -1,24 +1,29 @@
 // Small reusable presentational helpers shared by the panels.
-import React, { useEffect, useId, useState } from 'react';
+import React, { useEffect, useId, useRef, useState } from 'react';
 import { useStore } from '../state/store';
 import { idError } from '../lib/ids';
+import { confirm } from '../lib/useDialogs';
+import { announce } from './LiveStatus';
 import type { RiskBand } from '../types';
 
 export const cx = (...c: (string | false | undefined)[]) => c.filter(Boolean).join(' ');
 
 /** Confirm an irreversible delete. Returns true if the user accepts. */
-export const confirmDelete = (what: string) => window.confirm(`Delete ${what}? This cannot be undone.`);
+export const confirmDelete = (what: string) => confirm({ title: 'Confirm deletion', message: `Delete ${what}? This cannot be undone.`, confirmLabel: 'Delete', danger: true });
 
 /**
  * Editable unique-ID field. Validates charset + project-wide uniqueness live, and on commit
  * (blur / Enter) cascades the rename across every reference via the store. Reverts on error.
  * `onRename` fires after a successful rename so a parent (e.g. an open editor) can track the new id.
  */
-export function IdInput({ id, onRename }: { id: string; onRename?: (newId: string) => void }) {
+export function IdInput({ id, onRename, 'aria-labelledby': labelledBy, 'aria-describedby': describedBy }: { id: string; onRename?: (newId: string) => void; 'aria-labelledby'?: string; 'aria-describedby'?: string }) {
     const data = useStore((s) => s.data)!;
     const renameId = useStore((s) => s.renameId);
     const [val, setVal] = useState(id);
     const [err, setErr] = useState<string | null>(null);
+    const generatedId = useId();
+    const errorId = `${generatedId}-error`;
+    const description = [describedBy, err ? errorId : null].filter(Boolean).join(' ') || undefined;
     useEffect(() => setVal(id), [id]);
     const commit = () => {
         const v = val.trim();
@@ -37,23 +42,34 @@ export function IdInput({ id, onRename }: { id: string; onRename?: (newId: strin
         onRename?.(v);
     };
     return (
-        <input
-            className={cx('inp', 'idtag', err && 'invalid')}
-            value={val}
-            title={err || 'Unique ID. Renaming updates all references.'}
-            onChange={(e) => {
-                setVal(e.target.value);
-                setErr(idError(data, e.target.value, id));
-            }}
-            onBlur={commit}
-            onKeyDown={(e) => {
-                if (e.key === 'Enter') (e.target as HTMLInputElement).blur();
-                if (e.key === 'Escape') {
-                    setVal(id);
-                    setErr(null);
-                }
-            }}
-        />
+        <>
+            <input
+                className={cx('inp', 'idtag', err && 'invalid')}
+                id={generatedId}
+                aria-label={labelledBy ? undefined : 'Unique ID'}
+                aria-labelledby={labelledBy}
+                aria-invalid={err ? true : undefined}
+                aria-describedby={description}
+                value={val}
+                title="Unique ID. Renaming updates all references."
+                onChange={(e) => {
+                    setVal(e.target.value);
+                    setErr(idError(data, e.target.value, id));
+                }}
+                onBlur={commit}
+                onKeyDown={(e) => {
+                    if (e.key === 'Enter' && !e.nativeEvent.isComposing && e.nativeEvent.keyCode !== 229) {
+                        e.preventDefault();
+                        (e.target as HTMLInputElement).blur();
+                    }
+                    if (e.key === 'Escape') {
+                        setVal(id);
+                        setErr(null);
+                    }
+                }}
+            />
+            {err && <span id={errorId} className="id-input-error">{err}</span>}
+        </>
     );
 }
 
@@ -77,15 +93,55 @@ export function Field({
     style?: React.CSSProperties;
 }) {
     const id = useId();
-    const isNative = React.isValidElement(children) && typeof (children as any).type === 'string';
-    const control = isNative ? React.cloneElement(children as React.ReactElement<any>, { id }) : children;
+    const labelId = `${id}-label`;
+    const hintId = `${id}-hint`;
+    const childType = React.isValidElement(children) ? children.type : undefined;
+    const isNative = typeof childType === 'string' && ['input', 'select', 'textarea'].includes(childType);
+    const isCustomControl = typeof childType === 'function';
+    const childProps = React.isValidElement(children) ? (children.props as { 'aria-describedby'?: string }) : {};
+    const describedBy = [childProps['aria-describedby'], hint ? hintId : null].filter(Boolean).join(' ') || undefined;
+    const control = isNative
+        ? React.cloneElement(children as React.ReactElement<any>, { id, 'aria-describedby': describedBy })
+        : isCustomControl && React.isValidElement(children)
+            ? React.cloneElement(children as React.ReactElement<any>, {
+                'aria-labelledby': labelId,
+                'aria-describedby': describedBy,
+                ...(children.type === TagSelect || children.type === Chips ? { label } : {}),
+            })
+            : <div role="group" aria-labelledby={labelId} aria-describedby={describedBy}>{children}</div>;
     return (
         <div className="field" style={style}>
-            <label htmlFor={isNative ? id : undefined}>{label}</label>
+            <label id={labelId} htmlFor={isNative ? id : undefined}>{label}</label>
             {control}
-            {hint && <span className="hint">{hint}</span>}
+            {hint && <span id={hintId} className="hint">{hint}</span>}
         </div>
     );
+}
+
+export function TableRegion({ label, children }: { label: string; children: React.ReactElement<any> }) {
+    const captionId = useId();
+    const regionRef = useRef<HTMLDivElement>(null);
+    useEffect(() => {
+        const region = regionRef.current;
+        const table = region?.querySelector('table');
+        if (!region || !table) return;
+        const updateHeight = () => region.classList.toggle('is-tall', table.scrollHeight > window.innerHeight);
+        const observer = new ResizeObserver(updateHeight);
+        observer.observe(table);
+        window.addEventListener('resize', updateHeight);
+        updateHeight();
+        return () => {
+            observer.disconnect();
+            window.removeEventListener('resize', updateHeight);
+        };
+    }, []);
+    const table = React.cloneElement(children, {}, (
+        <>
+            <caption id={captionId} className="sr-only">{label}</caption>
+            {children.props.children}
+        </>
+    ));
+    return <div ref={regionRef} className="tbl-scroll" role="region" aria-labelledby={captionId} tabIndex={0}>{table}</div>;
 }
 
 /** Multi-select chip group. `options` are {value,label}; `value` is the selected list. */
@@ -95,36 +151,33 @@ export function Chips({
     onChange,
     empty,
     label,
+    'aria-labelledby': labelledBy,
+    'aria-describedby': describedBy,
 }: {
     options: { value: string; label: string }[];
     value: string[];
     onChange: (next: string[]) => void;
     empty?: string;
     label?: string;
+    'aria-labelledby'?: string;
+    'aria-describedby'?: string;
 }) {
     const toggle = (v: string) => (value.includes(v) ? onChange(value.filter((x) => x !== v)) : onChange([...value, v]));
-    if (!options.length) return <span className="hint">{empty || 'Nothing to select yet.'}</span>;
+    if (!options.length) return <div className="hint" role="group" aria-label={label} aria-labelledby={labelledBy} aria-describedby={describedBy}>{empty || 'Nothing to select yet.'}</div>;
     return (
-        <div className="chips" role="group" aria-label={label || 'multi-select'}>
+        <div className="chips" role="group" aria-label={labelledBy ? undefined : label} aria-labelledby={labelledBy} aria-describedby={describedBy}>
             {options.map((o) => {
                 const on = value.includes(o.value);
                 return (
-                    <span
+                    <button
                         key={o.value}
                         className={cx('chip', on && 'on')}
-                        role="button"
-                        tabIndex={0}
+                        type="button"
                         aria-pressed={on}
                         onClick={() => toggle(o.value)}
-                        onKeyDown={(e) => {
-                            if (e.key === 'Enter' || e.key === ' ') {
-                                e.preventDefault();
-                                toggle(o.value);
-                            }
-                        }}
                     >
                         {o.label}
-                    </span>
+                    </button>
                 );
             })}
         </div>
@@ -143,6 +196,8 @@ export function TagSelect({
     empty,
     addLabel = '+ Add…',
     label,
+    'aria-labelledby': labelledBy,
+    'aria-describedby': describedBy,
 }: {
     options: { value: string; label: string; title?: string }[];
     value: string[];
@@ -150,24 +205,36 @@ export function TagSelect({
     empty?: string;
     addLabel?: string;
     label?: string;
+    'aria-labelledby'?: string;
+    'aria-describedby'?: string;
 }) {
+    const tagsRef = useRef<HTMLDivElement>(null);
+    const selectRef = useRef<HTMLSelectElement>(null);
     const selected = value || [];
     const optOf = (v: string) => options.find((o) => o.value === v);
     const labelOf = (v: string) => optOf(v)?.label || v;
     const available = options.filter((o) => !selected.includes(o.value));
-    if (!options.length) return <span className="hint">{empty || 'Nothing to select from yet.'}</span>;
+    if (!options.length) return <div className="hint" role="group" aria-label={label} aria-labelledby={labelledBy} aria-describedby={describedBy}>{empty || 'Nothing to select from yet.'}</div>;
+    const remove = (valueToRemove: string, index: number) => {
+        onChange(selected.filter((item) => item !== valueToRemove));
+        announce(`Removed ${labelOf(valueToRemove)}.`);
+        requestAnimationFrame(() => {
+            const buttons = tagsRef.current?.querySelectorAll<HTMLButtonElement>('.chipx');
+            (buttons?.[Math.min(index, (buttons.length || 1) - 1)] || selectRef.current)?.focus();
+        });
+    };
     return (
-        <div className="tagselect" role="group" aria-label={label || 'multi-select'}>
-            <div className="tagselect-tags">
+        <div className="tagselect" role="group" aria-label={labelledBy ? undefined : label} aria-labelledby={labelledBy} aria-describedby={describedBy}>
+            <div className="tagselect-tags" ref={tagsRef}>
                 {selected.length ? (
-                    selected.map((v) => (
+                    selected.map((v, index) => (
                         <span className="chip on" key={v} title={optOf(v)?.title}>
                             {labelOf(v)}
                             <button
                                 type="button"
                                 className="chipx"
                                 aria-label={`Remove ${labelOf(v)}`}
-                                onClick={() => onChange(selected.filter((x) => x !== v))}
+                                onClick={() => remove(v, index)}
                             >
                                 ✕
                             </button>
@@ -179,10 +246,17 @@ export function TagSelect({
             </div>
             {available.length > 0 && (
                 <select
+                    ref={selectRef}
                     className="inp tagselect-add"
                     value=""
+                    aria-label={`Add to ${label || 'selection'}`}
+                    aria-describedby={describedBy}
                     onChange={(e) => {
-                        if (e.target.value) onChange([...selected, e.target.value]);
+                        const added = e.target.value;
+                        if (added) {
+                            onChange([...selected, added]);
+                            announce(`Added ${labelOf(added)}.`);
+                        }
                     }}
                 >
                     <option value="">{addLabel}</option>
@@ -251,6 +325,8 @@ export function ScaleSelect({
     disabled,
     style,
     className,
+    'aria-labelledby': labelledBy,
+    'aria-describedby': describedBy,
 }: {
     value: number | undefined | null;
     onChange: (n: number) => void;
@@ -259,9 +335,11 @@ export function ScaleSelect({
     disabled?: boolean;
     style?: React.CSSProperties;
     className?: string;
+    'aria-labelledby'?: string;
+    'aria-describedby'?: string;
 }) {
     return (
-        <select className={className || 'inp'} style={style} value={value ?? ''} disabled={disabled} onChange={(e) => onChange(Number(e.target.value))}>
+        <select className={className || 'inp'} style={style} value={value ?? ''} disabled={disabled} aria-labelledby={labelledBy} aria-describedby={describedBy} onChange={(e) => onChange(Number(e.target.value))}>
             {allowEmpty && <option value="">–</option>}
             {levels.map(([n, label]) => (
                 <option key={n} value={n}>
@@ -306,18 +384,24 @@ export function ComboInput({
     options,
     placeholder,
     width,
+    'aria-labelledby': labelledBy,
+    'aria-describedby': describedBy,
 }: {
     value?: string;
     onChange: (v: string) => void;
     options: { value: string; label?: string }[];
     placeholder?: string;
     width?: number | string;
+    'aria-labelledby'?: string;
+    'aria-describedby'?: string;
 }) {
     const listId = useId();
     return (
         <>
             <input
                 className="inp"
+                aria-labelledby={labelledBy}
+                aria-describedby={describedBy}
                 list={listId}
                 value={value ?? ''}
                 placeholder={placeholder}
@@ -401,24 +485,14 @@ export function EditBackBar({ label, onBack }: { label: string; onBack: () => vo
 export function Jump({ view, id, label, title }: { view: string; id: string; label?: string; title?: string }) {
     const goto = useStore((s) => s.goto);
     return (
-        <span
+        <button
             className="jump"
-            role="button"
-            tabIndex={0}
+            type="button"
             title={title || `Open ${id}`}
-            onClick={(e) => {
-                e.stopPropagation();
-                goto(view, id);
-            }}
-            onKeyDown={(e) => {
-                if (e.key === 'Enter' || e.key === ' ') {
-                    e.preventDefault();
-                    goto(view, id);
-                }
-            }}
+            onClick={(e) => { e.stopPropagation(); goto(view, id); }}
         >
             {label || id}
-        </span>
+        </button>
     );
 }
 

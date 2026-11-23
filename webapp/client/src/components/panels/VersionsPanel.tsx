@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useStore } from '../../state/store';
 import type { ChangeReason, StepKey, VersionDiff } from '../../types';
 import { Field } from '../common';
+import AppDialog from '../AppDialog';
 
 const COMMIT_STEP_KEYS: StepKey[] = ['project', 'assumptions', 'system', 'dfd', 'requirements', 'threats', 'attackTrees', 'countermeasures', 'defects'];
 const FOLLOW_UP_REASONS: ChangeReason[] = ['functional changes', 'new vulnerabilities', 'regular reassessment'];
@@ -219,23 +220,16 @@ export default function VersionsPanel() {
                             {tracker.entries.map((entry) => {
                                 const selected = selectedVersions.includes(entry.version);
                                 return (
-                                    <span
+                                    <button
                                         key={entry.version}
                                         className={`chip ${selected ? 'on' : ''}`}
-                                        role="button"
-                                        tabIndex={0}
+                                        type="button"
                                         aria-pressed={selected}
                                         title={`${entry.reason} · ${entry.assessedAt}`}
                                         onClick={() => setSelectedVersions((current) => toggleVersionSelection(current, entry.version))}
-                                        onKeyDown={(e) => {
-                                            if (e.key === 'Enter' || e.key === ' ') {
-                                                e.preventDefault();
-                                                setSelectedVersions((current) => toggleVersionSelection(current, entry.version));
-                                            }
-                                        }}
                                     >
                                         {entry.version}
-                                    </span>
+                                    </button>
                                 );
                             })}
                         </div>
@@ -308,15 +302,9 @@ export default function VersionsPanel() {
                 )}
             </div>
 
-            {emptyConfirm && (
-                <div className="modal-overlay" onClick={() => !recording && setEmptyConfirm(null)}>
-                    <div className="modal" role="dialog" aria-modal="true" aria-label="Confirm reassessment without changes" style={{ maxWidth: 640 }} onClick={(e) => e.stopPropagation()}>
-                        <div className="modalhead">
-                            <h3 style={{ margin: 0 }}>Confirm reassessment without changes</h3>
-                            <button className="btn sm" aria-label="Close" onClick={() => setEmptyConfirm(null)} disabled={recording}>
-                                ✕ Close
-                            </button>
-                        </div>
+            <AppDialog open={!!emptyConfirm} onClose={() => !recording && setEmptyConfirm(null)} title="Confirm reassessment without changes" dismissOnBackdrop={!recording} onCancel={recording ? () => { } : undefined}>
+                {emptyConfirm && (
+                    <>
                         <p className="hint" style={{ marginTop: 0 }}>
                             No methodology files changed since {tracker.currentVersion}. To conclude this regular reassessment anyway, type <b>{emptyConfirm.nextVersion}</b> exactly.
                         </p>
@@ -329,9 +317,9 @@ export default function VersionsPanel() {
                                 {recording ? 'Recording…' : `Confirm ${emptyConfirm.nextVersion}`}
                             </button>
                         </div>
-                    </div>
-                </div>
-            )}
+                    </>
+                )}
+            </AppDialog>
         </div>
     );
 }

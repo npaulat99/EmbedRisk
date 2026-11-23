@@ -1,0 +1,50 @@
+.tbl-scroll {
+    max-inline-size: 100%;
+    overflow: auto;
+    overscroll-behavior: contain;
+    scrollbar-gutter: stable;
+}
+
+.tbl-scroll.is-tall {
+    max-block-size: min(80dvh, 800px);
+}
+
+.tbl-scroll .tbl {
+    min-inline-size: max-content;
+}
+
+.tbl-scroll caption {
+    text-align: start;
+}
+
+.tbl-scroll.is-tall thead th {
+    position: sticky;
+    inset-block-start: 0;
+    z-index: 1;
+    background: var(--surface);
+}
+
+.tbl-scroll :where(th, td) {
+    overflow-wrap: anywhere;
+}
+
+.itemcard.collapsed .summary-title {
+    flex: 1 1 240px;
+    min-inline-size: 0;
+    max-inline-size: 100%;
+    overflow-wrap: anywhere;
+    overflow: visible;
+    text-overflow: clip;
+    white-space: normal;
+}
+
+.itemcard.collapsed .head {
+    flex-wrap: wrap;
+}
+
+@media (max-width: 719px) {
+    .itemcard.collapsed .head .summary-title {
+        order: 2;
+        flex-basis: 100%;
+    }
+}

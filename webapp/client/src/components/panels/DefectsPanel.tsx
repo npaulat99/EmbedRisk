@@ -68,7 +68,7 @@ export default function DefectsPanel() {
                                 <span className="sevdot" title={d.severity} style={{ background: SEV_COLOR[d.severity] || 'var(--border)' }} />
                                 <IdInput id={d.id} />
                                 <input className="inp grow" value={d.title} onChange={(e) => upd(d.id, { title: e.target.value })} />
-                                <button className="btn sm danger" aria-label={`Delete defect ${d.id}`} onClick={() => confirmDelete(`defect ${d.id}`) && del(d.id)}>
+                                <button className="btn sm danger" aria-label={`Delete defect ${d.id}`} onClick={async () => { if (await confirmDelete(`defect ${d.id}`)) del(d.id); }}>
                                     ✕
                                 </button>
                             </div>

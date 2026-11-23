@@ -51,7 +51,7 @@ export default function RequirementsPanel() {
                                 <div className="head">
                                     <IdInput id={r.id} onRename={setEditingId} />
                                     <input className="inp grow" value={r.text} onChange={(e) => upd({ text: e.target.value })} />
-                                    <button className="btn sm danger" aria-label={`Delete requirement ${r.id}`} onClick={() => confirmDelete(`requirement ${r.id}`) && (write(reqs.filter((x) => x.id !== r.id)), setEditingId(null))}>
+                                    <button className="btn sm danger" aria-label={`Delete requirement ${r.id}`} onClick={async () => { if (await confirmDelete(`requirement ${r.id}`)) { write(reqs.filter((x) => x.id !== r.id)); setEditingId(null); } }}>
                                         ✕
                                     </button>
                                 </div>
@@ -101,7 +101,7 @@ export default function RequirementsPanel() {
                                         <button className="btn sm" onClick={() => setEditingId(r.id)}>
                                             Edit
                                         </button>
-                                        <button className="btn sm danger" aria-label={`Delete requirement ${r.id}`} onClick={() => confirmDelete(`requirement ${r.id}`) && write(reqs.filter((x) => x.id !== r.id))}>
+                                        <button className="btn sm danger" aria-label={`Delete requirement ${r.id}`} onClick={async () => { if (await confirmDelete(`requirement ${r.id}`)) write(reqs.filter((x) => x.id !== r.id)); }}>
                                             ✕
                                         </button>
                                     </div>

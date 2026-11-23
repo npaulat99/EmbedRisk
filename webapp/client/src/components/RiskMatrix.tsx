@@ -2,6 +2,7 @@ import { Fragment, useState } from 'react';
 import { useStore } from '../state/store';
 import { riskOf, bandForRisk, bandsOf, createRiskEngine, descendantComponentIds } from '../lib/risk';
 import { DEFAULT_ACCEPTABLE_RISK } from '../types';
+import AppDialog from './AppDialog';
 
 /**
  * 5×5 residual-risk heat map. Optionally filtered to a single component (when a DFD node
@@ -74,27 +75,21 @@ export default function RiskMatrix({ componentRef }: { componentRef?: string }) 
                             const ids = cellThreats[`${L.value}-${I.value}`] || [];
                             const n = ids.length;
                             const cellLabel = engine.scheme.classification.kind === 'product-bands' ? String(score) : level.label;
+                            const Cell = n ? 'button' : 'div';
                             return (
-                                <div
+                                <Cell
                                     className={'cell ' + boundaryClass(L.value, I.value) + (n ? ' hit' : '')}
                                     key={`${L.value}-${I.value}`}
-                                    role={n ? 'button' : undefined}
-                                    tabIndex={n ? 0 : undefined}
+                                    type={n ? 'button' : undefined}
                                     aria-label={n ? `${L.label} by ${I.label}, ${level.label}, ${n} threat(s): ${ids.join(', ')}. Activate to open.` : `${L.label} by ${I.label}, ${level.label}`}
                                     style={{ background: b.color, opacity: n ? 1 : 0.42, cursor: n ? 'pointer' : 'default' }}
                                     title={n ? `${L.code} × ${I.code}: ${level.label} — ${ids.join(', ')} · click to open` : `${L.code} × ${I.code}: ${level.label}`}
-                                    onClick={() => openCell(ids)}
-                                    onKeyDown={(e) => {
-                                        if (n && (e.key === 'Enter' || e.key === ' ')) {
-                                            e.preventDefault();
-                                            openCell(ids);
-                                        }
-                                    }}
+                                    onClick={n ? () => openCell(ids) : undefined}
                                 >
                                     {cellLabel}
                                     <span className="bandmark" aria-hidden="true">{level.label[0]}</span>
                                     {n > 0 && <span className="n">{n}</span>}
-                                </div>
+                                </Cell>
                             );
                         })}
                     </Fragment>
@@ -139,25 +134,17 @@ export default function RiskMatrix({ componentRef }: { componentRef?: string }) 
                     <span className="hint">acceptable risk: {acceptableRisk}</span>
                 </span>
             </div>
-            {previewIds.length > 1 ? (
-                <div className="modal-overlay" onClick={() => setPreviewIds([])}>
-                    <div className="modal matrix-preview" role="dialog" aria-modal="true" aria-label="Threats at selected residual risk" onClick={(event) => event.stopPropagation()}>
-                        <div className="modalhead">
-                            <strong>Threats at this residual risk</strong>
-                            <button className="btn sm" type="button" aria-label="Close threat preview" onClick={() => setPreviewIds([])}>✕</button>
-                        </div>
-                        {previewIds.map((id) => {
-                            const threat = threats.find((item) => item.id === id);
-                            return (
-                                <button key={id} className="matrix-preview-item" type="button" onClick={() => goto('threats', id)}>
-                                    <span className="summary-id">{id}</span>
-                                    <span>{threat?.title || 'Unknown threat'}</span>
-                                </button>
-                            );
-                        })}
-                    </div>
-                </div>
-            ) : null}
+            <AppDialog open={previewIds.length > 1} onClose={() => setPreviewIds([])} title="Threats at this residual risk" className="matrix-preview" dismissOnBackdrop>
+                {previewIds.map((id) => {
+                    const threat = threats.find((item) => item.id === id);
+                    return (
+                        <button key={id} className="matrix-preview-item" type="button" onClick={() => goto('threats', id)}>
+                            <span className="summary-id">{id}</span>
+                            <span>{threat?.title || 'Unknown threat'}</span>
+                        </button>
+                    );
+                })}
+            </AppDialog>
         </div>
     );
 }

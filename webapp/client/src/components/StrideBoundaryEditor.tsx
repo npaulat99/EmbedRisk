@@ -2,30 +2,27 @@
 // One table per communicating pair. Analysis data is stored globally by pair key (not per
 // boundary), so the same channel's properties appear consistently in every boundary that the
 // flow crosses — editing here updates all views simultaneously.
-import { useEffect } from 'react';
 import { useStore } from '../state/store';
+import AppDialog from './AppDialog';
 import { boundaryPairs, STRIDE_KEYS, STRIDE_LABEL } from '../lib/stride';
 import type { StridePair } from '../lib/stride';
 import type { StridePairAnalysis, StrideSideAnalysis, Stride } from '../types';
 
 export default function StrideBoundaryEditor() {
     const data = useStore((s) => s.data);
-    const save = useStore((s) => s.save);
     const tbId = useStore((s) => s.strideBoundaryId);
     const close = useStore((s) => s.openStrideBoundary);
+    const title = tbId ? `STRIDE analysis per trust boundary · ${tbId}` : 'STRIDE analysis per trust boundary';
+    return (
+        <AppDialog open={!!data && !!tbId} onClose={() => close(null)} title={title} size="xl" dismissOnBackdrop={false}>
+            {data && tbId && <StrideBoundaryContent data={data} tbId={tbId} />}
+        </AppDialog>
+    );
+}
 
-    useEffect(() => {
-        if (!tbId) return;
-        const onKey = (e: KeyboardEvent) => e.key === 'Escape' && close(null);
-        document.addEventListener('keydown', onKey);
-        return () => document.removeEventListener('keydown', onKey);
-    }, [tbId, close]);
-
-    if (!data || !tbId) return null;
+function StrideBoundaryContent({ data, tbId }: { data: NonNullable<ReturnType<typeof useStore.getState>['data']>; tbId: string }) {
+    const save = useStore((s) => s.save);
     const system = data.system;
-    const tb = (system.trustBoundaries || []).find((b) => b.id === tbId);
-    const nodeName = (data.dfd.nodes || []).find((n) => n.id === tbId && n.type === 'trust-boundary')?.label;
-    const name = tb?.name || nodeName || tbId;
     const pairs = boundaryPairs(system, data.dfd, tbId);
 
     // Analysis is stored flat by pair key (not nested per boundary) so every boundary that
@@ -126,37 +123,27 @@ export default function StrideBoundaryEditor() {
     };
 
     return (
-        <div className="modal-overlay" onClick={() => close(null)}>
-            <div className="modal" role="dialog" aria-modal="true" aria-label="STRIDE analysis per trust boundary" style={{ maxWidth: 1120, width: '100%' }} onClick={(e) => e.stopPropagation()}>
-                <div className="modalhead">
-                    <h3 style={{ margin: 0 }}>
-                        STRIDE analysis · <span className="mono">{tbId}</span> {name}
-                    </h3>
-                    <button className="btn sm" aria-label="Close" onClick={() => close(null)}>
-                        ✕ Close
-                    </button>
-                </div>
-                <p className="hint" style={{ marginTop: 0 }}>
-                    One table per communicating pair. Analyses are <b>shared across all boundaries</b> — a communication channel's
-                    security properties are the same regardless of which boundary you view it from, so edits here also appear
-                    in any other boundary that this pair's flow crosses.
+        <>
+            <p className="hint" style={{ marginTop: 0 }}>
+                One table per communicating pair. Analyses are <b>shared across all boundaries</b> — a communication channel's
+                security properties are the same regardless of which boundary you view it from, so edits here also appear
+                in any other boundary that this pair's flow crosses.
+            </p>
+            {pairs.length ? (
+                pairs.map((pair) => (
+                    <div key={pair.key}>
+                        <h4 style={{ margin: '4px 0 6px' }}>
+                            {pair.inside.label} <span className="muted">⇄</span> {pair.outside.label}
+                        </h4>
+                        {renderPairTable(pair)}
+                    </div>
+                ))
+            ) : (
+                <p className="hint">
+                    No data flows cross this boundary yet. Add flows in the DFD that cross <span className="mono">{tbId}</span> to
+                    analyse each communicating pair (e.g. HART ⇄ Plant DCS, Bluetooth ⇄ maintenance app).
                 </p>
-                {pairs.length ? (
-                    pairs.map((pair) => (
-                        <div key={pair.key}>
-                            <h4 style={{ margin: '4px 0 6px' }}>
-                                {pair.inside.label} <span className="muted">⇄</span> {pair.outside.label}
-                            </h4>
-                            {renderPairTable(pair)}
-                        </div>
-                    ))
-                ) : (
-                    <p className="hint">
-                        No data flows cross this boundary yet. Add flows in the DFD that cross <span className="mono">{tbId}</span> to
-                        analyse each communicating pair (e.g. HART ⇄ Plant DCS, Bluetooth ⇄ maintenance app).
-                    </p>
-                )}
-            </div>
-        </div>
+            )}
+        </>
     );
 }

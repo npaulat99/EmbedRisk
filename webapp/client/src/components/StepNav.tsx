@@ -96,6 +96,27 @@ export default function StepNav() {
     );
 }
 
+export function StepPicker() {
+    const view = useStore((s) => s.activeView);
+    const setView = useStore((s) => s.setView);
+    const otherViews = [
+        { key: 'dashboard', label: 'Dashboard' },
+        { key: 'defects', label: 'Defect register' },
+        { key: 'kb', label: 'Knowledge base' },
+    ] as const;
+    const options = [...STEPS.map(({ key, label }) => ({ key, label })), ...otherViews];
+    const stepIndex = STEPS.findIndex((step) => step.key === view);
+
+    return (
+        <label className="step-picker">
+            <span>{stepIndex >= 0 ? `Step ${stepIndex + 1} of ${STEPS.length}` : 'Views'}</span>
+            <select className="inp" aria-label="Navigate to step or view" value={view} onChange={(event) => setView(event.target.value as (typeof options)[number]['key'])}>
+                {options.map((option) => <option key={option.key} value={option.key}>{option.label}</option>)}
+            </select>
+        </label>
+    );
+}
+
 function NavItem({
     vkey,
     view,
@@ -114,18 +135,11 @@ function NavItem({
     children?: ReactNode;
 }) {
     return (
-        <div
+        <button
             className={'stepitem' + (view === vkey ? ' active' : '')}
-            role="button"
-            tabIndex={0}
+            type="button"
             aria-current={view === vkey ? 'page' : undefined}
             onClick={() => setView(vkey)}
-            onKeyDown={(e) => {
-                if (e.key === 'Enter' || e.key === ' ') {
-                    e.preventDefault();
-                    setView(vkey);
-                }
-            }}
         >
             <span className="icon" aria-hidden="true">{icon}</span>
             <span className="lbl">
@@ -133,6 +147,6 @@ function NavItem({
                 <small>{sub}</small>
             </span>
             {children}
-        </div>
+        </button>
     );
 }

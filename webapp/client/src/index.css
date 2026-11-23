@@ -287,14 +287,19 @@ textarea {
 }
 
 .stepitem {
+    appearance: none;
     display: flex;
     align-items: center;
+    width: 100%;
     gap: 10px;
     padding: 9px 10px;
     border-radius: var(--radius-sm);
     cursor: pointer;
     color: var(--text-dim);
     border: 1px solid transparent;
+    background: transparent;
+    font: inherit;
+    text-align: left;
 }
 
 .stepitem:hover {
@@ -627,6 +632,7 @@ textarea {
 }
 
 .chip {
+    appearance: none;
     display: inline-flex;
     align-items: center;
     gap: 5px;
@@ -637,6 +643,9 @@ textarea {
     border: 1px solid var(--border-strong);
     background: var(--surface);
     color: var(--text-dim);
+    font: inherit;
+    line-height: inherit;
+    text-align: left;
     user-select: none;
 }
 
@@ -691,6 +700,11 @@ textarea {
 .tagselect-add {
     max-width: 340px;
     color: var(--text-dim);
+}
+
+.id-input-error {
+    color: var(--danger);
+    font-size: 12px;
 }
 
 .version-history-list {
@@ -777,6 +791,15 @@ textarea {
     font-size: 11px;
     font-weight: 600;
     position: relative;
+}
+
+.matrix button.cell {
+    appearance: none;
+    padding: 0;
+    border: 0;
+    font: inherit;
+    color: #fff;
+    cursor: pointer;
 }
 
 .matrix-boundaries {
@@ -2127,12 +2150,15 @@ button.linkbtn {
 .adt-page-modal {
     width: min(96vw, 1400px);
     height: min(92vh, 1000px);
-    display: flex;
-    flex-direction: column;
     border: 1px solid var(--border-strong);
     border-radius: var(--radius);
     background: var(--surface);
     box-shadow: 0 12px 30px rgba(20, 28, 45, 0.25);
+}
+
+.adt-page-modal[open] {
+    display: flex;
+    flex-direction: column;
 }
 
 .adt-page-modal .modalhead {
@@ -2157,6 +2183,7 @@ button.linkbtn {
 
 /* ---- Cross-links, focus, help, tabs (session 3) -------------------------- */
 .jump {
+    appearance: none;
     cursor: pointer;
     color: var(--accent);
     background: var(--accent-weak);
@@ -2165,6 +2192,7 @@ button.linkbtn {
     padding: 1px 7px;
     font-size: 12px;
     font-family: ui-monospace, monospace;
+    text-align: left;
     white-space: nowrap;
 }
 
@@ -2328,17 +2356,27 @@ button.linkbtn {
 }
 
 .stat {
+    appearance: none;
+    display: block;
+    width: 100%;
     background: var(--surface);
     border: 1px solid var(--border);
     border-radius: var(--radius);
     box-shadow: var(--shadow);
     padding: 12px 14px;
     text-align: center;
+    color: var(--text);
+    font: inherit;
 }
 
 .stat.clickable {
     cursor: pointer;
     transition: border-color 0.12s, transform 0.12s;
+}
+
+.statval,
+.statlabel {
+    display: block;
 }
 
 .stat.clickable:hover {
@@ -2497,9 +2535,12 @@ button.linkbtn {
     width: 92vw;
     max-height: 92vh;
     padding: 14px 16px 12px;
+    overflow: hidden;
+}
+
+.tutorial-shell[open] {
     display: flex;
     flex-direction: column;
-    overflow: hidden;
 }
 
 .tutorial-topline {
@@ -3710,6 +3751,7 @@ textarea.inp.invalid {
 }
 
 .ov-node {
+    appearance: none;
     display: inline-flex;
     align-items: center;
     gap: 8px;
@@ -3719,6 +3761,9 @@ textarea.inp.invalid {
     background: var(--surface);
     cursor: pointer;
     font-size: 13px;
+    font-family: inherit;
+    color: var(--text);
+    text-align: left;
     box-shadow: var(--shadow);
 }
 
