@@ -1296,9 +1296,53 @@ function Canvas({ connMode, setConnMode, mode, setMode }: { connMode: boolean; s
 
 export default function DfdView() {
     const dfdPath = useStore((s) => s.dfdPath);
+    const focus = useStore((s) => s.focus);
+    const data = useStore((s) => s.data);
+    const setDfdPath = useStore((s) => s.setDfdPath);
+    const selectNode = useStore((s) => s.selectNode);
+    const selectEdge = useStore((s) => s.selectEdge);
     const currentParent = dfdPath.length ? dfdPath[dfdPath.length - 1] : 'root';
     const [connMode, setConnMode] = useState(false);
     const [mode, setMode] = useState<'canvas' | 'overview' | 'elements'>('canvas');
+
+    useEffect(() => {
+        if (focus?.view !== 'dfd' || !focus.id || !data) return;
+        const node = data.dfd.nodes.find((item) => item.id === focus.id);
+        if (node) {
+            const path: string[] = [];
+            let parent = node.parent ?? null;
+            while (parent) {
+                path.unshift(parent);
+                parent = data.dfd.nodes.find((item) => item.id === parent)?.parent ?? null;
+            }
+            setDfdPath(path);
+            selectNode(node.id);
+            setMode('canvas');
+            return;
+        }
+        const flow = data.dfd.flows.find((item) => item.id === focus.id);
+        if (flow) {
+            const source = data.dfd.nodes.find((item) => item.id === flow.from);
+            if (source) {
+                const path: string[] = [];
+                let parent = source.parent ?? null;
+                while (parent) {
+                    path.unshift(parent);
+                    parent = data.dfd.nodes.find((item) => item.id === parent)?.parent ?? null;
+                }
+                setDfdPath(path);
+            }
+            selectEdge(flow.id);
+            setMode('canvas');
+            return;
+        }
+        if (data.system.interfaces?.some((item) => item.id === focus.id)) {
+            setDfdPath([]);
+            selectNode(`iface:${focus.id}`);
+            setMode('canvas');
+        }
+    }, [focus?.view, focus?.id]);
+
     // Re-mount per layer so the view auto-fits and resets cleanly.
     return <Canvas key={`layer-${currentParent}`} connMode={connMode} setConnMode={setConnMode} mode={mode} setMode={setMode} />;
 }

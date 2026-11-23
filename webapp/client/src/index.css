@@ -300,6 +300,7 @@ textarea {
     background: transparent;
     font: inherit;
     text-align: left;
+    text-decoration: none;
 }
 
 .stepitem:hover {
@@ -2184,6 +2185,8 @@ button.linkbtn {
 /* ---- Cross-links, focus, help, tabs (session 3) -------------------------- */
 .jump {
     appearance: none;
+    display: inline-flex;
+    align-items: center;
     cursor: pointer;
     color: var(--accent);
     background: var(--accent-weak);
@@ -2193,6 +2196,7 @@ button.linkbtn {
     font-size: 12px;
     font-family: ui-monospace, monospace;
     text-align: left;
+    text-decoration: none;
     white-space: nowrap;
 }
 
@@ -2367,6 +2371,7 @@ button.linkbtn {
     text-align: center;
     color: var(--text);
     font: inherit;
+    text-decoration: none;
 }
 
 .stat.clickable {

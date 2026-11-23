@@ -10,6 +10,22 @@
     border: 0 !important;
 }
 
+.skip-link {
+    position: fixed;
+    inset: 8px auto auto 8px;
+    z-index: 2000;
+    padding: 8px 12px;
+    color: var(--text);
+    background: var(--surface);
+    border: 1px solid var(--border-strong);
+    border-radius: var(--radius-sm);
+    transform: translateY(calc(-100% - 12px));
+}
+
+.skip-link:focus-visible {
+    transform: translateY(0);
+}
+
 :where(button, a[href], input, select, textarea, [tabindex]:not([tabindex='-1'])):focus-visible {
     outline: 2px solid var(--focus-ring, #1d70b8);
     outline-offset: 2px;

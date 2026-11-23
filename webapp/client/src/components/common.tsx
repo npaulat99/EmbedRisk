@@ -485,14 +485,19 @@ export function EditBackBar({ label, onBack }: { label: string; onBack: () => vo
 export function Jump({ view, id, label, title }: { view: string; id: string; label?: string; title?: string }) {
     const goto = useStore((s) => s.goto);
     return (
-        <button
+        <a
             className="jump"
-            type="button"
+            href={`#/${encodeURIComponent(view)}/${encodeURIComponent(id)}`}
             title={title || `Open ${id}`}
-            onClick={(e) => { e.stopPropagation(); goto(view, id); }}
+            onClick={(event) => {
+                event.stopPropagation();
+                if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+                event.preventDefault();
+                goto(view, id);
+            }}
         >
             {label || id}
-        </button>
+        </a>
     );
 }
 

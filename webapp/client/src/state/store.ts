@@ -11,6 +11,8 @@ import type { LaunchConfig, ProjectData, ProjectSummary, RiskScheme, RiskSchemeV
 import { tutorialStorageKey } from '../tutorial/tutorialData';
 import { alignedManagedAttacker } from '../lib/slc';
 import { legacyRiskSchemeRegistry, schemeForProject } from '../lib/risk';
+import { writeHashRoute } from '../lib/route';
+import type { RouteHistoryMode, RouteView } from '../lib/route';
 
 const norm = (v: string | null | undefined) => String(v || '').toLowerCase().replace(/[^a-z0-9]+/g, '');
 const isPlaceholderComponentName = (label: string | undefined) => {
@@ -422,8 +424,8 @@ interface Store {
     closeTutorial(): void;
     openTutorial(): void;
     openTutorialPrompt(): void;
-    setView(v: ViewKey | 'dashboard' | 'kb'): void;
-    goto(view: string, id?: string): void;
+    setView(v: RouteView, historyMode?: RouteHistoryMode): void;
+    goto(view: string, id?: string, historyMode?: RouteHistoryMode): void;
     setTheme(t: 'light' | 'dark'): void;
     setDfdPath(path: string[]): void;
     selectNode(id: string | null): void;
@@ -525,7 +527,7 @@ export const useStore = create<Store>((set, get) => ({
         const { id } = await postJSON<{ id: string }>('/api/projects', { name });
         await get().refreshProjects();
         await get().selectProject(id);
-        set({ activeView: 'project' });
+        get().setView('project');
         try {
             if (!localStorage.getItem(tutorialStorageKey)) {
                 set({ tutorialPromptOpen: true, tutorialWalkthroughOpen: false });
@@ -566,10 +568,12 @@ export const useStore = create<Store>((set, get) => ({
         set({ tutorialPromptOpen: true, tutorialWalkthroughOpen: false });
     },
 
-    setView(v) {
+    setView(v, historyMode = 'push') {
+        writeHashRoute({ view: v }, historyMode);
         set({ activeView: v, focus: null });
     },
-    goto(view, id) {
+    goto(view, id, historyMode = 'push') {
+        writeHashRoute({ view: view as RouteView, ...(id ? { id } : {}) }, historyMode);
         set({ activeView: view as any, focus: id ? { view, id } : null, selectedNodeId: null, selectedEdgeId: null });
     },
     setTheme(t) {

@@ -1,5 +1,7 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useStore } from './state/store';
+import { parseHashRoute } from './lib/route';
+import type { ProjectData } from './types';
 import TopBar from './components/TopBar';
 import StepNav, { StepPicker } from './components/StepNav';
 import Inspector from './components/Inspector';
@@ -26,13 +28,69 @@ import AppDialog from './components/AppDialog';
 import LiveStatus from './components/LiveStatus';
 import { useDialogs } from './lib/useDialogs';
 
+function routeTargetExists(data: ProjectData, view: string, id: string | undefined) {
+    if (!id) return true;
+    const has = (items: { id: string }[] | undefined) => !!items?.some((item) => item.id === id);
+    switch (view) {
+        case 'project': return data.project.projectId === id;
+        case 'assumptions': return has(data.assumptions.attacker) || has(data.assumptions.device) || has(data.assumptions.system) || has(data.assumptions.environment) || has(data.assumptions.operational);
+        case 'system': return has(data.system.components) || has(data.system.interfaces) || has(data.system.trustBoundaries) || has(data.system.assets);
+        case 'dfd': return has(data.dfd.nodes) || has(data.dfd.flows) || has(data.system.interfaces);
+        case 'useCases': return (data.useCases?.diagrams || []).some((diagram) => diagram.id === id || diagram.entities?.some((entity) => entity.id === id) || diagram.connections?.some((connection) => connection.id === id) || diagram.groups?.some((group) => group.id === id));
+        case 'threats': return has(data.threats.threats);
+        case 'requirements': return has(data.requirements.requirements);
+        case 'countermeasures': return has(data.countermeasures.countermeasures);
+        case 'attackTrees': {
+            const contains = (node: any): boolean => node?.id === id || (node?.children || []).some(contains);
+            return (data.attackTrees?.trees || []).some((tree) => tree.id === id || contains(tree.root));
+        }
+        case 'defects': return has(data.defects?.defects);
+        case 'versions': return data.changeTracker.entries.some((entry) => entry.version === id);
+        default: return false;
+    }
+}
+
 function AppContent() {
     const data = useStore((s) => s.data);
     const view = useStore((s) => s.activeView);
+    const activeId = useStore((s) => s.activeId);
     const newProject = useStore((s) => s.newProject);
     const dialogs = useDialogs();
     const [inspectorOpen, setInspectorOpen] = useState(false);
     const hasInspector = view !== 'dashboard' && view !== 'kb' && view !== 'defects' && view !== 'versions';
+    const routeContext = useRef({ data, activeId });
+    routeContext.current = { data, activeId };
+    const applyHashRoute = useRef<() => void>(() => { });
+    applyHashRoute.current = () => {
+        const project = routeContext.current.data;
+        if (!project || window.location.hash === '#main-content') return;
+        const route = parseHashRoute(window.location.hash);
+        if (!route) {
+            useStore.getState().setView('project', 'replace');
+            return;
+        }
+        if (!routeTargetExists(project, route.view, route.id)) {
+            useStore.getState().setView(route.view, 'replace');
+            return;
+        }
+        if (route.id) useStore.getState().goto(route.view, route.id, 'none');
+        else useStore.getState().setView(route.view, 'none');
+    };
+
+    useEffect(() => {
+        const syncRoute = () => applyHashRoute.current();
+        window.addEventListener('hashchange', syncRoute);
+        window.addEventListener('popstate', syncRoute);
+        syncRoute();
+        return () => {
+            window.removeEventListener('hashchange', syncRoute);
+            window.removeEventListener('popstate', syncRoute);
+        };
+    }, []);
+
+    useEffect(() => {
+        if (data) applyHashRoute.current();
+    }, [activeId, !!data]);
 
     useEffect(() => {
         const openInspector = () => setInspectorOpen(true);
@@ -79,6 +137,16 @@ function AppContent() {
 
     return (
         <div className="app">
+            <a
+                className="skip-link"
+                href="#main-content"
+                onClick={(event) => {
+                    event.preventDefault();
+                    document.getElementById('main-content')?.focus();
+                }}
+            >
+                Skip to main content
+            </a>
             <TopBar />
             {data ? (
                 <>
@@ -98,7 +166,7 @@ function AppContent() {
                     </div>
                     <div className={'layout' + (!hasInspector ? ' wide' : '')}>
                         <StepNav />
-                        <main className={'main' + (view === 'dfd' ? ' is-dfd' : '')}>
+                        <main id="main-content" tabIndex={-1} className={'main' + (view === 'dfd' ? ' is-dfd' : '')}>
                             {main()}
                             {view !== 'dfd' && <WizardBar />}
                         </main>

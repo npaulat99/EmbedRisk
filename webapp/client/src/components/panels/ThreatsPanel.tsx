@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useId, useState } from 'react';
 import { useStore, uid } from '../../state/store';
 import { Field, Chips, TagSelect, cx, STRIDE, sortStride, RiskPill, useFocus, useEditMode, EditBackBar, ScaleSelect, Jump, HelpButton, confirmDelete, IdInput } from '../common';
 import { createRiskEngine, riskOf } from '../../lib/risk';
@@ -19,8 +19,15 @@ export default function ThreatsPanel() {
     const save = useStore((s) => s.save);
     const setView = useStore((s) => s.setView);
     const [sortBy, setSortBy] = useState<'id' | 'name' | 'initial' | 'residual'>('id');
+    const [kbFilter, setKbFilter] = useState('');
+    const [recordFilter, setRecordFilter] = useState('');
+    const kbSearchId = useId();
+    const recordSearchId = useId();
 
     const threats = data.threats.threats || [];
+    const knowledgeThreats = kb?.threats || [];
+    const filteredKnowledgeThreats = knowledgeThreats.filter((item: any) => `${item.key} ${item.title} ${(item.stride || []).join(' ')}`.toLowerCase().includes(kbFilter.trim().toLowerCase()));
+    const filteredThreats = threats.filter((threat) => `${threat.id} ${threat.title} ${threat.classification || ''} ${(threat.stride || []).join(' ')}`.toLowerCase().includes(recordFilter.trim().toLowerCase()));
     const cms = data.countermeasures.countermeasures || [];
     const focusId = useFocus('threats');
     const { editingId, setEditingId } = useEditMode(focusId);
@@ -310,23 +317,32 @@ export default function ThreatsPanel() {
                         <button className="btn primary sm" onClick={add}>
                             + Threat
                         </button>
-                        {kb?.threats?.length ? (
-                            <select
-                                className="inp"
-                                style={{ width: 280 }}
-                                value=""
-                                onChange={(e) => {
-                                    if (e.target.value) importKb(e.target.value);
-                                    e.target.value = '';
-                                }}
-                            >
-                                <option value="">+ Add from knowledge base…</option>
-                                {kb.threats.map((k: any) => (
-                                    <option key={k.key} value={k.key}>
-                                        {k.title}
-                                    </option>
-                                ))}
-                            </select>
+                        {knowledgeThreats.length ? (
+                            <div className="kb-threat-picker">
+                                <search className="threat-search">
+                                    <label htmlFor={kbSearchId}>Search knowledge base</label>
+                                    <input id={kbSearchId} className="inp" type="search" value={kbFilter} onChange={(event) => setKbFilter(event.target.value)} />
+                                </search>
+                                <select
+                                    className="inp"
+                                    aria-label="Add filtered knowledge-base threat"
+                                    value=""
+                                    onChange={(e) => {
+                                        if (e.target.value) importKb(e.target.value);
+                                        e.target.value = '';
+                                    }}
+                                >
+                                    <option value="">+ Add from knowledge base…</option>
+                                    {filteredKnowledgeThreats.map((item: any) => <option key={item.key} value={item.key}>{item.title}</option>)}
+                                </select>
+                                {kbFilter && (
+                                    <span className="tag active-filter">
+                                        Knowledge base: {kbFilter}
+                                        <button className="filter-clear" type="button" aria-label="Clear knowledge-base search" onClick={() => setKbFilter('')}>Clear</button>
+                                    </span>
+                                )}
+                                {kbFilter && !filteredKnowledgeThreats.length && <span className="hint">No knowledge-base threats match this search.</span>}
+                            </div>
                         ) : null}
                         <ThreatCmImportExport />
                         <label className="inline" style={{ gap: 6 }}>
@@ -340,8 +356,19 @@ export default function ThreatsPanel() {
                         </label>
                     </div>
 
+                    <search className="threat-search threat-record-search">
+                        <label htmlFor={recordSearchId}>Search threats</label>
+                        <input id={recordSearchId} className="inp" type="search" value={recordFilter} onChange={(event) => setRecordFilter(event.target.value)} />
+                        {recordFilter && (
+                            <span className="tag active-filter">
+                                Threats: {recordFilter}
+                                <button className="filter-clear" type="button" aria-label="Clear threat search" onClick={() => setRecordFilter('')}>Clear</button>
+                            </span>
+                        )}
+                    </search>
+
                     <div className="list">
-                        {[...threats].sort((a, b) => {
+                        {[...filteredThreats].sort((a, b) => {
                             if (sortBy === 'id') return a.id.localeCompare(b.id, undefined, { numeric: true });
                             if (sortBy === 'name') return a.title.localeCompare(b.title, undefined, { sensitivity: 'base' });
                             const aRisk = riskOf(a, cms, scheme);
@@ -385,7 +412,7 @@ export default function ThreatsPanel() {
                                 </div>
                             );
                         })}
-                        {!threats.length && <p className="hint">No threats yet.</p>}
+                        {!threats.length ? <p className="hint">No threats yet.</p> : !filteredThreats.length ? <p className="hint">No threats match this search.</p> : null}
                     </div>
                 </>
             )}

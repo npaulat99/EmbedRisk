@@ -5,10 +5,14 @@ import { useStore } from '../../state/store';
 import { createRiskEngine, riskOf } from '../../lib/risk';
 import { Jump, HelpButton, RiskPill, sortStride, TableRegion } from '../common';
 
-function Stat({ label, value, warn, onClick }: { label: string; value: number | string; warn?: boolean; onClick?: () => void }) {
+function Stat({ label, value, warn, href, onClick }: { label: string; value: number | string; warn?: boolean; href?: string; onClick?: () => void }) {
     const content = <><span className={'statval' + (warn ? ' warn' : '')}>{value}</span><span className="statlabel">{label}</span></>;
-    return onClick
-        ? <button className="stat clickable" type="button" onClick={onClick}>{content}</button>
+    return href
+        ? <a className="stat clickable" href={href} onClick={(event) => {
+            if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+            event.preventDefault();
+            onClick?.();
+        }}>{content}</a>
         : <div className="stat">{content}</div>;
 }
 
@@ -60,20 +64,20 @@ export default function DashboardPanel() {
             </p>
 
             <div className="dashgrid">
-                <Stat label="Components" value={components.length} onClick={() => setView('system')} />
-                <Stat label="3rd-party SW/HW" value={thirdParty.length} onClick={() => setView('system')} />
-                <Stat label="Interfaces" value={interfaces.length} onClick={() => setView('system')} />
-                <Stat label="Assets" value={assets.length} onClick={() => setView('system')} />
-                <Stat label="Threats" value={threats.length} onClick={() => setView('threats')} />
-                <Stat label="Open threats" value={openThreats.length} warn={openThreats.length > 0} onClick={() => setView('threats')} />
-                <Stat label="Protocol limits" value={protocolLimitations} onClick={() => setView('threats')} />
-                <Stat label="Deployment risks" value={deploymentRisks} onClick={() => setView('threats')} />
-                <Stat label="Shared controls" value={sharedResponsibility} onClick={() => setView('threats')} />
-                <Stat label="Requirements" value={reqs.length} onClick={() => setView('requirements')} />
-                <Stat label="High threats w/o req." value={highNoReq.length} warn={highNoReq.length > 0} onClick={() => setView('threats')} />
-                <Stat label="Countermeasures" value={implementedCms.length} onClick={() => setView('countermeasures')} />
-                <Stat label="Missing ticket links" value={missingTicket.length} warn={missingTicket.length > 0} onClick={() => setView('countermeasures')} />
-                <Stat label="Open defects" value={openDefects.length} warn={openDefects.length > 0} onClick={() => setView('defects')} />
+                <Stat label="Components" value={components.length} href="#/system" onClick={() => setView('system')} />
+                <Stat label="3rd-party SW/HW" value={thirdParty.length} href="#/system" onClick={() => setView('system')} />
+                <Stat label="Interfaces" value={interfaces.length} href="#/system" onClick={() => setView('system')} />
+                <Stat label="Assets" value={assets.length} href="#/system" onClick={() => setView('system')} />
+                <Stat label="Threats" value={threats.length} href="#/threats" onClick={() => setView('threats')} />
+                <Stat label="Open threats" value={openThreats.length} warn={openThreats.length > 0} href="#/threats" onClick={() => setView('threats')} />
+                <Stat label="Protocol limits" value={protocolLimitations} href="#/threats" onClick={() => setView('threats')} />
+                <Stat label="Deployment risks" value={deploymentRisks} href="#/threats" onClick={() => setView('threats')} />
+                <Stat label="Shared controls" value={sharedResponsibility} href="#/threats" onClick={() => setView('threats')} />
+                <Stat label="Requirements" value={reqs.length} href="#/requirements" onClick={() => setView('requirements')} />
+                <Stat label="High threats w/o req." value={highNoReq.length} warn={highNoReq.length > 0} href="#/threats" onClick={() => setView('threats')} />
+                <Stat label="Countermeasures" value={implementedCms.length} href="#/countermeasures" onClick={() => setView('countermeasures')} />
+                <Stat label="Missing ticket links" value={missingTicket.length} warn={missingTicket.length > 0} href="#/countermeasures" onClick={() => setView('countermeasures')} />
+                <Stat label="Open defects" value={openDefects.length} warn={openDefects.length > 0} href="#/defects" onClick={() => setView('defects')} />
             </div>
 
             <div className="card">

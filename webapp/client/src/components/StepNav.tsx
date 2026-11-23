@@ -135,11 +135,15 @@ function NavItem({
     children?: ReactNode;
 }) {
     return (
-        <button
+        <a
             className={'stepitem' + (view === vkey ? ' active' : '')}
-            type="button"
+            href={`#/${encodeURIComponent(vkey)}`}
             aria-current={view === vkey ? 'page' : undefined}
-            onClick={() => setView(vkey)}
+            onClick={(event) => {
+                if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+                event.preventDefault();
+                setView(vkey);
+            }}
         >
             <span className="icon" aria-hidden="true">{icon}</span>
             <span className="lbl">
@@ -147,6 +151,6 @@ function NavItem({
                 <small>{sub}</small>
             </span>
             {children}
-        </button>
+        </a>
     );
 }
