@@ -6,6 +6,7 @@ import './styles/dialog.css';
 import './styles/a11y.css';
 import './styles/shell.css';
 import './styles/tables.css';
+import './styles/dfd-a11y.css';
 import { useStore } from './state/store';
 
 // Kick off data loading + WebSocket connection once, outside React's lifecycle.

@@ -1,0 +1,96 @@
+.dfd-canvas .react-flow__node.selectable:focus-visible {
+    outline: 2px solid var(--focus-ring, #1d70b8);
+    outline-offset: 3px;
+}
+
+.react-flow__edge:focus-visible .react-flow__edge-path {
+    stroke: var(--focus-ring, #1d70b8);
+    stroke-width: 3px;
+}
+
+.edgelabel {
+    appearance: none;
+    font: inherit;
+}
+
+.edgelabel:focus-visible {
+    outline: 2px solid var(--focus-ring, #1d70b8);
+    outline-offset: 2px;
+}
+
+.dfd-mode-switch {
+    display: inline-flex;
+    gap: 4px;
+}
+
+.dfd-mode-switch button[aria-pressed='true'] {
+    color: var(--text);
+    background: var(--accent-weak);
+    border-color: var(--accent);
+}
+
+.dfd-elements {
+    min-width: 0;
+    padding: 12px;
+    overflow: auto;
+}
+
+.dfd-elements-add {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(130px, 1fr)) auto;
+    align-items: end;
+    gap: 10px;
+    margin-bottom: 14px;
+    padding: 0 0 14px;
+    border-bottom: 1px solid var(--border);
+}
+
+.dfd-elements-add h2 {
+    grid-column: 1 / -1;
+    margin: 0;
+    font-size: 15px;
+}
+
+.dfd-elements-add label {
+    display: grid;
+    gap: 4px;
+    min-width: 0;
+    color: var(--text-dim);
+    font-size: 12px;
+}
+
+.dfd-element-actions {
+    white-space: nowrap;
+}
+
+.dfd-element-interface {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 10px;
+    min-height: 44px;
+    padding: 6px 0;
+    border-bottom: 1px solid var(--border);
+}
+
+.dfd-element-interface .muted {
+    flex: 1 1 180px;
+}
+
+@media (max-width: 719px) {
+    .dfd-elements-add {
+        grid-template-columns: minmax(0, 1fr);
+    }
+}
+
+@media (forced-colors: active) {
+
+    .dfd-canvas .react-flow__node.selectable:focus-visible,
+    .edgelabel:focus-visible {
+        outline-color: CanvasText;
+    }
+
+    .react-flow__edge:focus-visible .react-flow__edge-path {
+        stroke: CanvasText;
+    }
+}

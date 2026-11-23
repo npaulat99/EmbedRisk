@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useStore } from './state/store';
 import TopBar from './components/TopBar';
 import StepNav, { StepPicker } from './components/StepNav';
@@ -33,6 +33,14 @@ function AppContent() {
     const dialogs = useDialogs();
     const [inspectorOpen, setInspectorOpen] = useState(false);
     const hasInspector = view !== 'dashboard' && view !== 'kb' && view !== 'defects' && view !== 'versions';
+
+    useEffect(() => {
+        const openInspector = () => setInspectorOpen(true);
+        window.addEventListener('embedrisk:open-inspector', openInspector);
+        return () => window.removeEventListener('embedrisk:open-inspector', openInspector);
+    }, []);
+
+    useEffect(() => setInspectorOpen(false), [view]);
 
     const main = () => {
         switch (view) {

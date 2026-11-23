@@ -62,6 +62,7 @@ export function DfdNodeView({ id, data, selected }: any) {
     return (
         <div
             className={cx('node', data.dtype, selected && 'sel')}
+            aria-label={`${data.dtype === 'external-entity' ? 'External entity' : data.dtype === 'multiprocess' ? 'Multi-process' : data.dtype === 'store' ? 'Data store' : 'Process'} ${id}: ${data.label}`}
             onClick={(e) => {
                 e.stopPropagation();
                 selectNode(id);
@@ -90,6 +91,7 @@ export function BoundaryNodeView({ id, data, selected }: any) {
         <div
             className={cx('boundary', selected && 'sel', data.warn && 'warn')}
             style={{ width: '100%', height: '100%' }}
+            aria-label={`Trust boundary ${id}: ${data.label}`}
             onClick={(e) => {
                 e.stopPropagation();
                 selectNode(id);
@@ -101,9 +103,9 @@ export function BoundaryNodeView({ id, data, selected }: any) {
 }
 
 // Ancestor trust boundary drawn as a faint context frame when you have zoomed into a layer.
-export function ContextNodeView({ data }: any) {
+export function ContextNodeView({ id, data }: any) {
     return (
-        <div className="contextframe" style={{ width: '100%', height: '100%' }}>
+        <div className="contextframe" style={{ width: '100%', height: '100%' }} aria-label={`Ancestor trust boundary ${id.replace(/^ctx:/, '')}: ${data.label}`}>
             <span className="ctxlabel">{data.label}</span>
         </div>
     );
@@ -115,6 +117,7 @@ export function InterfaceNodeView({ id, data, selected }: any) {
     return (
         <div
             className={cx('ifacechip', selected && 'sel')}
+            aria-label={`Interface ${id.replace(/^iface:/, '')}: ${data.label}`}
             title={data.title}
             style={data.rotation ? { transform: `rotate(${data.rotation}deg)` } : undefined}
             onClick={(e) => {
@@ -137,6 +140,7 @@ export function PortNodeView({ id, data, selected }: any) {
     return (
         <div
             className={cx('portchip', selected && 'sel')}
+            aria-label={`${data.dir === 'in' ? 'Ingress' : 'Egress'} port ${id}: ${data.name}`}
             title={data.title}
             onClick={(e) => {
                 e.stopPropagation();
