@@ -27,6 +27,13 @@
     max-width: 32vw;
 }
 
+.topbar-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+}
+
 .inspector-drawer[open] {
     position: fixed;
     inset: 0 0 0 auto;
@@ -172,6 +179,48 @@
         max-width: 100%;
         margin-inline-start: auto;
         overflow-wrap: anywhere;
+    }
+}
+
+@media (min-width: 720px) and (max-width: 1279px) {
+    .topbar {
+        height: auto;
+        min-height: var(--topbar-h);
+        flex-wrap: wrap;
+        gap: 8px;
+        padding: 8px 10px;
+    }
+
+    .brand {
+        flex: 1 1 auto;
+        min-width: 0;
+    }
+
+    .brand small,
+    .topbar .spacer {
+        display: none;
+    }
+
+    .project-select {
+        flex: 1 1 180px;
+        width: auto;
+        max-width: 36vw;
+    }
+
+    .topbar-actions {
+        flex: 1 1 100%;
+        justify-content: flex-end;
+        flex-wrap: wrap;
+    }
+
+    .topbar-actions .theme-select {
+        flex: 0 1 144px;
+        width: auto;
+        min-width: 100px;
+    }
+
+    .conn {
+        margin-inline-start: auto;
     }
 }
 
