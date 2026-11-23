@@ -120,10 +120,21 @@ try {
     await page.getByText(/^Editing T-/).waitFor();
     await page.reload();
     await page.getByText(/^Editing T-/).waitFor();
+    await page.setViewportSize({ width: 390, height: 900 });
+    const editorDimensions = await page.locator('.layout > .main').evaluate((main) => ({
+        clientWidth: main.clientWidth,
+        scrollWidth: main.scrollWidth,
+    }));
+    assert.ok(editorDimensions.scrollWidth <= editorDimensions.clientWidth, `Threat editor overflows its workspace: ${JSON.stringify(editorDimensions)}`);
+
+    await stopServer(server);
+    await page.waitForFunction(() => document.querySelector('.conn')?.textContent?.includes('Offline, sync pending'), { timeout: 10000 });
+    const offlineLabel = await page.locator('.conn').getAttribute('aria-label');
+    assert.match(offlineLabel || '', /not saved to disk.*keep this tab open/i);
 
     assert.deepEqual(nativeDialogs, [], `Unexpected native browser dialogs: ${nativeDialogs.join(', ')}`);
     assert.deepEqual(pageErrors, [], `Browser page errors: ${pageErrors.join('; ')}`);
-    console.log('UX smoke checks passed: 25 viewport/view combinations, settings focus, hash history, refresh deep link, no native dialogs.');
+    console.log('UX smoke checks passed: 25 viewport/view combinations, mobile threat editor, offline status, settings focus, hash history, refresh deep link, no native dialogs.');
 } finally {
     await browser?.close();
     await stopServer(server);

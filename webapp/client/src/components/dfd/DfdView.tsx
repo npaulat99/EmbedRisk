@@ -1182,7 +1182,7 @@ function Canvas({ connMode, setConnMode, mode, setMode }: { connMode: boolean; s
                         <button className="btn sm" type="button" aria-pressed={mode === 'elements'} onClick={() => setMode('elements')}>Elements</button>
                     </div>
                     {mode === 'canvas' && (
-                        <>
+                        <div className="dfd-actions" role="group" aria-label="Diagram actions">
                             <button
                                 className={cx('btn sm', connMode && 'primary')}
                                 onClick={() => setConnMode(!connMode)}
@@ -1201,7 +1201,7 @@ function Canvas({ connMode, setConnMode, mode, setMode }: { connMode: boolean; s
                                         + {TYPE_LABEL[t]}
                                     </button>
                                 ))}
-                        </>
+                        </div>
                     )}
                 </div>
             </div>

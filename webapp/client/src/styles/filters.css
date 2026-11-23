@@ -3,7 +3,8 @@
     grid-template-columns: minmax(180px, 1fr) minmax(220px, 300px);
     align-items: end;
     gap: 6px 10px;
-    min-width: 0;
+    flex: 1 1 320px;
+    min-inline-size: min(100%, 320px);
 }
 
 .threat-search {

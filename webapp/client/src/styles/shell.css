@@ -227,9 +227,19 @@
 @media (pointer: coarse) {
 
     .btn,
+    .btn.sm,
     .chip,
-    .chipx {
+    .chipx,
+    .crumbs button,
+    .filter-clear {
         min-inline-size: 44px;
+        min-block-size: 44px;
+    }
+
+    .topbar .btn,
+    .topbar select,
+    .dfd-nav select,
+    .inp {
         min-block-size: 44px;
     }
 }

@@ -412,7 +412,15 @@ export default function ThreatsPanel() {
                                 </div>
                             );
                         })}
-                        {!threats.length ? <p className="hint">No threats yet.</p> : !filteredThreats.length ? <p className="hint">No threats match this search.</p> : null}
+                        {!threats.length ? (
+                            <div className="empty-state">
+                                <h2>No threats yet</h2>
+                                <p>Start with a substantive STRIDE scenario, or search the knowledge base for a common threat.</p>
+                                <button className="btn primary sm" onClick={add}>+ Threat</button>
+                            </div>
+                        ) : !filteredThreats.length ? (
+                            <p className="empty-state" role="status">No threats match “{recordFilter}”. Clear the search to see all {threats.length} threats.</p>
+                        ) : null}
                     </div>
                 </>
             )}

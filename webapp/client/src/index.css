@@ -1389,7 +1389,8 @@ textarea {
 
 .toolbar {
     display: flex;
-    align-items: center;
+    align-items: flex-end;
+    flex-wrap: wrap;
     gap: 8px;
     margin-bottom: 14px;
 }

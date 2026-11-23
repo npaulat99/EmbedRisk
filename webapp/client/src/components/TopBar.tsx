@@ -46,7 +46,7 @@ export default function TopBar() {
         const message = previous === 'offline' && saveStatus !== 'offline'
             ? 'Live'
             : saveStatus === 'offline' && previous !== 'offline'
-                ? 'Offline, changes kept locally'
+                ? 'Offline. Changes are pending sync and are not saved to disk; keep this tab open.'
                 : saveStatus === 'saved' && (previous === 'saving' || previous === 'unsaved')
                     ? 'Saved'
                     : null;
@@ -98,7 +98,7 @@ export default function TopBar() {
     const changeTheme = (value: string) => setTheme(value as AppTheme);
 
     const statusLabel = saveStatus === 'offline'
-        ? 'Offline, changes kept locally'
+        ? 'Offline, sync pending'
         : saveStatus === 'saved'
             ? 'Saved'
             : saveStatus === 'saving'
@@ -184,7 +184,11 @@ export default function TopBar() {
                 <button className="btn sm" type="button" onClick={openTutorialPrompt}>Tutorial overview</button>
                 <button className="btn sm" type="button" onClick={() => setView('review')}>Generate report</button>
             </div>
-            <span className="conn" title={connected ? 'Live sync connected' : 'Reconnecting…'}>
+            <span
+                className="conn"
+                title={saveStatus === 'offline' ? 'Changes are in this tab’s memory and have not been saved to disk. Keep this tab open until sync resumes.' : connected ? 'Live sync connected' : 'Reconnecting…'}
+                aria-label={saveStatus === 'offline' ? 'Offline. Changes are pending sync and are not saved to disk; keep this tab open.' : connected ? 'Live sync connected' : 'Reconnecting…'}
+            >
                 <span className={'dot ' + (connected ? 'on' : 'off')} />
                 {statusLabel}
             </span>
