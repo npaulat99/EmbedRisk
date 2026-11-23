@@ -172,7 +172,7 @@ export default function ReviewPanel() {
                 <TableRegion label="Threats and risk">
                     <table className="tbl">
                         <thead>
-                            <tr style={{ textAlign: 'left', color: 'var(--text-dim)', fontSize: 12 }}>
+                            <tr style={{ textAlign: 'left', color: 'var(--text-dim)', fontSize: '0.75rem' }}>
                                 <th scope="col" style={{ padding: 6 }}>ID</th>
                                 <th scope="col" style={{ padding: 6 }}>Threat</th>
                                 <th scope="col" style={{ padding: 6 }}>STRIDE</th>

@@ -3,6 +3,7 @@ import { useStore } from '../state/store';
 import { riskOf, bandForRisk, bandsOf, createRiskEngine, descendantComponentIds } from '../lib/risk';
 import { DEFAULT_ACCEPTABLE_RISK } from '../types';
 import AppDialog from './AppDialog';
+import { contrastTextColor } from './common';
 
 /**
  * 5×5 residual-risk heat map. Optionally filtered to a single component (when a DFD node
@@ -82,7 +83,11 @@ export default function RiskMatrix({ componentRef }: { componentRef?: string }) 
                                     key={`${L.value}-${I.value}`}
                                     type={n ? 'button' : undefined}
                                     aria-label={n ? `${L.label} by ${I.label}, ${level.label}, ${n} threat(s): ${ids.join(', ')}. Activate to open.` : `${L.label} by ${I.label}, ${level.label}`}
-                                    style={{ background: b.color, opacity: n ? 1 : 0.42, cursor: n ? 'pointer' : 'default' }}
+                                    style={{
+                                        background: n ? b.color : `color-mix(in srgb, ${b.color} 38%, var(--surface))`,
+                                        color: n ? contrastTextColor(b.color) : 'var(--text)',
+                                        cursor: n ? 'pointer' : 'default',
+                                    }}
                                     title={n ? `${L.code} × ${I.code}: ${level.label} — ${ids.join(', ')} · click to open` : `${L.code} × ${I.code}: ${level.label}`}
                                     onClick={n ? () => openCell(ids) : undefined}
                                 >

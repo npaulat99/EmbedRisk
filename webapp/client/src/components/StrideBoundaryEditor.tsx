@@ -62,7 +62,7 @@ function StrideBoundaryContent({ data, tbId }: { data: NonNullable<ReturnType<ty
             <td style={{ verticalAlign: 'top', padding: 4 }}>
                 <textarea
                     className="inp"
-                    style={{ width: '100%', minHeight: 54, resize: 'vertical', fontSize: 12 }}
+                    style={{ width: '100%', minHeight: 54, resize: 'vertical', fontSize: '0.75rem' }}
                     value={cellText(side, k, field)}
                     placeholder="one per line"
                     aria-label={`${side} ${STRIDE_LABEL[k]} ${field}`}
@@ -84,7 +84,7 @@ function StrideBoundaryContent({ data, tbId }: { data: NonNullable<ReturnType<ty
                         <input className="inp" value={bLabel} onChange={(e) => setLabel('outside', e.target.value)} />
                     </div>
                 </div>
-                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.75rem' }}>
                     <thead>
                         <tr>
                             <th rowSpan={2} style={{ padding: 6, textAlign: 'left', borderBottom: '1px solid var(--border)' }}>

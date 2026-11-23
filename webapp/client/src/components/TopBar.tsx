@@ -2,6 +2,8 @@ import { useEffect, useId, useRef, useState } from 'react';
 import { useStore } from '../state/store';
 import { useDialogs } from '../lib/useDialogs';
 import { announce } from './LiveStatus';
+import Icon from './Icon';
+import type { AppTheme } from '../state/store';
 
 type SaveStatus = 'unsaved' | 'saving' | 'saved' | 'offline' | 'live';
 
@@ -93,6 +95,8 @@ export default function TopBar() {
         if (name) await newProject(name);
     };
 
+    const changeTheme = (value: string) => setTheme(value as AppTheme);
+
     const statusLabel = saveStatus === 'offline'
         ? 'Offline, changes kept locally'
         : saveStatus === 'saved'
@@ -119,7 +123,7 @@ export default function TopBar() {
                 ))}
             </select>
             <button className="btn sm" onClick={onNew}>
-                + New
+                <Icon name="add" width={16} height={16} /> New
             </button>
             {status && <span className="tag statuspill">{status}</span>}
 
@@ -127,13 +131,15 @@ export default function TopBar() {
 
             <div className="topbar-actions">
                 <span className="undogroup">
-                    <button className="btn sm iconbtn" title="Undo (Ctrl+Z)" aria-label="Undo" disabled={!undoDepth} onClick={undo}>↶</button>
-                    <button className="btn sm iconbtn" title="Redo (Ctrl+Y)" aria-label="Redo" disabled={!redoDepth} onClick={redo}>↷</button>
+                    <button className="btn sm iconbtn" title="Undo (Ctrl+Z)" aria-label="Undo" disabled={!undoDepth} onClick={undo}><Icon name="undo" width={16} height={16} /></button>
+                    <button className="btn sm iconbtn" title="Redo (Ctrl+Y)" aria-label="Redo" disabled={!redoDepth} onClick={redo}><Icon name="redo" width={16} height={16} /></button>
                 </span>
-                <button className="btn sm" title={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'} onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}>
-                    {theme === 'dark' ? '☀ Light' : '☾ Dark'}
-                </button>
-                <button className="btn sm iconbtn" title="Project settings" aria-label="Project settings" onClick={() => setSettings(true)}>⚙</button>
+                <select className="inp theme-select" aria-label="Color scheme" value={theme} onChange={(event) => changeTheme(event.target.value)}>
+                    <option value="system">System</option>
+                    <option value="light">Light</option>
+                    <option value="dark">Dark</option>
+                </select>
+                <button className="btn sm iconbtn" title="Project settings" aria-label="Project settings" onClick={() => setSettings(true)}><Icon name="settings" width={16} height={16} /></button>
                 <div className="helpmenu" ref={helpRef}>
                     <button
                         className="btn sm iconbtn"
@@ -143,11 +149,11 @@ export default function TopBar() {
                         aria-expanded={helpOpen}
                         onClick={() => setHelpOpen((v) => !v)}
                     >
-                        <span aria-hidden="true">?</span>
+                        <Icon name="help" width={16} height={16} />
                     </button>
                     {helpOpen && (
                         <div className="helpmenu-pop" role="menu">
-                            <button className="helpmenu-item" role="menuitem" onClick={() => { setHelpOpen(false); openTutorial(); }}>▶ Start tutorial</button>
+                            <button className="helpmenu-item" role="menuitem" onClick={() => { setHelpOpen(false); openTutorial(); }}><Icon name="play" width={16} height={16} /> Start tutorial</button>
                             <button className="helpmenu-item" role="menuitem" onClick={() => { setHelpOpen(false); openTutorialPrompt(); }}>Tutorial overview</button>
                         </div>
                     )}
@@ -165,7 +171,14 @@ export default function TopBar() {
             <div id={overflowId} className="topbar-overflow" {...({ popover: 'auto' } as any)}>
                 <button className="btn sm" type="button" disabled={!undoDepth} onClick={undo}>Undo</button>
                 <button className="btn sm" type="button" disabled={!redoDepth} onClick={redo}>Redo</button>
-                <button className="btn sm" type="button" onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}>{theme === 'dark' ? '☀ Light' : '☾ Dark'}</button>
+                <label className="theme-select-label">
+                    <span>Color scheme</span>
+                    <select className="inp theme-select" aria-label="Color scheme" value={theme} onChange={(event) => changeTheme(event.target.value)}>
+                        <option value="system">System</option>
+                        <option value="light">Light</option>
+                        <option value="dark">Dark</option>
+                    </select>
+                </label>
                 <button className="btn sm" type="button" onClick={() => setSettings(true)}>Project settings</button>
                 <button className="btn sm" type="button" onClick={openTutorial}>Start tutorial</button>
                 <button className="btn sm" type="button" onClick={openTutorialPrompt}>Tutorial overview</button>

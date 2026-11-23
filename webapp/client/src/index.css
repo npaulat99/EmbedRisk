@@ -15,7 +15,7 @@
     --accent-weak: #eef0fd;
     --accent-2: #0f9d8f;
     --danger: #c62828;
-    --warn: #ef6c00;
+    --warn: #a44300;
     --ok: #2e7d32;
     --node-border: #3a4250;
     --edge: #6b7688;
@@ -29,6 +29,37 @@
     --topbar-h: 52px;
     font-synthesis: none;
     text-rendering: optimizeLegibility;
+    color-scheme: light dark;
+}
+
+@media (prefers-color-scheme: dark) {
+    :root:not([data-theme]) {
+        --bg: #0f141b;
+        --surface: #1a212b;
+        --surface-2: #232c38;
+        --border: #2b3543;
+        --border-strong: #3b4655;
+        --text: #e6ecf3;
+        --text-dim: #a7b2c0;
+        --text-faint: #8f9bab;
+        --accent: #7385ff;
+        --accent-weak: #20283f;
+        --accent-2: #2bb9a9;
+        --danger: #ef5350;
+        --warn: #ffa726;
+        --ok: #66bb6a;
+        --node-border: #8b97a6;
+        --edge: #97a2b3;
+        --exp-physical: #ff8585;
+        --exp-local: #6db3ff;
+        --exp-adjacent: #c79bff;
+        --exp-remote: #ffb061;
+        --shadow: 0 1px 2px rgba(0, 0, 0, 0.4), 0 6px 18px rgba(0, 0, 0, 0.35);
+        color-scheme: dark;
+    }
+}
+
+[data-theme='light'] {
     color-scheme: light;
 }
 
@@ -74,7 +105,8 @@ body,
 
 body {
     font-family: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
-    font-size: 14px;
+    font-size: 0.875rem;
+    line-height: 1.45;
     color: var(--text);
     background: var(--bg);
 }
@@ -158,7 +190,8 @@ textarea {
 
 .topbar select,
 .topbar .btn {
-    height: 34px;
+    min-height: 2.125rem;
+    height: auto;
 }
 
 .undogroup {
@@ -167,7 +200,7 @@ textarea {
 }
 
 .iconbtn {
-    font-size: 15px;
+    font-size: 0.9375rem;
     line-height: 1;
     padding: 0 9px;
     min-width: 34px;
@@ -179,7 +212,7 @@ textarea {
     align-items: center;
     gap: 6px;
     color: var(--text-dim);
-    font-size: 12px;
+    font-size: 0.75rem;
 }
 
 .dot {
@@ -199,7 +232,7 @@ textarea {
 }
 
 .saved {
-    font-size: 12px;
+    font-size: 0.75rem;
     color: var(--text-faint);
     min-width: 92px;
 }
@@ -210,7 +243,8 @@ textarea {
     align-items: center;
     gap: 6px;
     padding: 0 13px;
-    height: 32px;
+    min-height: 2rem;
+    height: auto;
     border-radius: var(--radius-sm);
     border: 1px solid var(--border-strong);
     background: var(--surface);
@@ -247,9 +281,10 @@ textarea {
 }
 
 .btn.sm {
-    height: 27px;
+    min-height: 1.75rem;
+    height: auto;
     padding: 0 9px;
-    font-size: 12.5px;
+    font-size: 0.78125rem;
 }
 
 .btn.danger {
@@ -279,7 +314,7 @@ textarea {
 }
 
 .stepnav .grouplabel {
-    font-size: 11px;
+    font-size: 0.6875rem;
     text-transform: uppercase;
     letter-spacing: 0.6px;
     color: var(--text-faint);
@@ -331,7 +366,7 @@ textarea {
     border-radius: 6px;
     display: grid;
     place-items: center;
-    font-size: 15px;
+    font-size: 0.9375rem;
     line-height: 1;
     background: var(--surface-2);
     color: var(--text-dim);
@@ -351,11 +386,11 @@ textarea {
     display: block;
     font-weight: 400;
     color: var(--text-faint);
-    font-size: 11.5px;
+    font-size: 0.71875rem;
 }
 
 .stepitem .count {
-    font-size: 11px;
+    font-size: 0.6875rem;
     color: var(--text-faint);
     background: var(--surface-2);
     border-radius: 20px;
@@ -379,7 +414,7 @@ textarea {
 }
 
 .panel h1 {
-    font-size: 19px;
+    font-size: 1.1875rem;
     margin: 2px 0 2px;
 }
 
@@ -400,7 +435,7 @@ textarea {
 
 .card>h3 {
     margin: 0 0 12px;
-    font-size: 14px;
+    font-size: 0.875rem;
 }
 
 .row {
@@ -419,7 +454,7 @@ textarea {
 }
 
 .field>label {
-    font-size: 12px;
+    font-size: 0.75rem;
     color: var(--text-dim);
     font-weight: 600;
 }
@@ -435,6 +470,7 @@ textarea {
     outline: none;
     transition: border-color 0.12s, box-shadow 0.12s;
     width: 100%;
+    min-height: 2.25rem;
 }
 
 .field input[type='checkbox'],
@@ -451,7 +487,7 @@ textarea {
     display: inline-flex;
     align-items: center;
     gap: 8px;
-    font-size: 13px;
+    font-size: 0.8125rem;
     color: var(--text);
     font-weight: 500;
     cursor: pointer;
@@ -478,7 +514,7 @@ textarea {
 
 .hint {
     color: var(--text-faint);
-    font-size: 12px;
+    font-size: 0.75rem;
 }
 
 .assessment-basis {
@@ -490,12 +526,12 @@ textarea {
     border-left: 3px solid var(--accent-2);
     background: var(--surface-2);
     color: var(--text);
-    font-size: 13px;
+    font-size: 0.8125rem;
 }
 
 .assessment-basis-label {
     color: var(--text-dim);
-    font-size: 12px;
+    font-size: 0.75rem;
     font-weight: 700;
     text-transform: uppercase;
 }
@@ -524,7 +560,7 @@ textarea {
 
 .itemcard .head .idtag {
     font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-    font-size: 12px;
+    font-size: 0.75rem;
     background: var(--surface-2);
     border: 1px solid var(--border);
     border-radius: 6px;
@@ -577,7 +613,7 @@ textarea {
     border-radius: var(--radius-sm);
     background: color-mix(in srgb, var(--danger) 12%, var(--surface));
     color: var(--danger);
-    font-size: 13px;
+    font-size: 0.8125rem;
     font-weight: 600;
 }
 
@@ -596,7 +632,7 @@ textarea {
     color: #fff;
     border-radius: 20px;
     padding: 2px 9px;
-    font-size: 12px;
+    font-size: 0.75rem;
     font-weight: 600;
     white-space: nowrap;
 }
@@ -610,7 +646,7 @@ textarea {
     color: var(--text-dim);
     border-radius: 20px;
     padding: 1px 9px;
-    font-size: 12px;
+    font-size: 0.75rem;
 }
 
 .stride {
@@ -639,7 +675,7 @@ textarea {
     gap: 5px;
     padding: 3px 8px;
     border-radius: 18px;
-    font-size: 12px;
+    min-height: 1.5rem;
     cursor: pointer;
     border: 1px solid var(--border-strong);
     background: var(--surface);
@@ -675,7 +711,7 @@ textarea {
     background: none;
     color: inherit;
     cursor: pointer;
-    font-size: 11px;
+    font-size: 0.6875rem;
     line-height: 1;
     padding: 0 0 0 2px;
     opacity: 0.7;
@@ -705,7 +741,7 @@ textarea {
 
 .id-input-error {
     color: var(--danger);
-    font-size: 12px;
+    font-size: 0.75rem;
 }
 
 .version-history-list {
@@ -763,7 +799,7 @@ textarea {
 }
 
 .inspector h2 {
-    font-size: 13px;
+    font-size: 0.8125rem;
     text-transform: uppercase;
     letter-spacing: 0.6px;
     color: var(--text-faint);
@@ -789,7 +825,7 @@ textarea {
     display: grid;
     place-items: center;
     color: #fff;
-    font-size: 11px;
+    font-size: 0.6875rem;
     font-weight: 600;
     position: relative;
 }
@@ -841,7 +877,7 @@ textarea {
 
 .matrix .axis {
     color: var(--text-faint);
-    font-size: 10px;
+    font-size: 0.625rem;
     background: transparent;
     font-weight: 600;
 }
@@ -850,7 +886,7 @@ textarea {
     position: absolute;
     top: 2px;
     right: 4px;
-    font-size: 10px;
+    font-size: 0.625rem;
     background: rgba(0, 0, 0, 0.28);
     border-radius: 8px;
     padding: 0 5px;
@@ -860,13 +896,13 @@ textarea {
     position: absolute;
     bottom: 1px;
     left: 4px;
-    font-size: 9px;
+    font-size: 0.5625rem;
     font-weight: 700;
     opacity: 0.85;
 }
 
 .axislabel {
-    font-size: 11px;
+    font-size: 0.6875rem;
     color: var(--text-faint);
     margin: 6px 0;
 }
@@ -902,7 +938,7 @@ textarea {
     display: flex;
     align-items: center;
     gap: 4px;
-    font-size: 13px;
+    font-size: 0.8125rem;
 }
 
 .crumbs button {
@@ -944,7 +980,7 @@ textarea {
     height: 28px;
     padding: 2px 6px;
     width: auto;
-    font-size: 12.5px;
+    font-size: 0.78125rem;
 }
 
 .dfd-canvas {
@@ -959,7 +995,7 @@ textarea {
 }
 
 .keyhint {
-    font-size: 11.5px;
+    font-size: 0.71875rem;
     color: var(--text-faint);
 }
 
@@ -970,7 +1006,7 @@ textarea {
     border-radius: 5px;
     padding: 0 5px;
     font-family: ui-monospace, monospace;
-    font-size: 11px;
+    font-size: 0.6875rem;
 }
 
 /* custom nodes */
@@ -987,7 +1023,7 @@ textarea {
     box-sizing: border-box;
     padding: 8px 10px;
     text-align: center;
-    font-size: 12.5px;
+    font-size: 0.78125rem;
     line-height: 1.2;
     background: var(--surface);
     border: 1.5px solid var(--node-border);
@@ -1000,7 +1036,7 @@ textarea {
 }
 
 .node .sub {
-    font-size: 10.5px;
+    font-size: 0.65625rem;
     color: var(--text-faint);
 }
 
@@ -1043,7 +1079,7 @@ textarea {
     height: 18px;
     border-radius: 10px;
     color: #fff;
-    font-size: 11px;
+    font-size: 0.6875rem;
     font-weight: 700;
     display: grid;
     place-items: center;
@@ -1060,7 +1096,7 @@ textarea {
     height: 18px;
     border-radius: 10px;
     color: #fff;
-    font-size: 10px;
+    font-size: 0.625rem;
     font-weight: 700;
     display: grid;
     place-items: center;
@@ -1080,7 +1116,7 @@ textarea {
     position: absolute;
     top: 6px;
     left: 10px;
-    font-size: 11px;
+    font-size: 0.6875rem;
     font-weight: 700;
     color: var(--accent-2);
     text-transform: uppercase;
@@ -1160,7 +1196,7 @@ textarea {
 .scenario-node text,
 .scenario-flow text {
     fill: var(--text);
-    font-size: 12px;
+    font-size: 0.75rem;
     pointer-events: none;
 }
 
@@ -1184,7 +1220,7 @@ textarea {
 }
 
 .react-flow__edge-text {
-    font-size: 10px;
+    font-size: 0.625rem;
     fill: var(--text-dim);
 }
 
@@ -1201,7 +1237,7 @@ textarea {
 }
 
 .edgelabel {
-    font-size: 10px;
+    font-size: 0.625rem;
     background: color-mix(in srgb, var(--surface) 88%, transparent);
     color: var(--text);
     border: 1px solid var(--border);
@@ -1287,7 +1323,7 @@ textarea {
     border: 1px solid color-mix(in srgb, var(--warn) 35%, var(--border));
     border-radius: var(--radius-sm);
     color: var(--text);
-    font-size: 13px;
+    font-size: 0.8125rem;
 }
 
 .issues li.ok {
@@ -1316,7 +1352,7 @@ textarea {
     background: color-mix(in srgb, #3b82f6 11%, var(--surface));
     border: 1px solid color-mix(in srgb, #3b82f6 32%, var(--border));
     border-radius: var(--radius-sm);
-    font-size: 13px;
+    font-size: 0.8125rem;
 }
 
 .issuelink {
@@ -1374,7 +1410,7 @@ button.linkbtn {
     color: var(--accent);
     text-decoration: underline;
     cursor: pointer;
-    font-size: 12px;
+    font-size: 0.75rem;
     padding: 0;
 }
 
@@ -1396,7 +1432,7 @@ button.linkbtn {
     align-items: center;
     gap: 8px;
     padding: 4px 2px;
-    font-size: 13px;
+    font-size: 0.8125rem;
 }
 
 .checkrow input {
@@ -1411,7 +1447,7 @@ button.linkbtn {
     border: 1px solid color-mix(in srgb, var(--accent) 25%, var(--border));
     border-radius: var(--radius-sm);
     color: var(--text-dim);
-    font-size: 12.5px;
+    font-size: 0.78125rem;
 }
 
 /* ---- DFD: external interface chips --------------------------------------- */
@@ -1423,7 +1459,7 @@ button.linkbtn {
     background: var(--surface);
     border: 1.5px solid var(--accent-2);
     border-radius: 8px;
-    font-size: 12px;
+    font-size: 0.75rem;
     box-shadow: var(--shadow);
     white-space: nowrap;
     box-sizing: border-box;
@@ -1449,7 +1485,7 @@ button.linkbtn {
     background: var(--surface);
     border: 1.5px dashed var(--accent-2);
     border-radius: 8px;
-    font-size: 12px;
+    font-size: 0.75rem;
     box-shadow: var(--shadow);
 }
 
@@ -1458,7 +1494,7 @@ button.linkbtn {
 }
 
 .portdir {
-    font-size: 14px;
+    font-size: 0.875rem;
     font-weight: 700;
     color: var(--accent-2);
     flex: 0 0 auto;
@@ -1479,7 +1515,7 @@ button.linkbtn {
 }
 
 .portdetail {
-    font-size: 10px;
+    font-size: 0.625rem;
     color: var(--text-faint);
     overflow: hidden;
     text-overflow: ellipsis;
@@ -1488,7 +1524,7 @@ button.linkbtn {
 
 .ifaceproto {
     font-family: ui-monospace, monospace;
-    font-size: 10.5px;
+    font-size: 0.65625rem;
     font-weight: 700;
     color: var(--accent-2);
     background: color-mix(in srgb, var(--accent-2) 15%, transparent);
@@ -1506,7 +1542,7 @@ button.linkbtn {
 }
 
 .ifaceexp {
-    font-size: 9.5px;
+    font-size: 0.59375rem;
     font-weight: 700;
     text-transform: uppercase;
     letter-spacing: 0.3px;
@@ -1545,7 +1581,7 @@ button.linkbtn {
     position: absolute;
     top: 5px;
     left: 12px;
-    font-size: 11px;
+    font-size: 0.6875rem;
     font-weight: 700;
     color: var(--text-faint);
     text-transform: uppercase;
@@ -1597,7 +1633,7 @@ button.linkbtn {
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-    font-size: 12.5px;
+    font-size: 0.78125rem;
     color: var(--text-dim);
 }
 
@@ -1625,7 +1661,7 @@ button.linkbtn {
 }
 
 .calchead {
-    font-size: 12px;
+    font-size: 0.75rem;
     font-weight: 600;
     margin-bottom: 6px;
 }
@@ -1634,7 +1670,7 @@ button.linkbtn {
     display: flex;
     flex-direction: column;
     gap: 3px;
-    font-size: 11px;
+    font-size: 0.6875rem;
     color: var(--text-dim);
 }
 
@@ -1660,7 +1696,7 @@ button.linkbtn {
 }
 
 .bbselect-table .bblevel {
-    font-size: 12px;
+    font-size: 0.75rem;
     white-space: nowrap;
     color: var(--text-dim);
 }
@@ -1676,7 +1712,7 @@ button.linkbtn {
     width: 100%;
     padding: 6px 8px;
     border-radius: 6px;
-    font-size: 12px;
+    font-size: 0.75rem;
     line-height: 1.4;
     color: var(--text);
     cursor: pointer;
@@ -1721,7 +1757,7 @@ button.linkbtn {
     border-radius: 999px;
     background: var(--accent);
     color: #fff;
-    font-size: 10px;
+    font-size: 0.625rem;
     font-weight: 700;
 }
 
@@ -1759,7 +1795,7 @@ button.linkbtn {
 }
 
 .adkind {
-    font-size: 10.5px;
+    font-size: 0.65625rem;
     font-weight: 700;
     text-transform: uppercase;
     letter-spacing: 0.3px;
@@ -1815,7 +1851,7 @@ button.linkbtn {
 }
 
 .adderived .dtag {
-    font-size: 11.5px;
+    font-size: 0.71875rem;
     color: var(--text-dim);
     background: var(--accent-weak);
     border: 1px solid var(--border);
@@ -1832,13 +1868,13 @@ button.linkbtn {
 }
 
 .costf {
-    font-size: 12px;
+    font-size: 0.75rem;
 }
 
 .costf>summary {
     cursor: pointer;
     color: var(--accent);
-    font-size: 12px;
+    font-size: 0.75rem;
 }
 
 .costgrid {
@@ -1860,7 +1896,7 @@ button.linkbtn {
 }
 
 .adadd .btn {
-    font-size: 11.5px;
+    font-size: 0.71875rem;
     padding: 0 7px;
     height: 24px;
     color: var(--text-dim);
@@ -1883,12 +1919,12 @@ button.linkbtn {
     align-items: center;
     gap: 8px;
     flex-wrap: wrap;
-    font-size: 11.5px;
+    font-size: 0.71875rem;
     margin-bottom: 6px;
 }
 
 .adt-lg {
-    font-size: 10.5px;
+    font-size: 0.65625rem;
     font-weight: 700;
     text-transform: uppercase;
     letter-spacing: 0.3px;
@@ -1930,7 +1966,7 @@ button.linkbtn {
 }
 
 .adt-node .adt-node-kind {
-    font-size: 9.5px;
+    font-size: 0.59375rem;
     font-weight: 700;
     text-transform: uppercase;
     letter-spacing: 0.3px;
@@ -1938,7 +1974,7 @@ button.linkbtn {
 }
 
 .adt-node .adt-node-label {
-    font-size: 12.5px;
+    font-size: 0.78125rem;
     font-weight: 600;
     line-height: 1.15;
     overflow: hidden;
@@ -1949,7 +1985,7 @@ button.linkbtn {
 }
 
 .adt-node .adt-node-sub {
-    font-size: 10.5px;
+    font-size: 0.65625rem;
     color: var(--text-dim);
 }
 
@@ -2019,7 +2055,7 @@ button.linkbtn {
 }
 
 .uc-entity .uc-label {
-    font-size: 11.5px;
+    font-size: 0.71875rem;
     fill: var(--text);
 }
 
@@ -2068,7 +2104,7 @@ button.linkbtn {
 }
 
 .uc-conn-label {
-    font-size: 10.5px;
+    font-size: 0.65625rem;
     fill: var(--text-dim);
     paint-order: stroke;
     stroke: var(--surface-2);
@@ -2095,13 +2131,13 @@ button.linkbtn {
 }
 
 .uc-group-label {
-    font-size: 10.5px;
+    font-size: 0.65625rem;
     font-weight: 600;
     fill: var(--text-dim);
 }
 
 .uc-group-empty {
-    font-size: 11px;
+    font-size: 0.6875rem;
     fill: var(--text-faint);
 }
 
@@ -2120,7 +2156,7 @@ button.linkbtn {
 }
 
 .adt-gate text {
-    font-size: 10.5px;
+    font-size: 0.65625rem;
     font-weight: 700;
     fill: var(--text-dim);
 }
@@ -2179,7 +2215,7 @@ button.linkbtn {
 
 .adt-assessment-section h4 {
     margin: 0 0 8px;
-    font-size: 13px;
+    font-size: 0.8125rem;
 }
 
 /* ---- Cross-links, focus, help, tabs (session 3) -------------------------- */
@@ -2193,7 +2229,7 @@ button.linkbtn {
     border: 1px solid var(--border-strong);
     border-radius: 6px;
     padding: 1px 7px;
-    font-size: 12px;
+    font-size: 0.75rem;
     font-family: ui-monospace, monospace;
     text-align: left;
     text-decoration: none;
@@ -2230,7 +2266,7 @@ button.linkbtn {
     color: var(--text-dim);
     cursor: pointer;
     font-weight: 700;
-    font-size: 12px;
+    font-size: 0.75rem;
     line-height: 1;
     padding: 0;
     display: inline-flex;
@@ -2267,7 +2303,7 @@ button.linkbtn {
 }
 
 .helpbody {
-    font-size: 12.5px;
+    font-size: 0.78125rem;
     color: var(--text-dim);
     line-height: 1.5;
 }
@@ -2307,7 +2343,7 @@ button.linkbtn {
     background: transparent;
     color: var(--text-dim);
     border-bottom: 2px solid transparent;
-    font-size: 13.5px;
+    font-size: 0.84375rem;
 }
 
 .tab:hover {
@@ -2321,7 +2357,7 @@ button.linkbtn {
 }
 
 .tab .badge {
-    font-size: 11px;
+    font-size: 0.6875rem;
     background: var(--surface-2);
     border-radius: 10px;
     padding: 0 6px;
@@ -2339,7 +2375,7 @@ button.linkbtn {
 
 .tabs.sub .tab {
     padding: 6px 12px;
-    font-size: 13px;
+    font-size: 0.8125rem;
 }
 
 .itemcard textarea.grow {
@@ -2390,7 +2426,7 @@ button.linkbtn {
 }
 
 .statval {
-    font-size: 26px;
+    font-size: 1.625rem;
     font-weight: 700;
 }
 
@@ -2399,7 +2435,7 @@ button.linkbtn {
 }
 
 .statlabel {
-    font-size: 11.5px;
+    font-size: 0.71875rem;
     color: var(--text-faint);
     margin-top: 2px;
 }
@@ -2407,14 +2443,14 @@ button.linkbtn {
 .tbl {
     width: 100%;
     border-collapse: collapse;
-    font-size: 13px;
+    font-size: 0.8125rem;
 }
 
 .tbl th {
     text-align: left;
     color: var(--text-dim);
     font-weight: 600;
-    font-size: 12px;
+    font-size: 0.75rem;
     padding: 6px 8px;
     border-bottom: 1px solid var(--border);
 }
@@ -2442,7 +2478,7 @@ button.linkbtn {
     border: 1px solid var(--border);
     border-radius: var(--radius-sm);
     padding: 10px;
-    font-size: 11.5px;
+    font-size: 0.71875rem;
     overflow: auto;
     max-height: 320px;
 }
@@ -2502,7 +2538,7 @@ button.linkbtn {
     background: transparent;
     border: 0;
     color: var(--text);
-    font-size: 13px;
+    font-size: 0.8125rem;
     padding: 8px 10px;
     border-radius: 6px;
     cursor: pointer;
@@ -2528,7 +2564,7 @@ button.linkbtn {
     border: 1px solid var(--border);
     border-radius: var(--radius-sm);
     padding: 8px;
-    font-size: 12px;
+    font-size: 0.75rem;
 }
 
 .tutorial-overlay {
@@ -2560,11 +2596,11 @@ button.linkbtn {
     display: flex;
     align-items: center;
     gap: 10px;
-    font-size: 15px;
+    font-size: 0.9375rem;
 }
 
 .tut-toolnum {
-    font-size: 11px;
+    font-size: 0.6875rem;
     font-weight: 700;
     letter-spacing: 0.4px;
     text-transform: uppercase;
@@ -2600,7 +2636,7 @@ button.linkbtn {
     display: flex;
     flex-direction: column;
     gap: 14px;
-    font-size: 13px;
+    font-size: 0.8125rem;
 }
 
 .tut-chips {
@@ -2610,7 +2646,7 @@ button.linkbtn {
 }
 
 .tut-phase {
-    font-size: 11.5px;
+    font-size: 0.71875rem;
     font-weight: 700;
     color: #fff;
     background: linear-gradient(120deg, var(--accent), var(--accent-2));
@@ -2619,7 +2655,7 @@ button.linkbtn {
 }
 
 .tut-iter {
-    font-size: 11px;
+    font-size: 0.6875rem;
     color: var(--text);
     background: color-mix(in srgb, var(--accent-2) 14%, transparent);
     border: 1px dashed color-mix(in srgb, var(--accent-2) 45%, var(--border));
@@ -2633,12 +2669,12 @@ button.linkbtn {
 }
 
 .tut-lead {
-    font-size: 14px;
+    font-size: 0.875rem;
 }
 
 .tut-why {
     color: var(--text-faint);
-    font-size: 12.5px;
+    font-size: 0.78125rem;
 }
 
 .tut-why-k {
@@ -2655,7 +2691,7 @@ button.linkbtn {
 
 .tut-plabel {
     display: block;
-    font-size: 10.5px;
+    font-size: 0.65625rem;
     text-transform: uppercase;
     letter-spacing: 0.5px;
     color: var(--text-faint);
@@ -2669,7 +2705,7 @@ button.linkbtn {
 }
 
 .tut-pchip {
-    font-size: 11.5px;
+    font-size: 0.71875rem;
     background: var(--surface);
     border: 1px solid var(--border);
     border-radius: 999px;
@@ -2762,7 +2798,7 @@ button.linkbtn {
     padding: 8px 12px;
     border-bottom: 1px solid var(--border);
     background: color-mix(in srgb, var(--surface-2) 70%, var(--surface));
-    font-size: 12px;
+    font-size: 0.75rem;
 }
 
 .tw-dots {
@@ -2800,7 +2836,7 @@ button.linkbtn {
 
 .tw-slt {
     margin-left: auto;
-    font-size: 11px;
+    font-size: 0.6875rem;
     font-weight: 700;
     color: var(--accent);
     border: 1px solid color-mix(in srgb, var(--accent) 35%, var(--border));
@@ -2827,7 +2863,7 @@ button.linkbtn {
 }
 
 .tw-navhead {
-    font-size: 9.5px;
+    font-size: 0.59375rem;
     text-transform: uppercase;
     letter-spacing: 0.6px;
     color: var(--text-faint);
@@ -2841,7 +2877,7 @@ button.linkbtn {
     padding: 5px 8px;
     border-radius: 7px;
     border: 1px solid transparent;
-    font-size: 11.5px;
+    font-size: 0.71875rem;
     color: var(--text-faint);
 }
 
@@ -2853,7 +2889,7 @@ button.linkbtn {
 }
 
 .tw-navnum {
-    font-size: 10px;
+    font-size: 0.625rem;
     font-weight: 700;
     color: var(--text-faint);
     min-width: 20px;
@@ -2867,7 +2903,7 @@ button.linkbtn {
     padding: 14px 16px;
     min-width: 0;
     overflow: hidden;
-    font-size: 12.5px;
+    font-size: 0.78125rem;
 }
 
 .tw-panelhead {
@@ -2879,7 +2915,7 @@ button.linkbtn {
 }
 
 .tw-badge {
-    font-size: 10px;
+    font-size: 0.625rem;
     font-weight: 700;
     color: var(--accent);
     background: color-mix(in srgb, var(--accent) 14%, transparent);
@@ -2889,7 +2925,7 @@ button.linkbtn {
 }
 
 .tw-addbtn {
-    font-size: 11px;
+    font-size: 0.6875rem;
     font-weight: 600;
     color: #fff;
     background: var(--accent);
@@ -2898,7 +2934,7 @@ button.linkbtn {
 }
 
 .tw-note {
-    font-size: 11px;
+    font-size: 0.6875rem;
     color: var(--text-faint);
     margin-bottom: 10px;
     font-style: italic;
@@ -2919,7 +2955,7 @@ button.linkbtn {
 }
 
 .tw-field>span:first-child {
-    font-size: 11.5px;
+    font-size: 0.71875rem;
     color: var(--text-faint);
 }
 
@@ -2931,7 +2967,7 @@ button.linkbtn {
     border: 1px solid var(--border);
     border-radius: 7px;
     background: var(--surface-2);
-    font-size: 12px;
+    font-size: 0.75rem;
     transition: border-color 200ms ease, background 200ms ease;
 }
 
@@ -2966,7 +3002,7 @@ button.linkbtn {
 
 .tw-savebtn {
     display: inline-block;
-    font-size: 12px;
+    font-size: 0.75rem;
     font-weight: 600;
     padding: 5px 14px;
     border-radius: 7px;
@@ -2986,12 +3022,12 @@ button.linkbtn {
 .tw-table {
     width: 100%;
     border-collapse: collapse;
-    font-size: 11.5px;
+    font-size: 0.71875rem;
 }
 
 .tw-table th {
     text-align: left;
-    font-size: 10px;
+    font-size: 0.625rem;
     text-transform: uppercase;
     letter-spacing: 0.4px;
     color: var(--text-faint);
@@ -3008,7 +3044,7 @@ button.linkbtn {
 .tw-table td.mono,
 .mono {
     font-family: var(--mono, ui-monospace, monospace);
-    font-size: 11px;
+    font-size: 0.6875rem;
     color: var(--text-faint);
 }
 
@@ -3031,7 +3067,7 @@ button.linkbtn {
 }
 
 .tw-tag {
-    font-size: 10.5px;
+    font-size: 0.65625rem;
     background: var(--surface-2);
     border: 1px solid var(--border);
     border-radius: 999px;
@@ -3047,7 +3083,7 @@ button.linkbtn {
 }
 
 .tw-colhead {
-    font-size: 10.5px;
+    font-size: 0.65625rem;
     text-transform: uppercase;
     letter-spacing: 0.4px;
     color: var(--text-faint);
@@ -3063,7 +3099,7 @@ button.linkbtn {
     border: 1px solid var(--border);
     border-radius: 8px;
     background: var(--surface-2);
-    font-size: 11.5px;
+    font-size: 0.71875rem;
     transition: opacity 340ms ease, transform 340ms ease;
 }
 
@@ -3073,7 +3109,7 @@ button.linkbtn {
 }
 
 .tw-dim {
-    font-size: 9.5px;
+    font-size: 0.59375rem;
     font-weight: 700;
     text-transform: uppercase;
     letter-spacing: 0.4px;
@@ -3097,7 +3133,7 @@ button.linkbtn {
 
 .tw-node {
     font-family: var(--mono, ui-monospace, monospace);
-    font-size: 10.5px;
+    font-size: 0.65625rem;
     font-weight: 700;
     color: var(--accent);
     background: color-mix(in srgb, var(--accent) 14%, transparent);
@@ -3135,7 +3171,7 @@ button.linkbtn {
     left: 68%;
     top: 8px;
     transform: translateX(-50%);
-    font-size: 9px;
+    font-size: 0.5625rem;
     font-weight: 700;
     letter-spacing: 0.3px;
     text-transform: uppercase;
@@ -3154,7 +3190,7 @@ button.linkbtn {
     border-radius: 8px;
     border: 1px solid var(--border);
     background: var(--surface);
-    font-size: 10.5px;
+    font-size: 0.65625rem;
     line-height: 1.25;
     text-align: center;
     box-shadow: 0 3px 8px rgba(0, 0, 0, 0.1);
@@ -3200,7 +3236,7 @@ button.linkbtn {
 .tw-flowlabel {
     position: absolute;
     transform: translate(-50%, -50%);
-    font-size: 9px;
+    font-size: 0.5625rem;
     color: var(--text);
     background: var(--surface);
     border: 1px solid var(--border);
@@ -3222,7 +3258,7 @@ button.linkbtn {
     justify-content: center;
     gap: 8px;
     margin-top: 18px;
-    font-size: 10px;
+    font-size: 0.625rem;
     transition: opacity 400ms ease, transform 400ms ease;
 }
 
@@ -3256,7 +3292,7 @@ button.linkbtn {
     min-width: 22px;
     text-align: center;
     font-weight: 700;
-    font-size: 11px;
+    font-size: 0.6875rem;
     border-radius: 6px;
     padding: 1px 6px;
     color: #fff;
@@ -3285,7 +3321,7 @@ button.linkbtn {
 
 .tw-tree-root {
     font-weight: 700;
-    font-size: 12px;
+    font-size: 0.75rem;
     padding: 8px 14px;
     border-radius: 8px;
     color: #fff;
@@ -3293,7 +3329,7 @@ button.linkbtn {
 }
 
 .tw-tree-gate {
-    font-size: 10px;
+    font-size: 0.625rem;
     font-weight: 700;
     color: var(--text-faint);
     border: 1px solid var(--border);
@@ -3329,7 +3365,7 @@ button.linkbtn {
     border: 1px solid var(--border);
     border-radius: 8px;
     background: var(--surface-2);
-    font-size: 11px;
+    font-size: 0.6875rem;
     transition: opacity 340ms ease, transform 340ms ease;
 }
 
@@ -3350,7 +3386,7 @@ button.linkbtn {
     border: 1px solid var(--border);
     border-radius: 8px;
     background: var(--surface-2);
-    font-size: 12px;
+    font-size: 0.75rem;
     transition: opacity 340ms ease, transform 340ms ease;
 }
 
@@ -3360,7 +3396,7 @@ button.linkbtn {
 }
 
 .tw-rationale {
-    font-size: 10.5px;
+    font-size: 0.65625rem;
     color: var(--accent);
     background: color-mix(in srgb, var(--accent) 12%, transparent);
     border-radius: 999px;
@@ -3379,7 +3415,7 @@ button.linkbtn {
 }
 
 .tw-decision {
-    font-size: 10.5px;
+    font-size: 0.65625rem;
     font-weight: 700;
     border-radius: 999px;
     padding: 2px 9px;
@@ -3418,7 +3454,7 @@ button.linkbtn {
 
 /* review */
 .tw-status {
-    font-size: 11.5px;
+    font-size: 0.71875rem;
     font-weight: 700;
     color: var(--text-faint);
     border: 1px solid var(--border);
@@ -3434,7 +3470,7 @@ button.linkbtn {
 }
 
 .tw-trace {
-    font-size: 11px;
+    font-size: 0.6875rem;
     color: var(--text-faint);
     margin-bottom: 12px;
     padding: 6px 10px;
@@ -3497,7 +3533,7 @@ button.linkbtn {
     right: 26px;
     bottom: 26px;
     z-index: 22;
-    font-size: 11px;
+    font-size: 0.6875rem;
     padding: 4px 10px;
     border-radius: 999px;
     border: 1px solid var(--border);
@@ -3525,7 +3561,7 @@ button.linkbtn {
 
 .tw-cover-badge {
     display: inline-block;
-    font-size: 11px;
+    font-size: 0.6875rem;
     font-weight: 700;
     color: #fff;
     background: linear-gradient(120deg, var(--accent), var(--accent-2));
@@ -3535,12 +3571,12 @@ button.linkbtn {
 
 .tw-cover-title {
     margin: 12px 0 8px;
-    font-size: 22px;
+    font-size: 1.375rem;
 }
 
 .tw-cover-lead {
     margin: 0 0 16px;
-    font-size: 13.5px;
+    font-size: 0.84375rem;
     line-height: 1.55;
     color: var(--text);
     max-width: 640px;
@@ -3560,12 +3596,12 @@ button.linkbtn {
     border: 1px solid var(--border);
     border-radius: 9px;
     background: var(--surface-2);
-    font-size: 11.5px;
+    font-size: 0.71875rem;
     transition: opacity 400ms ease, transform 400ms ease;
 }
 
 .tw-workshop b {
-    font-size: 12.5px;
+    font-size: 0.78125rem;
 }
 
 .tw-workshop span {
@@ -3575,12 +3611,12 @@ button.linkbtn {
 .tw-workshop em {
     color: var(--text-faint);
     font-style: normal;
-    font-size: 10.5px;
+    font-size: 0.65625rem;
 }
 
 .tw-cover-foot {
     margin: 16px 0 0;
-    font-size: 12px;
+    font-size: 0.75rem;
     color: var(--text-faint);
 }
 
@@ -3594,7 +3630,7 @@ button.linkbtn {
 }
 
 .tw-outrolist li {
-    font-size: 13px;
+    font-size: 0.8125rem;
     line-height: 1.45;
     transition: opacity 400ms ease, transform 400ms ease;
 }
@@ -3617,7 +3653,7 @@ button.linkbtn {
     }
 
     .tut-info {
-        font-size: 12.5px;
+        font-size: 0.78125rem;
     }
 
     .tw-stage {
@@ -3679,7 +3715,7 @@ textarea.inp.invalid {
 }
 
 .editbackbar .muted {
-    font-size: 13px;
+    font-size: 0.8125rem;
 }
 
 /* Compact card shown in the collapsed list (not being edited). */
@@ -3702,7 +3738,7 @@ textarea.inp.invalid {
 
 .itemcard.collapsed .summary-id {
     font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-    font-size: 12px;
+    font-size: 0.75rem;
     background: var(--surface-2);
     border: 1px solid var(--border);
     border-radius: 6px;
@@ -3715,12 +3751,12 @@ textarea.inp.invalid {
     flex-wrap: wrap;
     align-items: center;
     gap: 6px;
-    font-size: 12px;
+    font-size: 0.75rem;
 }
 
 .summary-links .lbl {
     color: var(--text-faint);
-    font-size: 11.5px;
+    font-size: 0.71875rem;
 }
 
 /* ---- DFD overview (full-model tree) ------------------------------------- */
@@ -3733,7 +3769,7 @@ textarea.inp.invalid {
 }
 
 .dfd-overview .ov-head {
-    font-size: 13px;
+    font-size: 0.8125rem;
     color: var(--text-dim);
     margin-bottom: 12px;
 }
@@ -3765,7 +3801,7 @@ textarea.inp.invalid {
     border-radius: 8px;
     background: var(--surface);
     cursor: pointer;
-    font-size: 13px;
+    font-size: 0.8125rem;
     font-family: inherit;
     color: var(--text);
     text-align: left;
@@ -3786,22 +3822,22 @@ textarea.inp.invalid {
     background: var(--accent-weak);
     color: var(--accent);
     font-weight: 700;
-    font-size: 13.5px;
+    font-size: 0.84375rem;
 }
 
 .ov-ico {
-    font-size: 14px;
+    font-size: 0.875rem;
 }
 
 .ov-type {
-    font-size: 11px;
+    font-size: 0.6875rem;
     color: var(--text-faint);
     text-transform: uppercase;
     letter-spacing: 0.4px;
 }
 
 .ov-comp {
-    font-size: 11.5px;
+    font-size: 0.71875rem;
     color: var(--text-dim);
     background: var(--surface-2);
     border: 1px solid var(--border);
@@ -3817,7 +3853,7 @@ textarea.inp.invalid {
 }
 
 .ov-badge {
-    font-size: 10.5px;
+    font-size: 0.65625rem;
     color: var(--text-faint);
     background: var(--surface-2);
     border: 1px solid var(--border);
@@ -3826,7 +3862,7 @@ textarea.inp.invalid {
 }
 
 .ov-layer {
-    font-size: 10.5px;
+    font-size: 0.65625rem;
     color: var(--text-faint);
     font-weight: 600;
 }

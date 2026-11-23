@@ -8,6 +8,26 @@ import type { RiskBand } from '../types';
 
 export const cx = (...c: (string | false | undefined)[]) => c.filter(Boolean).join(' ');
 
+export function contrastTextColor(background: string) {
+    const color = background.trim();
+    let channels: number[] | null = null;
+    const hex = color.match(/^#([\da-f]{3,8})$/i)?.[1];
+    if (hex && [3, 4, 6, 8].includes(hex.length)) {
+        const expanded = hex.length <= 4 ? [...hex.slice(0, 3)].map((value) => value + value).join('') : hex.slice(0, 6);
+        channels = [0, 2, 4].map((index) => Number.parseInt(expanded.slice(index, index + 2), 16));
+    } else {
+        const rgb = color.match(/^rgba?\(\s*([\d.]+)[,\s]+([\d.]+)[,\s]+([\d.]+)/i);
+        if (rgb) channels = rgb.slice(1, 4).map(Number);
+    }
+    if (!channels) return '#1d2430';
+    const luminance = channels.map((value) => {
+        const channel = value / 255;
+        return channel <= 0.04045 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4;
+    }).reduce((sum, value, index) => sum + value * [0.2126, 0.7152, 0.0722][index], 0);
+    const contrast = (other: number) => (Math.max(luminance, other) + 0.05) / (Math.min(luminance, other) + 0.05);
+    return contrast(1) >= contrast(0.018) ? '#fff' : '#1d2430';
+}
+
 /** Confirm an irreversible delete. Returns true if the user accepts. */
 export const confirmDelete = (what: string) => confirm({ title: 'Confirm deletion', message: `Delete ${what}? This cannot be undone.`, confirmLabel: 'Delete', danger: true });
 
@@ -75,7 +95,7 @@ export function IdInput({ id, onRename, 'aria-labelledby': labelledBy, 'aria-des
 
 export function RiskPill({ score, band, title }: { score: number; band: RiskBand; title?: string }) {
     return (
-        <span className="pill" style={{ background: band.color }} title={title || (band.lookup ? band.name : `${score} · ${band.name}`)}>
+        <span className="pill" style={{ background: band.color, color: contrastTextColor(band.color) }} title={title || (band.lookup ? band.name : `${score} · ${band.name}`)}>
             {band.lookup ? band.name : `${score} · ${band.name}`}
         </span>
     );

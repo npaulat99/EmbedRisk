@@ -358,7 +358,7 @@ export default function CountermeasuresPanel() {
                         <>
                             <table className="cmp-table" style={{ width: '100%', borderCollapse: 'collapse' }}>
                                 <thead>
-                                    <tr style={{ textAlign: 'left', color: 'var(--text-dim)', fontSize: 12 }}>
+                                    <tr style={{ textAlign: 'left', color: 'var(--text-dim)', fontSize: '0.75rem' }}>
                                         <th style={{ padding: 6 }}>Countermeasure</th>
                                         <th style={{ padding: 6, width: 260 }}>Residual (L × I)</th>
                                         <th style={{ padding: 6 }}>Negative effects</th>
@@ -387,7 +387,7 @@ export default function CountermeasuresPanel() {
                                                     </div>
                                                 </td>
                                                 <td style={{ padding: 6 }}>
-                                                    <textarea className="inp" style={{ minHeight: 48, fontSize: 12 }} value={negOf(c)} placeholder="one per line" onChange={(e) => setNeg(c.id, e.target.value)} />
+                                                    <textarea className="inp" style={{ minHeight: 48, fontSize: '0.75rem' }} value={negOf(c)} placeholder="one per line" onChange={(e) => setNeg(c.id, e.target.value)} />
                                                 </td>
                                                 <td style={{ padding: 6, whiteSpace: 'nowrap' }}>
                                                     <button className="btn sm" onClick={() => setEditingId(c.id)}>Edit</button>

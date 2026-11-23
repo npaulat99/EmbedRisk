@@ -26,6 +26,12 @@
     transform: translateY(0);
 }
 
+input::placeholder,
+textarea::placeholder {
+    color: var(--text-faint);
+    opacity: 1;
+}
+
 :where(button, a[href], input, select, textarea, [tabindex]:not([tabindex='-1'])):focus-visible {
     outline: 2px solid var(--focus-ring, #1d70b8);
     outline-offset: 2px;
@@ -34,5 +40,24 @@
 @media (forced-colors: active) {
     :where(button, a[href], input, select, textarea, [tabindex]:not([tabindex='-1'])):focus-visible {
         outline-color: Highlight;
+    }
+
+    .pill,
+    .matrix .cell,
+    .matrix button.cell {
+        border: 1px solid CanvasText;
+        background: Canvas !important;
+        color: CanvasText !important;
+    }
+
+    .matrix .cell .n,
+    .matrix .cell .bandmark {
+        color: CanvasText;
+    }
+
+    .chip.on {
+        border: 2px solid Highlight;
+        background: Canvas;
+        color: Highlight;
     }
 }

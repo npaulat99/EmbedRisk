@@ -19,6 +19,8 @@ export default function SettingsModal() {
     const schemeWarning = useStore((s) => s.schemeWarning);
     const open = useStore((s) => s.settingsOpen);
     const setOpen = useStore((s) => s.openSettings);
+    const theme = useStore((s) => s.theme);
+    const setTheme = useStore((s) => s.setTheme);
     const dialogs = useDialogs();
 
     if (!data) return null;
@@ -152,6 +154,16 @@ export default function SettingsModal() {
 
     return (
         <AppDialog open={open} onClose={() => setOpen(false)} title="Project settings" dismissOnBackdrop={false}>
+            <div className="card" style={{ marginBottom: 12 }}>
+                <h3 style={{ marginTop: 0 }}>Appearance</h3>
+                <Field label="Color scheme">
+                    <select value={theme} onChange={(event) => setTheme(event.target.value as 'system' | 'light' | 'dark')}>
+                        <option value="system">Use system setting</option>
+                        <option value="light">Light</option>
+                        <option value="dark">Dark</option>
+                    </select>
+                </Field>
+            </div>
             <div className="card" style={{ marginBottom: 12 }}>
                 <h3 style={{ marginTop: 0 }}>Risk scoring</h3>
                 {schemeWarning && <div className="settings-error-banner" role="alert">{schemeWarning}</div>}

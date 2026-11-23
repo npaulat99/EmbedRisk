@@ -14,6 +14,8 @@ import { legacyRiskSchemeRegistry, schemeForProject } from '../lib/risk';
 import { writeHashRoute } from '../lib/route';
 import type { RouteHistoryMode, RouteView } from '../lib/route';
 
+export type AppTheme = 'system' | 'light' | 'dark';
+
 const norm = (v: string | null | undefined) => String(v || '').toLowerCase().replace(/[^a-z0-9]+/g, '');
 const isPlaceholderComponentName = (label: string | undefined) => {
     const l = norm(label);
@@ -370,8 +372,18 @@ function clearHistory() {
     useStore.setState({ undoDepth: 0, redoDepth: 0 });
 }
 
-const applyTheme = (t: 'light' | 'dark') => {
-    document.documentElement.dataset.theme = t;
+const applyTheme = (theme: AppTheme) => {
+    const root = document.documentElement;
+    const meta = document.querySelector<HTMLMetaElement>('meta[name="color-scheme"]');
+    if (theme === 'system') {
+        delete root.dataset.theme;
+        root.style.removeProperty('color-scheme');
+        if (meta) meta.content = 'light dark';
+        return;
+    }
+    root.dataset.theme = theme;
+    root.style.colorScheme = theme;
+    if (meta) meta.content = theme;
 };
 
 function riskValuesChanged(step: StepKey, before: any, after: any): boolean {
@@ -399,7 +411,7 @@ interface Store {
     schemeWarning: string | null;
     kb: any | null;
     bugBar: any | null;
-    theme: 'light' | 'dark';
+    theme: AppTheme;
     activeView: ViewKey | 'dashboard' | 'kb';
     dfdPath: string[];
     selectedNodeId: string | null;
@@ -426,7 +438,7 @@ interface Store {
     openTutorialPrompt(): void;
     setView(v: RouteView, historyMode?: RouteHistoryMode): void;
     goto(view: string, id?: string, historyMode?: RouteHistoryMode): void;
-    setTheme(t: 'light' | 'dark'): void;
+    setTheme(t: AppTheme): void;
     setDfdPath(path: string[]): void;
     selectNode(id: string | null): void;
     selectEdge(id: string | null): void;
@@ -457,7 +469,7 @@ export const useStore = create<Store>((set, get) => ({
     schemeWarning: null,
     kb: null,
     bugBar: null,
-    theme: 'light',
+    theme: 'system',
     activeView: 'dfd',
     dfdPath: [],
     selectedNodeId: null,
@@ -475,8 +487,15 @@ export const useStore = create<Store>((set, get) => ({
     redoDepth: 0,
 
     async init() {
-        const saved = (localStorage.getItem('tra-theme') as 'light' | 'dark') || 'light';
+        const storedTheme = localStorage.getItem('tra-theme');
+        const saved: AppTheme = storedTheme === 'light' || storedTheme === 'dark' ? storedTheme : 'system';
         applyTheme(saved);
+        window.addEventListener('storage', (event) => {
+            if (event.key !== 'tra-theme') return;
+            const next: AppTheme = event.newValue === 'light' || event.newValue === 'dark' ? event.newValue : 'system';
+            applyTheme(next);
+            useStore.setState({ theme: next });
+        });
         window.addEventListener('beforeunload', (e) => {
             const s = useStore.getState().saveState;
             if (s === 'saving' || s === 'offline') {
@@ -579,7 +598,8 @@ export const useStore = create<Store>((set, get) => ({
     setTheme(t) {
         applyTheme(t);
         try {
-            localStorage.setItem('tra-theme', t);
+            if (t === 'system') localStorage.removeItem('tra-theme');
+            else localStorage.setItem('tra-theme', t);
         } catch {
             /* ignore */
         }
