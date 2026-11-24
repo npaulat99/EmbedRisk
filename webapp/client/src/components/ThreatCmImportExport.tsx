@@ -5,6 +5,7 @@ import { useRef, useState } from 'react';
 import { useStore } from '../state/store';
 import { allIds } from '../lib/ids';
 import type { Threat, Countermeasure } from '../types';
+import AppDialog from './AppDialog';
 
 function download(filename: string, data: unknown) {
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
@@ -31,7 +32,7 @@ function guessPrefix(id: unknown, fallback: string): string {
     return m?.[1] || fallback;
 }
 
-function ExportModal({ onClose }: { onClose: () => void }) {
+function ExportModal({ open, onClose }: { open: boolean; onClose: () => void }) {
     const data = useStore((s) => s.data)!;
     const threats = data.threats.threats || [];
     const cms = data.countermeasures.countermeasures || [];
@@ -55,58 +56,50 @@ function ExportModal({ onClose }: { onClose: () => void }) {
     };
 
     return (
-        <div className="modal-overlay" onClick={onClose}>
-            <div className="modal" role="dialog" aria-modal="true" aria-label="Export threats and countermeasures" style={{ maxWidth: 720, width: '100%' }} onClick={(e) => e.stopPropagation()}>
-                <div className="modalhead">
-                    <h3 style={{ margin: 0 }}>⇓ Export threats &amp; countermeasures</h3>
-                    <button className="btn sm" aria-label="Close" onClick={onClose}>
-                        ✕ Close
-                    </button>
-                </div>
-                <p className="hint">Select which items to include. Every field (ratings, rationale, status, etc.) is exported as-is.</p>
-                <div className="grid2">
-                    <div className="card">
-                        <div className="inline" style={{ justifyContent: 'space-between' }}>
-                            <h3 style={{ margin: 0 }}>Threats</h3>
-                            <button className="btn sm" onClick={() => toggleAll(threats, selT, setSelT)}>
-                                {selT.size === threats.length ? 'None' : 'All'}
-                            </button>
-                        </div>
-                        <div className="checklist">
-                            {threats.map((t) => (
-                                <label key={t.id} className="checkrow">
-                                    <input type="checkbox" checked={selT.has(t.id)} onChange={() => toggle(selT, setSelT, t.id)} />
-                                    <span className="mono">{t.id}</span> {t.title}
-                                </label>
-                            ))}
-                            {!threats.length && <p className="hint">No threats yet.</p>}
-                        </div>
+        <AppDialog open={open} onClose={onClose} title="Export threats and countermeasures" size="lg" dismissOnBackdrop>
+            <p className="hint">Select which items to include. Every field (ratings, rationale, status, etc.) is exported as-is.</p>
+            <div className="grid2">
+                <div className="card">
+                    <div className="inline" style={{ justifyContent: 'space-between' }}>
+                        <h3 style={{ margin: 0 }}>Threats</h3>
+                        <button className="btn sm" onClick={() => toggleAll(threats, selT, setSelT)}>
+                            {selT.size === threats.length ? 'None' : 'All'}
+                        </button>
                     </div>
-                    <div className="card">
-                        <div className="inline" style={{ justifyContent: 'space-between' }}>
-                            <h3 style={{ margin: 0 }}>Countermeasures</h3>
-                            <button className="btn sm" onClick={() => toggleAll(cms, selC, setSelC)}>
-                                {selC.size === cms.length ? 'None' : 'All'}
-                            </button>
-                        </div>
-                        <div className="checklist">
-                            {cms.map((c) => (
-                                <label key={c.id} className="checkrow">
-                                    <input type="checkbox" checked={selC.has(c.id)} onChange={() => toggle(selC, setSelC, c.id)} />
-                                    <span className="mono">{c.id}</span> {c.title}
-                                </label>
-                            ))}
-                            {!cms.length && <p className="hint">No countermeasures yet.</p>}
-                        </div>
+                    <div className="checklist">
+                        {threats.map((t) => (
+                            <label key={t.id} className="checkrow">
+                                <input type="checkbox" checked={selT.has(t.id)} onChange={() => toggle(selT, setSelT, t.id)} />
+                                <span className="mono">{t.id}</span> {t.title}
+                            </label>
+                        ))}
+                        {!threats.length && <p className="hint">No threats yet.</p>}
                     </div>
                 </div>
-                <div className="inline" style={{ marginTop: 12, justifyContent: 'flex-end' }}>
-                    <button className="btn primary sm" onClick={doExport} disabled={!selT.size && !selC.size}>
-                        Export {selT.size + selC.size} item{selT.size + selC.size === 1 ? '' : 's'}
-                    </button>
+                <div className="card">
+                    <div className="inline" style={{ justifyContent: 'space-between' }}>
+                        <h3 style={{ margin: 0 }}>Countermeasures</h3>
+                        <button className="btn sm" onClick={() => toggleAll(cms, selC, setSelC)}>
+                            {selC.size === cms.length ? 'None' : 'All'}
+                        </button>
+                    </div>
+                    <div className="checklist">
+                        {cms.map((c) => (
+                            <label key={c.id} className="checkrow">
+                                <input type="checkbox" checked={selC.has(c.id)} onChange={() => toggle(selC, setSelC, c.id)} />
+                                <span className="mono">{c.id}</span> {c.title}
+                            </label>
+                        ))}
+                        {!cms.length && <p className="hint">No countermeasures yet.</p>}
+                    </div>
                 </div>
             </div>
-        </div>
+            <div className="inline" style={{ marginTop: 12, justifyContent: 'flex-end' }}>
+                <button className="btn primary sm" onClick={doExport} disabled={!selT.size && !selC.size}>
+                    Export {selT.size + selC.size} item{selT.size + selC.size === 1 ? '' : 's'}
+                </button>
+            </div>
+        </AppDialog>
     );
 }
 
@@ -179,7 +172,7 @@ export default function ThreatCmImportExport() {
                 }}
             />
             {msg && <span className="hint">{msg}</span>}
-            {exportOpen && <ExportModal onClose={() => setExportOpen(false)} />}
+            <ExportModal open={exportOpen} onClose={() => setExportOpen(false)} />
         </>
     );
 }

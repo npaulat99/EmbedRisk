@@ -26,7 +26,7 @@ export default function BugBarTable() {
                                 <b>{score}</b> · {labelFor(score)}
                             </td>
                             {dims.map((d: any) => (
-                                <td key={d.key} style={{ fontSize: 12 }}>
+                                <td key={d.key} style={{ fontSize: '0.75rem' }}>
                                     {d.levels.find((l: any) => l.score === score)?.scenario || ''}
                                 </td>
                             ))}

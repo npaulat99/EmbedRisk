@@ -177,7 +177,7 @@ function TreeCard({ tree, view }: { tree: AttackTree; view: 'list' | 'diagram' }
             <div className="head">
                 <IdInput id={tree.id} />
                 <input className="inp grow" value={tree.title} onChange={(e) => updTree({ title: e.target.value })} />
-                <button className="btn sm danger" aria-label={`Delete attack tree ${tree.id}`} onClick={() => confirmDelete(`attack tree ${tree.id}`) && writeTrees(trees.filter((t) => t.id !== tree.id))}>
+                <button className="btn sm danger" aria-label={`Delete attack tree ${tree.id}`} onClick={async () => { if (await confirmDelete(`attack tree ${tree.id}`)) writeTrees(trees.filter((t) => t.id !== tree.id)); }}>
                     ✕
                 </button>
             </div>

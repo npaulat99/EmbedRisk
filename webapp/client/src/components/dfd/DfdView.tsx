@@ -4,7 +4,8 @@
 // ArrowDown on) a process drills into its child layer; ArrowUp / the breadcrumb returns to
 // the parent. Left/Right cycle the sibling selection. Every structural change (move, add,
 // connect, delete) is written straight back to 04-dfd/dfd.json via the live-sync store.
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
+import type { KeyboardEvent as ReactKeyboardEvent } from 'react';
 import {
     ReactFlow,
     Background,
@@ -21,9 +22,12 @@ import '@xyflow/react/dist/style.css';
 import { useStore, uid } from '../../state/store';
 import { nodeTypes } from './nodes';
 import DfdOverview from './DfdOverview';
+import DfdElements from './DfdElements';
 import { riskOf } from '../../lib/risk';
 import { deriveVisibleInterfaceIds, flowBelongsToLayerContext, isParentChildNodeFlow, resolveTargetNodeId } from './layerVisibility.js';
 import { cx, confirmDelete } from '../common';
+import { announce } from '../LiveStatus';
+import { useDialogs } from '../../lib/useDialogs';
 import type { Dfd, DfdNode, DfdNodeType } from '../../types';
 import { routeAround, roundedPath } from '@shared/dfdEngine.js';
 
@@ -96,8 +100,10 @@ function OffsetEdge({ id, sourceX, sourceY, targetX, targetY, markerEnd, data }:
                             <line x1={labelAnchor.x} y1={labelAnchor.y} x2={labelPosition.x} y2={labelPosition.y} />
                         </svg>
                     ) : null}
-                    <div
+                    <button
+                        type="button"
                         className="edgelabel"
+                        aria-label={data.ariaLabel}
                         style={{ position: 'absolute', transform: `translate(-50%, -50%) translate(${labelPosition.x}px, ${labelPosition.y}px)`, pointerEvents: 'all' }}
                         onClick={(e) => {
                             e.stopPropagation();
@@ -105,7 +111,7 @@ function OffsetEdge({ id, sourceX, sourceY, targetX, targetY, markerEnd, data }:
                         }}
                     >
                         {data.label}
-                    </div>
+                    </button>
                 </EdgeLabelRenderer>
             ) : null}
         </>
@@ -217,7 +223,8 @@ function separateOverlaps(items: { id: string; x: number; y: number; w: number; 
     return pos.map((p) => ({ ...p, x: Math.round(p.x), y: Math.round(p.y) }));
 }
 
-function Canvas({ connMode, setConnMode, overview, setOverview }: { connMode: boolean; setConnMode: (v: boolean) => void; overview: boolean; setOverview: (v: boolean) => void }) {
+function Canvas({ connMode, setConnMode, mode, setMode }: { connMode: boolean; setConnMode: (v: boolean) => void; mode: 'canvas' | 'overview' | 'elements'; setMode: (v: 'canvas' | 'overview' | 'elements') => void }) {
+    const dialogs = useDialogs();
     const data = useStore((s) => s.data)!;
     const scheme = useStore((s) => s.scheme);
     const schemeWarning = useStore((s) => s.schemeWarning);
@@ -240,9 +247,12 @@ function Canvas({ connMode, setConnMode, overview, setOverview }: { connMode: bo
     const tbNodes = useMemo(() => visible.filter((n) => n.type === 'trust-boundary'), [visible]);
     const visibleIds = useMemo(() => new Set(visible.map((n) => n.id)), [visible]);
 
-    const [rfNodes, setRfNodes, onNodesChange] = useNodesState<any>([]);
+    const [rfNodes, setRfNodes, applyNodesChange] = useNodesState<any>([]);
     const [rfEdges, setRfEdges, onEdgesChange] = useEdgesState<any>([]);
+    const [addMenuOpen, setAddMenuOpen] = useState(false);
+    const addMenuId = useId();
     const dragging = useRef(false);
+    const keyboardConnectFrom = useRef<string | null>(null);
     const canvasRef = useRef<HTMLDivElement>(null);
     const didAutoTidy = useRef(false);
     const layoutRef = useRef<{ boxes: Record<string, Box>; portEndpointIds: Set<string>; ifacePortIds: Set<string> }>({ boxes: {}, portEndpointIds: new Set(), ifacePortIds: new Set() });
@@ -492,6 +502,7 @@ function Canvas({ connMode, setConnMode, overview, setOverview }: { connMode: bo
                     type: 'context',
                     position: { x: overall.minX - pad, y: overall.minY - pad - 26 },
                     data: { label: tb.label },
+                    ariaLabel: `Ancestor trust boundary ${tb.id}: ${tb.label}`,
                     draggable: false,
                     selectable: false,
                     connectable: false,
@@ -511,6 +522,7 @@ function Canvas({ connMode, setConnMode, overview, setOverview }: { connMode: bo
                         position: { x: box.x, y: box.y },
                         selected: tb.id === selectedNodeId,
                         data: { label: tb.label, warn: false },
+                        ariaLabel: `Trust boundary ${tb.id}: ${tb.label}`,
                         draggable: false,
                         selectable: true,
                         connectable: false,
@@ -524,6 +536,7 @@ function Canvas({ connMode, setConnMode, overview, setOverview }: { connMode: bo
                         position: { x: contentBox.minX, y: contentBox.maxY + 48 },
                         selected: tb.id === selectedNodeId,
                         data: { label: `${tb.label} — no members on this layer`, warn: true },
+                        ariaLabel: `Trust boundary ${tb.id}: ${tb.label}, no members on this layer`,
                         draggable: false,
                         selectable: true,
                         connectable: false,
@@ -555,6 +568,7 @@ function Canvas({ connMode, setConnMode, overview, setOverview }: { connMode: bo
                     rotation: dfd.ifaceRot?.[`${currentParent ?? 'root'}:${itf.id}`] || 0,
                     title: `${itf.name} · ${itf.protocol || ''} · ${itf.exposure}`,
                 },
+                ariaLabel: `Interface ${itf.id}: ${itf.name}`,
                 draggable: !connMode,
                 selectable: true,
                 connectable: true,
@@ -572,6 +586,7 @@ function Canvas({ connMode, setConnMode, overview, setOverview }: { connMode: bo
                 height: p.box.h,
                 selected: selectedNodeId === p.rfid,
                 data: { name: p.name, dir: p.dir, detail: p.detail, connMode, title: `${p.name}${p.detail ? ' · ' + p.detail : ''}` },
+                ariaLabel: `${p.dir === 'in' ? 'Ingress' : 'Egress'} port ${p.rfid}: ${p.name}`,
                 draggable: !connMode,
                 selectable: true,
                 connectable: true,
@@ -594,6 +609,7 @@ function Canvas({ connMode, setConnMode, overview, setOverview }: { connMode: bo
                 draggable: !connMode,
                 connectable: true,
                 data: { label: n.componentRef ? compName(n.componentRef) || n.label : n.label, dtype: n.type, sub: compName(n.componentRef), risk: riskFor(n), hasChildren, connMode },
+                ariaLabel: `${TYPE_LABEL[n.type]} ${n.id}: ${n.componentRef ? compName(n.componentRef) || n.label : n.label}`,
             });
         });
         return out;
@@ -718,6 +734,10 @@ function Canvas({ connMode, setConnMode, overview, setOverview }: { connMode: bo
         };
         assigned.forEach((entry) => {
             const { flow: f, sourceId: sId, targetId: tId, sourceHandle: sh, targetHandle: th } = entry;
+            const endpointName = (endpointId: string) => dfd.nodes.find((node) => node.id === endpointId)?.label
+                || ifaces.find((iface) => iface.id === endpointId)?.name
+                || (endpointId.startsWith('port:') ? `port ${endpointId.slice(5)}` : endpointId);
+            const ariaLabel = `Flow from ${endpointName(f.from)} to ${endpointName(f.to)}: ${f.label}`;
             const obstacles = obstaclesFor(sId, tId);
             const offset = offsetOf(f);
             const labelPlacement = labelPositionFor(entry, offset, obstacles);
@@ -728,10 +748,12 @@ function Canvas({ connMode, setConnMode, overview, setOverview }: { connMode: bo
                 sourceHandle: sh,
                 targetHandle: th,
                 type: 'offset',
+                ariaLabel,
                 reconnectable: true,
                 data: {
                     offset,
                     label: f.label,
+                    ariaLabel,
                     labelPosition: labelPlacement?.position,
                     labelAnchor: labelPlacement?.anchor,
                     obstacles,
@@ -794,6 +816,43 @@ function Canvas({ connMode, setConnMode, overview, setOverview }: { connMode: bo
 
     const persist = (next: Partial<Dfd>) => save('dfd', { ...dfd, ...next });
 
+    const onNodesChange = useCallback((changes: any[]) => {
+        applyNodesChange(changes);
+        if (dragging.current) return;
+        const moved = changes.filter((change) => change.type === 'position' && change.position && !change.dragging);
+        if (!moved.length) return;
+
+        const nodePositions = new Map<string, { x: number; y: number }>();
+        const ifacePos = { ...(dfd.ifacePos || {}) };
+        const portPos = { ...(dfd.portPos || {}) };
+        let interfacesMoved = false;
+        let portsMoved = false;
+        for (const change of moved) {
+            const position = { x: Math.round(change.position.x), y: Math.round(change.position.y) };
+            if (change.id.startsWith('iface:')) {
+                const positionKey = `${currentParent ?? 'root'}:${change.id.slice(6)}`;
+                ifacePos[positionKey] = position;
+                interfacesMoved = true;
+            } else if (layoutRef.current.portEndpointIds.has(change.id)) {
+                portPos[`${currentParent ?? 'root'}:${change.id}`] = position;
+                portsMoved = true;
+            } else if (dfd.nodes.some((node) => node.id === change.id)) {
+                nodePositions.set(change.id, position);
+            }
+        }
+        const patch: Partial<Dfd> = {};
+        if (nodePositions.size) patch.nodes = dfd.nodes.map((node) => nodePositions.has(node.id) ? { ...node, ...nodePositions.get(node.id) } : node);
+        if (interfacesMoved) patch.ifacePos = ifacePos;
+        if (portsMoved) patch.portPos = portPos;
+        if (!Object.keys(patch).length) return;
+        persist(patch);
+        const labels = moved.map((change) => {
+            const node = rfNodes.find((item) => item.id === change.id);
+            return node?.ariaLabel || `${node?.type || 'DFD node'} ${change.id}`;
+        });
+        announce(`Moved ${labels.join(', ')}.`);
+    }, [applyNodesChange, currentParent, dfd, rfNodes]);
+
     const onNodeDragStart = useCallback(() => {
         dragging.current = true;
     }, []);
@@ -812,60 +871,75 @@ function Canvas({ connMode, setConnMode, overview, setOverview }: { connMode: bo
             } else {
                 persist({ nodes: dfd.nodes.map((n) => (n.id === node.id ? { ...n, x: Math.round(node.position.x), y: Math.round(node.position.y) } : n)) });
             }
+            announce(`Moved ${node.ariaLabel || `${node.type} ${node.id}`}.`);
         },
         [dfd, currentParent],
     );
     const onConnect = useCallback(
-        (c: any) => {
+        async (c: any) => {
             if (!c.source || !c.target) return;
             const strip = (x: string) => (x.startsWith('iface:') ? x.slice(6) : x);
             const from = strip(c.source);
             const to = strip(c.target);
             if (from === to) return;
             if (isParentChildNodeFlow({ from, to }, dfd.nodes)) {
-                window.alert('A container and its own nested component can never be connected directly — model the connection between siblings inside the child layer instead.');
+                await dialogs.alert({ title: 'Invalid connection', message: 'A container and its own nested component can never be connected directly. Model the connection between siblings inside the child layer instead.' });
                 return;
             }
-            const label = window.prompt('Label this data flow — what data or command does it carry? (required)', '');
+            const label = await dialogs.prompt({
+                title: 'Label data flow',
+                label: 'What data or command does this flow carry?',
+                validate: (value) => value ? null : 'A flow label is required.',
+            });
             if (!label || !label.trim()) return;
             const id = uid('F', dfd.flows.map((f) => f.id));
             persist({ flows: [...dfd.flows, { id, from, to, label: label.trim(), sourceHandle: c.sourceHandle || undefined, targetHandle: c.targetHandle || undefined }] });
+            const fromLabel = dfd.nodes.find((node) => node.id === from)?.label || data.system.interfaces?.find((iface) => iface.id === from)?.name || from;
+            const toLabel = dfd.nodes.find((node) => node.id === to)?.label || data.system.interfaces?.find((iface) => iface.id === to)?.name || to;
+            announce(`Connected flow from ${fromLabel} to ${toLabel}: ${label.trim()}.`);
         },
-        [dfd],
+        [dfd, dialogs],
     );
     const onReconnect = useCallback(
-        (oldEdge: any, conn: any) => {
+        async (oldEdge: any, conn: any) => {
             if (!conn.source || !conn.target) return;
             const strip = (x: string) => (x.startsWith('iface:') ? x.slice(6) : x);
             const from = strip(conn.source);
             const to = strip(conn.target);
             if (isParentChildNodeFlow({ from, to }, dfd.nodes)) {
-                window.alert('A container and its own nested component can never be connected directly — model the connection between siblings inside the child layer instead.');
+                await dialogs.alert({ title: 'Invalid connection', message: 'A container and its own nested component can never be connected directly. Model the connection between siblings inside the child layer instead.' });
                 return;
             }
             persist({
                 flows: dfd.flows.map((f) => (f.id === oldEdge.id ? { ...f, from, to, sourceHandle: conn.sourceHandle || undefined, targetHandle: conn.targetHandle || undefined } : f)),
             });
+            announce(`Reconnected flow ${oldEdge.id}.`);
         },
-        [dfd],
+        [dfd, dialogs],
     );
     const onNodesDelete = useCallback(
-        (deleted: any[]) => {
+        async (deleted: any[]) => {
             const ids = new Set(deleted.map((d) => d.id));
-            if (!confirmDelete(deleted.length > 1 ? `${deleted.length} nodes and their flows` : `node ${deleted[0]?.id}`)) {
+            if (!(await confirmDelete(deleted.length > 1 ? `${deleted.length} nodes and their flows` : `node ${deleted[0]?.id}`))) {
                 setRfNodes(buildNodes());
                 setRfEdges(buildEdges());
                 return;
             }
             persist({ nodes: dfd.nodes.filter((n) => !ids.has(n.id)), flows: dfd.flows.filter((f) => !ids.has(f.from) && !ids.has(f.to)) });
             if (selectedNodeId && ids.has(selectedNodeId)) selectNode(null);
+            announce(`Deleted ${ids.size} DFD node${ids.size === 1 ? '' : 's'}.`);
         },
         [dfd, selectedNodeId],
     );
     const onEdgesDelete = useCallback(
-        (deleted: any[]) => {
+        async (deleted: any[]) => {
             const ids = new Set(deleted.map((d) => d.id));
+            if (!(await confirmDelete(deleted.length > 1 ? `${deleted.length} data flows` : `data flow ${deleted[0]?.id}`))) {
+                setRfEdges(buildEdges());
+                return;
+            }
             persist({ flows: dfd.flows.filter((f) => !ids.has(f.id)) });
+            announce(`Deleted ${ids.size} data flow${ids.size === 1 ? '' : 's'}.`);
         },
         [dfd],
     );
@@ -937,8 +1011,8 @@ function Canvas({ connMode, setConnMode, overview, setOverview }: { connMode: bo
     // the canvas has nothing to focus — Up always jumps to the parent layer.
     useEffect(() => {
         const onKey = (e: KeyboardEvent) => {
-            const tag = (e.target as HTMLElement)?.tagName;
-            if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+            const target = e.target as HTMLElement;
+            if (target.matches('input, textarea, select, button, [contenteditable="true"]') || target.closest('.react-flow__node, .react-flow__edge')) return;
             const sibs = visible.filter((n) => n.type !== 'trust-boundary');
             if (e.key === 'ArrowUp') {
                 if (dfdPath.length) {
@@ -964,7 +1038,80 @@ function Canvas({ connMode, setConnMode, overview, setOverview }: { connMode: bo
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [visible, dfdPath, selectedNodeId]);
 
-    const nodeName = (id: string | null) => (id ? dfd.nodes.find((n) => n.id === id)?.label || id : '');
+    const nodeName = (id: string | null) => (id
+        ? dfd.nodes.find((node) => node.id === id)?.label || data.system.interfaces?.find((iface) => iface.id === id)?.name || id
+        : '');
+
+    const onCanvasKeyDownCapture = (event: ReactKeyboardEvent<HTMLDivElement>) => {
+        const target = event.target as HTMLElement;
+        if (target.matches('input, textarea, select, button, [contenteditable="true"]')) return;
+        if (event.ctrlKey || event.metaKey || event.altKey) return;
+        const focusedNodeId = target.closest<HTMLElement>('.react-flow__node')?.dataset.id;
+        if (event.key === 'Escape' && keyboardConnectFrom.current) {
+            keyboardConnectFrom.current = null;
+            setConnMode(false);
+            announce('Connection cancelled.');
+            event.preventDefault();
+            event.stopPropagation();
+        } else if (event.key.toLowerCase() === 'c' && (selectedNodeId || focusedNodeId)) {
+            if (keyboardConnectFrom.current) {
+                keyboardConnectFrom.current = null;
+                setConnMode(false);
+                announce('Connection cancelled.');
+            } else {
+                const sourceId = selectedNodeId || focusedNodeId!;
+                const sourceEndpoint = sourceId.startsWith('iface:') ? sourceId.slice(6) : sourceId;
+                const sourceNode = dfd.nodes.find((node) => node.id === sourceEndpoint);
+                const sourceIsInterface = (data.system.interfaces || []).some((iface) => iface.id === sourceEndpoint);
+                if (sourceNode && sourceNode.type !== 'trust-boundary' || sourceIsInterface) {
+                    keyboardConnectFrom.current = sourceId;
+                    selectNode(sourceId);
+                    setConnMode(true);
+                    announce(`Connection from ${nodeName(sourceEndpoint)} started. Tab to a target node and press Enter to finish, or Escape to cancel.`);
+                }
+            }
+            event.preventDefault();
+            event.stopPropagation();
+        } else if (event.key === 'Enter' && focusedNodeId && keyboardConnectFrom.current) {
+            const sourceId = keyboardConnectFrom.current;
+            const source = sourceId.startsWith('iface:') ? sourceId.slice(6) : sourceId;
+            const targetId = focusedNodeId.startsWith('iface:') ? focusedNodeId.slice(6) : focusedNodeId;
+            const sourceNode = dfd.nodes.find((node) => node.id === source);
+            const targetNode = dfd.nodes.find((node) => node.id === targetId);
+            const sourceIsInterface = (data.system.interfaces || []).some((iface) => iface.id === source);
+            const targetIsInterface = (data.system.interfaces || []).some((iface) => iface.id === targetId);
+            if (source !== targetId && (sourceNode && sourceNode.type !== 'trust-boundary' || sourceIsInterface)
+                && (targetNode && targetNode.type !== 'trust-boundary' || targetIsInterface)) {
+                const from = source;
+                const to = targetId;
+                if (isParentChildNodeFlow({ from, to }, dfd.nodes)) {
+                    void dialogs.alert({ title: 'Invalid connection', message: 'A container and its own nested component can never be connected directly. Model the connection between siblings inside the child layer instead.' });
+                } else {
+                    selectNode(focusedNodeId);
+                    void dialogs.prompt({
+                        title: 'Label data flow',
+                        label: 'What data or command does this flow carry?',
+                        validate: (value) => value ? null : 'A flow label is required.',
+                    }).then((label) => {
+                        if (!label) return;
+                        const id = uid('F', dfd.flows.map((flow) => flow.id));
+                        persist({ flows: [...dfd.flows, { id, from, to, label, sourceHandle: undefined, targetHandle: undefined }] });
+                        announce(`Connected flow from ${nodeName(from)} to ${nodeName(to)}: ${label}.`);
+                    });
+                }
+                keyboardConnectFrom.current = null;
+                setConnMode(false);
+                event.preventDefault();
+                event.stopPropagation();
+            }
+        } else if (event.key === 'Enter' && focusedNodeId) {
+            selectNode(focusedNodeId);
+            window.dispatchEvent(new Event('embedrisk:open-inspector'));
+            announce(`Inspector opened for ${nodeName(focusedNodeId)}.`);
+            event.preventDefault();
+            event.stopPropagation();
+        }
+    };
 
     const selectedIfaceIds = new Set(
         (data.system.interfaces || [])
@@ -986,7 +1133,7 @@ function Canvas({ connMode, setConnMode, overview, setOverview }: { connMode: bo
 
     // Open a node picked in the overview: leave overview mode, drill to its layer and select it.
     const openFromOverview = (nodeId: string, path: string[]) => {
-        setOverview(false);
+        setMode('canvas');
         setDfdPath(path);
         selectNode(nodeId);
     };
@@ -1008,7 +1155,7 @@ function Canvas({ connMode, setConnMode, overview, setOverview }: { connMode: bo
                         </span>
                     ))}
                 </div>
-                {!overview && (
+                {mode === 'canvas' && (
                     <div className="dfd-nav">
                         {dfdPath.length > 0 && (
                             <button className="btn sm" onClick={() => setDfdPath(dfdPath.slice(0, -1))} title="Go to the parent layer">
@@ -1017,11 +1164,12 @@ function Canvas({ connMode, setConnMode, overview, setOverview }: { connMode: bo
                         )}
                         <select
                             className="inp navsel"
+                            aria-label="Select node to inspect"
                             value={selectedNodeId || ''}
                             title="Select a node to inspect"
                             onChange={(e) => selectNode(e.target.value || null)}
                         >
-                            <option value="">Select node…</option>
+                            <option value="">Select node to inspect…</option>
                             {visible.map((n) => (
                                 <option key={n.id} value={n.id}>
                                     {n.label}
@@ -1031,42 +1179,62 @@ function Canvas({ connMode, setConnMode, overview, setOverview }: { connMode: bo
                     </div>
                 )}
                 <div className="right palette">
-                    <button
-                        className={cx('btn sm', overview && 'primary')}
-                        onClick={() => setOverview(!overview)}
-                        title="Overview: show every layer and entity as a single tree (a navigation aid; not used in the report)"
-                    >
-                        {overview ? '✓ Overview' : '☰ Overview'}
-                    </button>
-                    {!overview && (
-                        <>
+                    <div className="dfd-mode-switch" role="group" aria-label="DFD view">
+                        <button className="btn sm" type="button" aria-pressed={mode === 'canvas'} onClick={() => setMode('canvas')}>Canvas</button>
+                        <button className="btn sm" type="button" aria-pressed={mode === 'overview'} onClick={() => setMode('overview')}>Overview</button>
+                        <button className="btn sm" type="button" aria-pressed={mode === 'elements'} onClick={() => setMode('elements')}>Elements</button>
+                    </div>
+                    {mode === 'canvas' && (
+                        <div className="dfd-actions" role="group" aria-label="Diagram actions">
                             <button
                                 className={cx('btn sm', connMode && 'primary')}
+                                aria-pressed={connMode}
                                 onClick={() => setConnMode(!connMode)}
                                 title="Connections mode: locks the nodes and shows only entities + connections, so links are easy to grab, move and reconnect"
                             >
-                                {connMode ? '✓ Connections' : '🔗 Connections'}
+                                {connMode ? 'Exit connections' : 'Connect flows'}
                             </button>
                             {!connMode && (
                                 <button className="btn sm" onClick={tidy} title="Space overlapping nodes apart for readability">
                                     ⤢ Tidy
                                 </button>
                             )}
-                            {!connMode &&
-                                PALETTE.map((t) => (
-                                    <button key={t} className="btn sm" onClick={() => addNode(t)} title={`Add ${TYPE_LABEL[t]}`}>
-                                        + {TYPE_LABEL[t]}
-                                    </button>
-                                ))}
-                        </>
+                            {!connMode && (
+                                <>
+                                    <div className="dfd-desktop-add">
+                                        {PALETTE.map((t) => (
+                                            <button key={t} className="btn sm" onClick={() => addNode(t)} title={`Add ${TYPE_LABEL[t]}`}>
+                                                + {TYPE_LABEL[t]}
+                                            </button>
+                                        ))}
+                                    </div>
+                                    <div className="dfd-mobile-add">
+                                        <button className="btn sm" type="button" aria-expanded={addMenuOpen} aria-controls={addMenuId} onClick={() => setAddMenuOpen((open) => !open)}>
+                                            Add element
+                                        </button>
+                                        {addMenuOpen && (
+                                            <div id={addMenuId} className="dfd-add-options" role="group" aria-label="Add DFD element">
+                                                {PALETTE.map((t) => (
+                                                    <button key={t} className="btn sm" onClick={() => addNode(t)}>
+                                                        + {TYPE_LABEL[t]}
+                                                    </button>
+                                                ))}
+                                            </div>
+                                        )}
+                                    </div>
+                                </>
+                            )}
+                        </div>
                     )}
                 </div>
             </div>
 
-            {overview ? (
+            {mode === 'overview' ? (
                 <DfdOverview onOpen={openFromOverview} />
+            ) : mode === 'elements' ? (
+                <DfdElements />
             ) : (
-                <div className={cx('dfd-canvas', connMode && 'connmode')} tabIndex={0} ref={canvasRef}>
+                <div className={cx('dfd-canvas', connMode && 'connmode')} tabIndex={0} ref={canvasRef} onKeyDownCapture={onCanvasKeyDownCapture}>
                     <ReactFlow
                         nodeTypes={nodeTypes}
                         edgeTypes={edgeTypes}
@@ -1081,13 +1249,17 @@ function Canvas({ connMode, setConnMode, overview, setOverview }: { connMode: bo
                         onNodesDelete={onNodesDelete}
                         onEdgesDelete={onEdgesDelete}
                         onNodeClick={(_e, n) => {
-                            if (n.type === 'dfd' || n.type === 'boundary' || n.type === 'iface' || n.type === 'port') selectNode(n.id);
+                            if (n.type === 'dfd' || n.type === 'boundary' || n.type === 'iface' || n.type === 'port') {
+                                selectNode(n.id);
+                                announce(`Selected ${n.ariaLabel || `${n.type} ${n.id}`}.`);
+                            }
                         }}
                         onNodeDoubleClick={(_e, n) => {
                             if (n.type === 'dfd') drillInto(n.id);
                         }}
                         onEdgeClick={(_e, ed) => {
                             selectEdge(ed.id);
+                            announce(`${ed.ariaLabel || `Flow ${ed.id}`} selected.`);
                         }}
                         onPaneClick={() => {
                             selectNode(null);
@@ -1095,9 +1267,10 @@ function Canvas({ connMode, setConnMode, overview, setOverview }: { connMode: bo
                         }}
                         reconnectRadius={26}
                         nodesDraggable={!connMode}
+                        nodesFocusable
+                        edgesFocusable
                         elevateEdgesOnSelect
                         deleteKeyCode={['Delete']}
-                        disableKeyboardA11y
                         zoomOnDoubleClick={false}
                         fitView
                         fitViewOptions={{ padding: 0.25 }}
@@ -1118,10 +1291,14 @@ function Canvas({ connMode, setConnMode, overview, setOverview }: { connMode: bo
 
             <div className="dfd-bar" style={{ borderTop: '1px solid var(--border)', borderBottom: 'none' }}>
                 <span className="keyhint">
-                    {overview ? (
+                    {mode === 'overview' ? (
                         <>
                             <b>Overview</b> — every layer and entity in one tree. Click any node to open it in the diagram. This is a
                             navigation aid only and is not included in the report.
+                        </>
+                    ) : mode === 'elements' ? (
+                        <>
+                            <b>Elements</b> — edit DFD nodes and flows as structured records. Open an element in the Inspector for additional properties.
                         </>
                     ) : connMode ? (
                         <>
@@ -1130,10 +1307,8 @@ function Canvas({ connMode, setConnMode, overview, setOverview }: { connMode: bo
                         </>
                     ) : (
                         <>
-                            Click a node to inspect it; <b>double-click</b> to open its (internal) sub-diagram. Drag from any
-                            connector to link nodes (either side works); drag an edge end onto another connector to move it.
-                            Use <b>Connections</b> mode for easy link editing and <b>Tidy</b> to space nodes out. <kbd>←</kbd>{' '}
-                            <kbd>→</kbd> siblings, <kbd>↑</kbd> parent layer, <kbd>↓</kbd> drill in.
+                            Tab to nodes and flows. Arrow keys move the selected node; hold Shift for a larger step. Enter opens the inspector,
+                            Delete confirms removal, and C toggles connection mode. Double-click a process to open its sub-diagram.
                         </>
                     )}
                 </span>
@@ -1144,9 +1319,53 @@ function Canvas({ connMode, setConnMode, overview, setOverview }: { connMode: bo
 
 export default function DfdView() {
     const dfdPath = useStore((s) => s.dfdPath);
+    const focus = useStore((s) => s.focus);
+    const data = useStore((s) => s.data);
+    const setDfdPath = useStore((s) => s.setDfdPath);
+    const selectNode = useStore((s) => s.selectNode);
+    const selectEdge = useStore((s) => s.selectEdge);
     const currentParent = dfdPath.length ? dfdPath[dfdPath.length - 1] : 'root';
     const [connMode, setConnMode] = useState(false);
-    const [overview, setOverview] = useState(false);
+    const [mode, setMode] = useState<'canvas' | 'overview' | 'elements'>('canvas');
+
+    useEffect(() => {
+        if (focus?.view !== 'dfd' || !focus.id || !data) return;
+        const node = data.dfd.nodes.find((item) => item.id === focus.id);
+        if (node) {
+            const path: string[] = [];
+            let parent = node.parent ?? null;
+            while (parent) {
+                path.unshift(parent);
+                parent = data.dfd.nodes.find((item) => item.id === parent)?.parent ?? null;
+            }
+            setDfdPath(path);
+            selectNode(node.id);
+            setMode('canvas');
+            return;
+        }
+        const flow = data.dfd.flows.find((item) => item.id === focus.id);
+        if (flow) {
+            const source = data.dfd.nodes.find((item) => item.id === flow.from);
+            if (source) {
+                const path: string[] = [];
+                let parent = source.parent ?? null;
+                while (parent) {
+                    path.unshift(parent);
+                    parent = data.dfd.nodes.find((item) => item.id === parent)?.parent ?? null;
+                }
+                setDfdPath(path);
+            }
+            selectEdge(flow.id);
+            setMode('canvas');
+            return;
+        }
+        if (data.system.interfaces?.some((item) => item.id === focus.id)) {
+            setDfdPath([]);
+            selectNode(`iface:${focus.id}`);
+            setMode('canvas');
+        }
+    }, [focus?.view, focus?.id]);
+
     // Re-mount per layer so the view auto-fits and resets cleanly.
-    return <Canvas key={`layer-${currentParent}`} connMode={connMode} setConnMode={setConnMode} overview={overview} setOverview={setOverview} />;
+    return <Canvas key={`layer-${currentParent}`} connMode={connMode} setConnMode={setConnMode} mode={mode} setMode={setMode} />;
 }

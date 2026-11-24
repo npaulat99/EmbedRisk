@@ -1,0 +1,245 @@
+.layout,
+.layout.wide {
+    min-width: 0;
+}
+
+.layout {
+    grid-template-columns: clamp(200px, 15vw, 264px) minmax(0, 1fr) clamp(280px, 20vw, 380px);
+}
+
+.layout.wide {
+    grid-template-columns: clamp(200px, 15vw, 264px) minmax(0, 1fr);
+}
+
+.shell-compact-tools,
+.topbar-overflow-toggle,
+.topbar-overflow {
+    display: none;
+}
+
+.step-picker {
+    display: none;
+}
+
+.project-select {
+    width: 280px;
+    min-width: 0;
+    max-width: 32vw;
+}
+
+.topbar-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+}
+
+.inspector-drawer[open] {
+    position: fixed;
+    inset: 0 0 0 auto;
+    width: min(380px, calc(100dvw - 24px));
+    height: 100dvh;
+    max-height: 100dvh;
+    margin: 0;
+    border-radius: 0;
+}
+
+.inspector-drawer .inspector {
+    height: 100%;
+    border: 0;
+    padding: 0 0 24px;
+}
+
+@media (min-width: 1024px) and (max-width: 1279px) {
+
+    .layout,
+    .layout.wide {
+        grid-template-columns: clamp(200px, 15vw, 264px) minmax(0, 1fr);
+    }
+
+    .layout>.inspector {
+        display: none;
+    }
+
+    .shell-compact-tools {
+        display: flex;
+        justify-content: flex-end;
+        min-height: 38px;
+        padding: 3px 12px;
+        border-bottom: 1px solid var(--border);
+        background: var(--surface);
+    }
+}
+
+@media (max-width: 1023px) {
+
+    .layout,
+    .layout.wide {
+        grid-template-columns: minmax(0, 1fr);
+    }
+
+    .layout>.stepnav,
+    .layout>.inspector {
+        display: none;
+    }
+
+    .shell-compact-tools {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        min-height: 46px;
+        padding: 5px 12px;
+        border-bottom: 1px solid var(--border);
+        background: var(--surface);
+    }
+
+    .step-picker {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        flex: 1 1 auto;
+        min-width: 0;
+        color: var(--text-dim);
+        font-size: 0.75rem;
+    }
+
+    .step-picker select {
+        flex: 1 1 auto;
+        min-width: 0;
+        max-width: 360px;
+    }
+
+    .layout .main,
+    .layout .main.is-dfd {
+        min-width: 0;
+        min-height: 0;
+    }
+}
+
+@media (max-width: 719px) {
+    .topbar {
+        height: auto;
+        min-height: var(--topbar-h);
+        flex-wrap: wrap;
+        gap: 8px;
+        padding: 8px 10px;
+    }
+
+    .brand {
+        flex: 1 1 100%;
+        min-width: 0;
+    }
+
+    .brand small {
+        display: none;
+    }
+
+    .project-select {
+        flex: 1 1 170px;
+        width: auto;
+        max-width: none;
+    }
+
+    .topbar .spacer,
+    .topbar-actions {
+        display: none;
+    }
+
+    .topbar-overflow-toggle {
+        display: inline-flex;
+        flex: 0 0 auto;
+    }
+
+    .topbar-overflow[popover] {
+        position: fixed;
+        inset: 8px 8px auto auto;
+        width: min(260px, calc(100dvw - 16px));
+        max-width: calc(100dvw - 16px);
+        margin: 0;
+        padding: 8px;
+        border: 1px solid var(--border);
+        border-radius: var(--radius-sm);
+        background: var(--surface);
+        color: var(--text);
+        box-shadow: var(--shadow);
+    }
+
+    .topbar-overflow[popover]:popover-open {
+        display: grid;
+        gap: 6px;
+    }
+
+    .topbar-overflow .btn {
+        justify-content: flex-start;
+        min-height: 38px;
+    }
+
+    .conn {
+        min-width: 0;
+        max-width: 100%;
+        margin-inline-start: auto;
+        overflow-wrap: anywhere;
+    }
+}
+
+@media (min-width: 720px) and (max-width: 1279px) {
+    .topbar {
+        height: auto;
+        min-height: var(--topbar-h);
+        flex-wrap: wrap;
+        gap: 8px;
+        padding: 8px 10px;
+    }
+
+    .brand {
+        flex: 1 1 auto;
+        min-width: 0;
+    }
+
+    .brand small,
+    .topbar .spacer {
+        display: none;
+    }
+
+    .project-select {
+        flex: 1 1 180px;
+        width: auto;
+        max-width: 36vw;
+    }
+
+    .topbar-actions {
+        flex: 1 1 100%;
+        justify-content: flex-end;
+        flex-wrap: wrap;
+    }
+
+    .topbar-actions .theme-select {
+        flex: 0 1 144px;
+        width: auto;
+        min-width: 100px;
+    }
+
+    .conn {
+        margin-inline-start: auto;
+    }
+}
+
+@media (pointer: coarse) {
+
+    .btn,
+    .btn.sm,
+    .chip,
+    .chipx,
+    .crumbs button,
+    .filter-clear {
+        min-inline-size: 44px;
+        min-block-size: 44px;
+    }
+
+    .topbar .btn,
+    .topbar select,
+    .dfd-nav select,
+    .inp {
+        min-block-size: 44px;
+    }
+}

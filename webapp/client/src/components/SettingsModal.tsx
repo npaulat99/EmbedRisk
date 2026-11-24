@@ -1,13 +1,14 @@
 // Project settings dialog (opened from the gear button). Groups project-level configuration that
 // is not TRA content: the acceptable residual-risk threshold (used by the plausibility checker),
 // the rigorous-assessment mode, and report-content toggles.
-import { useEffect } from 'react';
 import { useStore } from '../state/store';
 import { DEFAULT_ACCEPTABLE_RISK } from '../types';
 import { Field } from './common';
 import { accessProbability, costWeightTotal, COST_FACTORS, DEFAULT_LIKELIHOOD_PROBABILITY_THRESHOLDS, likelihoodFromProb, stepProb } from '../lib/attackTree';
 import { createRiskEngine, deriveImpact } from '../lib/risk';
 import { normalizeActorLevel } from '@shared/attackerScale.js';
+import AppDialog from './AppDialog';
+import { useDialogs } from '../lib/useDialogs';
 
 export default function SettingsModal() {
     const data = useStore((s) => s.data);
@@ -18,15 +19,11 @@ export default function SettingsModal() {
     const schemeWarning = useStore((s) => s.schemeWarning);
     const open = useStore((s) => s.settingsOpen);
     const setOpen = useStore((s) => s.openSettings);
+    const theme = useStore((s) => s.theme);
+    const setTheme = useStore((s) => s.setTheme);
+    const dialogs = useDialogs();
 
-    useEffect(() => {
-        if (!open) return;
-        const onKey = (e: KeyboardEvent) => e.key === 'Escape' && setOpen(false);
-        document.addEventListener('keydown', onKey);
-        return () => document.removeEventListener('keydown', onKey);
-    }, [open, setOpen]);
-
-    if (!open || !data) return null;
+    if (!data) return null;
     const p = data.project;
     const set = (patch: any) => save('project', { ...p, ...patch });
     const setReport = (patch: any) => set({ reportOptions: { ...(p.reportOptions || {}), ...patch } });
@@ -59,7 +56,7 @@ export default function SettingsModal() {
             }),
         });
     };
-    const setRiskScheme = (id: string) => {
+    const setRiskScheme = async (id: string) => {
         const nextScheme = schemes.find((item) => item.id === id);
         if (!nextScheme) return;
         const currentId = p.riskSchemeId || (p.riskScoringMethod === 'exposure-exploitability-impact' ? 'builtin:5x5-exposure' : 'builtin:5x5-cost');
@@ -67,7 +64,12 @@ export default function SettingsModal() {
         const ratedThreats = data.threats.threats.filter((threat) => typeof threat.likelihood === 'number' || typeof threat.impact === 'number'
             || Object.values(threat.likelihoodCriteria || {}).some((value) => typeof value === 'number')
             || Object.values(threat.impactCriteria || {}).some((value) => typeof value === 'number'));
-        if (ratedThreats.length && !window.confirm(`Switch risk scheme to "${nextScheme.title}"? Existing ratings on these threats will be checked and invalid values cleared only after confirmation:\n\n${ratedThreats.map((threat) => `${threat.id} · ${threat.title}`).join('\n')}`)) return;
+        if (ratedThreats.length && !(await dialogs.confirm({
+            title: 'Switch risk scheme?',
+            message: `Switch risk scheme to "${nextScheme.title}"? Invalid ratings will be cleared. Affected threats:\n\n${ratedThreats.map((threat) => `${threat.id} · ${threat.title}`).join('\n')}`,
+            confirmLabel: 'Switch scheme',
+            danger: true,
+        }))) return;
 
         const engine = createRiskEngine(nextScheme);
         let threatsChanged = false;
@@ -151,130 +153,131 @@ export default function SettingsModal() {
     };
 
     return (
-        <div className="modal-overlay" onClick={() => setOpen(false)}>
-            <div className="modal" role="dialog" aria-modal="true" aria-label="Project settings" style={{ maxWidth: 640 }} onClick={(e) => e.stopPropagation()}>
-                <div className="modalhead">
-                    <h3 style={{ margin: 0 }}>⚙ Project settings</h3>
-                    <button className="btn sm" aria-label="Close" onClick={() => setOpen(false)}>
-                        ✕ Close
-                    </button>
-                </div>
-
-                <div className="card" style={{ marginBottom: 12 }}>
-                    <h3 style={{ marginTop: 0 }}>Risk scoring</h3>
-                    {schemeWarning && <div className="settings-error-banner" role="alert">{schemeWarning}</div>}
-                    <Field label="Risk scheme">
-                        <select value={activeSchemeId} onChange={(e) => setRiskScheme(e.target.value)}>
-                            {!schemes.some((item) => item.id === activeSchemeId) && <option value={activeSchemeId}>Unavailable scheme · {activeSchemeId}</option>}
-                            {schemes.map((item) => <option key={item.id} value={item.id}>{item.title} · v{item.version}</option>)}
-                        </select>
-                    </Field>
-                    {activeScheme?.description && <p className="hint">{activeScheme.description}</p>}
-                    {costBasedScheme && (
-                        <>
-                            <p className="hint">Configured weight total: {weightTotal.toFixed(2)}. Weights must combine to 1.00.</p>
-                            {weightsInvalid && <div className="settings-error-banner" role="alert">Cost-factor weights currently total {weightTotal.toFixed(2)}. Set the combined weight to exactly 1.00 before assessing threats.</div>}
-                            <div className="settings-weight-grid">
-                                {COST_FACTORS.map((factor) => (
-                                    <Field key={factor.k} label={factor.label}>
-                                        <input
-                                            className="inp"
-                                            type="number"
-                                            min={0}
-                                            max={Math.max(0, 1 - costWeightTotal({ ...(p.costFactorWeights || {}), [factor.k]: 0 })).toFixed(2)}
-                                            step={0.05}
-                                            value={p.costFactorWeights?.[factor.k] ?? factor.weight}
-                                            onChange={(e) => setWeight(factor.k, Math.max(0, Number(e.target.value) || 0))}
-                                        />
-                                    </Field>
-                                ))}
-                                <div className="settings-weight-restore">
-                                    <button className="btn sm" type="button" onClick={restoreDefaultWeights}>
-                                        Restore defaults
-                                    </button>
-                                </div>
-                            </div>
-                            <h4 style={{ margin: '14px 0 6px' }}>Access probabilities</h4>
-                            <p className="hint">Probability of obtaining each required access level. Values must be from 0.05 to 1.00.</p>
-                            <div className="settings-weight-grid">
-                                {[
-                                    [1, 'Remote unauthenticated', 0.9],
-                                    [2, 'Remote authenticated', 0.7],
-                                    [3, 'Adjacent / fieldbus', 0.5],
-                                    [4, 'Local on site', 0.3],
-                                    [5, 'Physical / enclosure', 0.1],
-                                ].map(([level, label, fallback]) => (
-                                    <Field key={level} label={`${level} · ${label}`}>
-                                        <input className="inp" type="number" min={0.05} max={1} step={0.05} value={p.accessProbabilities?.[level as 1 | 2 | 3 | 4 | 5] ?? fallback} onChange={(e) => setAccessProbability(level as 1 | 2 | 3 | 4 | 5, Number(e.target.value))} />
-                                    </Field>
-                                ))}
-                            </div>
-                            <h4 style={{ margin: '14px 0 6px' }}>Likelihood probability thresholds</h4>
-                            <p className="hint">Lower probability bound for each matrix likelihood. L1 covers positive probabilities below L2; 0% is L0.</p>
-                            <div className="settings-weight-grid">
-                                {([2, 3, 4, 5] as const).map((level) => (
-                                    <Field key={level} label={`L${level} or higher`}>
-                                        <input className="inp" type="number" min={0.01} max={1} step={0.05} value={effectiveThresholds[level] ?? DEFAULT_LIKELIHOOD_PROBABILITY_THRESHOLDS[level]} onChange={(e) => setLikelihoodThreshold(level, Number(e.target.value))} />
-                                    </Field>
-                                ))}
-                                <div className="settings-weight-restore"><button className="btn sm" type="button" onClick={restoreDefaultLikelihoodThresholds}>Restore defaults</button></div>
-                            </div>
-                        </>
-                    )}
-                </div>
-
-                <div className="card" style={{ marginBottom: 12 }}>
-                    <h3 style={{ marginTop: 0 }}>Risk acceptance</h3>
-                    <Field label="Acceptable risk level">
-                        <select className="inp" value={p.acceptableLevel || activeScheme?.acceptance?.defaultLevel || ''} onChange={(e) => set({ acceptableLevel: e.target.value || undefined })}>
-                            <option value="">Use scheme default</option>
-                            {rankLevels.map((level) => <option key={level.id} value={level.id}>{level.label}</option>)}
-                        </select>
-                    </Field>
-                    {activeScheme?.classification.kind === 'product-bands' && <Field
-                        label="Acceptable risk score"
-                        hint="Numeric threshold retained for product-band schemes."
-                    >
-                        <input
-                            className="inp"
-                            type="number"
-                            min={0}
-                            max={maxRisk}
-                            style={{ width: 100 }}
-                            value={acceptable}
-                            onChange={(e) => {
-                                const v = Number(e.target.value);
-                                set({ acceptableRisk: Number.isFinite(v) ? Math.max(0, Math.min(maxRisk, v)) : DEFAULT_ACCEPTABLE_RISK });
-                            }}
-                        />
-                    </Field>}
-                </div>
-
-                <div className="card" style={{ marginBottom: 12 }}>
-                    <h3 style={{ marginTop: 0 }}>Assessment rigor</h3>
-                    <label className="inline" style={{ gap: 7, margin: 0, alignItems: 'flex-start' }}>
-                        <input type="checkbox" checked={!!p.rigorousMode} onChange={(e) => set({ rigorousMode: e.target.checked })} style={{ marginTop: 3 }} />
-                        <span className="hint">
-                            <b>Rigorous mode</b> requires Bug Bar dimensions, exposure/exploitability, and a named rater on every threat.
-                        </span>
-                    </label>
-                </div>
-
-                <div className="card">
-                    <h3 style={{ marginTop: 0 }}>Report content</h3>
-                    <label className="inline" style={{ gap: 7, margin: 0, alignItems: 'flex-start' }}>
-                        <input
-                            type="checkbox"
-                            checked={!!p.reportOptions?.includeStrideBoundaryAnalysis}
-                            onChange={(e) => setReport({ includeStrideBoundaryAnalysis: e.target.checked })}
-                            style={{ marginTop: 3 }}
-                        />
-                        <span className="hint">
-                            Include <b>STRIDE-per-trust-boundary</b> tables.
-                        </span>
-                    </label>
-                </div>
+        <AppDialog open={open} onClose={() => setOpen(false)} title="Project settings" dismissOnBackdrop={false}>
+            <div className="card" style={{ marginBottom: 12 }}>
+                <h3 style={{ marginTop: 0 }}>Appearance</h3>
+                <Field label="Color scheme">
+                    <select value={theme} onChange={(event) => setTheme(event.target.value as 'system' | 'light' | 'dark')}>
+                        <option value="system">Use system setting</option>
+                        <option value="light">Light</option>
+                        <option value="dark">Dark</option>
+                    </select>
+                </Field>
             </div>
-        </div>
+            <div className="card" style={{ marginBottom: 12 }}>
+                <h3 style={{ marginTop: 0 }}>Risk scoring</h3>
+                {schemeWarning && <div className="settings-error-banner" role="alert">{schemeWarning}</div>}
+                <Field label="Risk scheme">
+                    <select value={activeSchemeId} onChange={(e) => setRiskScheme(e.target.value)}>
+                        {!schemes.some((item) => item.id === activeSchemeId) && <option value={activeSchemeId}>Unavailable scheme · {activeSchemeId}</option>}
+                        {schemes.map((item) => <option key={item.id} value={item.id}>{item.title} · v{item.version}</option>)}
+                    </select>
+                </Field>
+                {activeScheme?.description && <p className="hint">{activeScheme.description}</p>}
+                {costBasedScheme && (
+                    <>
+                        <p className="hint">Configured weight total: {weightTotal.toFixed(2)}. Weights must combine to 1.00.</p>
+                        {weightsInvalid && <div className="settings-error-banner" role="alert">Cost-factor weights currently total {weightTotal.toFixed(2)}. Set the combined weight to exactly 1.00 before assessing threats.</div>}
+                        <div className="settings-weight-grid">
+                            {COST_FACTORS.map((factor) => (
+                                <Field key={factor.k} label={factor.label}>
+                                    <input
+                                        className="inp"
+                                        type="number"
+                                        min={0}
+                                        max={Math.max(0, 1 - costWeightTotal({ ...(p.costFactorWeights || {}), [factor.k]: 0 })).toFixed(2)}
+                                        step={0.05}
+                                        value={p.costFactorWeights?.[factor.k] ?? factor.weight}
+                                        onChange={(e) => setWeight(factor.k, Math.max(0, Number(e.target.value) || 0))}
+                                    />
+                                </Field>
+                            ))}
+                            <div className="settings-weight-restore">
+                                <button className="btn sm" type="button" onClick={restoreDefaultWeights}>
+                                    Restore defaults
+                                </button>
+                            </div>
+                        </div>
+                        <h4 style={{ margin: '14px 0 6px' }}>Access probabilities</h4>
+                        <p className="hint">Probability of obtaining each required access level. Values must be from 0.05 to 1.00.</p>
+                        <div className="settings-weight-grid">
+                            {[
+                                [1, 'Remote unauthenticated', 0.9],
+                                [2, 'Remote authenticated', 0.7],
+                                [3, 'Adjacent / fieldbus', 0.5],
+                                [4, 'Local on site', 0.3],
+                                [5, 'Physical / enclosure', 0.1],
+                            ].map(([level, label, fallback]) => (
+                                <Field key={level} label={`${level} · ${label}`}>
+                                    <input className="inp" type="number" min={0.05} max={1} step={0.05} value={p.accessProbabilities?.[level as 1 | 2 | 3 | 4 | 5] ?? fallback} onChange={(e) => setAccessProbability(level as 1 | 2 | 3 | 4 | 5, Number(e.target.value))} />
+                                </Field>
+                            ))}
+                        </div>
+                        <h4 style={{ margin: '14px 0 6px' }}>Likelihood probability thresholds</h4>
+                        <p className="hint">Lower probability bound for each matrix likelihood. L1 covers positive probabilities below L2; 0% is L0.</p>
+                        <div className="settings-weight-grid">
+                            {([2, 3, 4, 5] as const).map((level) => (
+                                <Field key={level} label={`L${level} or higher`}>
+                                    <input className="inp" type="number" min={0.01} max={1} step={0.05} value={effectiveThresholds[level] ?? DEFAULT_LIKELIHOOD_PROBABILITY_THRESHOLDS[level]} onChange={(e) => setLikelihoodThreshold(level, Number(e.target.value))} />
+                                </Field>
+                            ))}
+                            <div className="settings-weight-restore"><button className="btn sm" type="button" onClick={restoreDefaultLikelihoodThresholds}>Restore defaults</button></div>
+                        </div>
+                    </>
+                )}
+            </div>
+
+            <div className="card" style={{ marginBottom: 12 }}>
+                <h3 style={{ marginTop: 0 }}>Risk acceptance</h3>
+                <Field label="Acceptable risk level">
+                    <select className="inp" value={p.acceptableLevel || activeScheme?.acceptance?.defaultLevel || ''} onChange={(e) => set({ acceptableLevel: e.target.value || undefined })}>
+                        <option value="">Use scheme default</option>
+                        {rankLevels.map((level) => <option key={level.id} value={level.id}>{level.label}</option>)}
+                    </select>
+                </Field>
+                {activeScheme?.classification.kind === 'product-bands' && <Field
+                    label="Acceptable risk score"
+                    hint="Numeric threshold retained for product-band schemes."
+                >
+                    <input
+                        className="inp"
+                        type="number"
+                        min={0}
+                        max={maxRisk}
+                        style={{ width: 100 }}
+                        value={acceptable}
+                        onChange={(e) => {
+                            const v = Number(e.target.value);
+                            set({ acceptableRisk: Number.isFinite(v) ? Math.max(0, Math.min(maxRisk, v)) : DEFAULT_ACCEPTABLE_RISK });
+                        }}
+                    />
+                </Field>}
+            </div>
+
+            <div className="card" style={{ marginBottom: 12 }}>
+                <h3 style={{ marginTop: 0 }}>Assessment rigor</h3>
+                <label className="inline" style={{ gap: 7, margin: 0, alignItems: 'flex-start' }}>
+                    <input type="checkbox" checked={!!p.rigorousMode} onChange={(e) => set({ rigorousMode: e.target.checked })} style={{ marginTop: 3 }} />
+                    <span className="hint">
+                        <b>Rigorous mode</b> requires Bug Bar dimensions, exposure/exploitability, and a named rater on every threat.
+                    </span>
+                </label>
+            </div>
+
+            <div className="card">
+                <h3 style={{ marginTop: 0 }}>Report content</h3>
+                <label className="inline" style={{ gap: 7, margin: 0, alignItems: 'flex-start' }}>
+                    <input
+                        type="checkbox"
+                        checked={!!p.reportOptions?.includeStrideBoundaryAnalysis}
+                        onChange={(e) => setReport({ includeStrideBoundaryAnalysis: e.target.checked })}
+                        style={{ marginTop: 3 }}
+                    />
+                    <span className="hint">
+                        Include <b>STRIDE-per-trust-boundary</b> tables.
+                    </span>
+                </label>
+            </div>
+        </AppDialog>
     );
 }

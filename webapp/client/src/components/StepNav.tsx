@@ -1,26 +1,28 @@
 import type { ReactNode } from 'react';
 import { useStore } from '../state/store';
 import { validate, openIssues } from '../lib/validate';
+import Icon from './Icon';
+import type { IconName } from './Icon';
 import type { ViewKey } from '../types';
 
 interface StepDef {
     key: ViewKey | 'dfd';
-    icon: string;
+    icon: IconName;
     label: string;
     sub: string;
 }
 const STEPS: StepDef[] = [
-    { key: 'project', icon: '📋', label: 'Project', sub: 'Scope, device, SL-C' },
-    { key: 'assumptions', icon: '🧠', label: 'Assumptions', sub: 'Incl. attacker profiles' },
-    { key: 'system', icon: '🧱', label: 'System & Assets', sub: 'Components, C/I/A/S' },
-    { key: 'dfd', icon: '🔀', label: 'Data Flow Diagram', sub: 'Layered DeMarco model' },
-    { key: 'useCases', icon: '🎭', label: 'Scenarios & diagrams', sub: 'Use cases, DFDs · optional' },
-    { key: 'requirements', icon: '📝', label: 'Requirements', sub: 'Security requirements (SR)' },
-    { key: 'threats', icon: '⚠️', label: 'Threats', sub: 'STRIDE + risk rating' },
-    { key: 'attackTrees', icon: '🌳', label: 'Attack trees', sub: 'Optional · AND/OR/SAND' },
-    { key: 'countermeasures', icon: '🛠️', label: 'Countermeasures', sub: 'Residual risk' },
-    { key: 'review', icon: '🔎', label: 'Review & Report', sub: 'Plausibility check' },
-    { key: 'versions', icon: '🕘', label: 'TRA Versions', sub: 'Tagging history + diffs' },
+    { key: 'project', icon: 'project', label: 'Project', sub: 'Scope, device, SL-C' },
+    { key: 'assumptions', icon: 'assumptions', label: 'Assumptions', sub: 'Incl. attacker profiles' },
+    { key: 'system', icon: 'system', label: 'System & Assets', sub: 'Components, C/I/A/S' },
+    { key: 'dfd', icon: 'dfd', label: 'Data Flow Diagram', sub: 'Layered DeMarco model' },
+    { key: 'useCases', icon: 'useCases', label: 'Scenarios & diagrams', sub: 'Use cases, DFDs · optional' },
+    { key: 'requirements', icon: 'requirements', label: 'Requirements', sub: 'Security requirements (SR)' },
+    { key: 'threats', icon: 'threats', label: 'Threats', sub: 'STRIDE + risk rating' },
+    { key: 'attackTrees', icon: 'attackTrees', label: 'Attack trees', sub: 'Optional · AND/OR/SAND' },
+    { key: 'countermeasures', icon: 'countermeasures', label: 'Countermeasures', sub: 'Residual risk' },
+    { key: 'review', icon: 'review', label: 'Review & Report', sub: 'Plausibility check' },
+    { key: 'versions', icon: 'versions', label: 'TRA Versions', sub: 'Tagging history + diffs' },
 ];
 
 export default function StepNav() {
@@ -75,11 +77,11 @@ export default function StepNav() {
             ))}
 
             <div className="grouplabel">Views</div>
-            <NavItem vkey="dashboard" view={view} setView={setView} icon="▦" label="Dashboard" sub="IEC 62443-4-1 overview" />
-            <NavItem vkey="defects" view={view} setView={setView} icon="🐞" label="Defect register" sub="Lifecycle DM / SUM">
+            <NavItem vkey="dashboard" view={view} setView={setView} icon="dashboard" label="Dashboard" sub="IEC 62443-4-1 overview" />
+            <NavItem vkey="defects" view={view} setView={setView} icon="defects" label="Defect register" sub="Lifecycle DM / SUM">
                 {(counts.defects ?? 0) > 0 ? <span className="count">{counts.defects}</span> : null}
             </NavItem>
-            <NavItem vkey="kb" view={view} setView={setView} icon="📚" label="Knowledge base" sub="Bug Bar · library" />
+            <NavItem vkey="kb" view={view} setView={setView} icon="knowledgeBase" label="Knowledge base" sub="Bug Bar · library" />
 
             {stepIdx >= 0 && (
                 <div className="stepnav-foot">
@@ -96,6 +98,27 @@ export default function StepNav() {
     );
 }
 
+export function StepPicker() {
+    const view = useStore((s) => s.activeView);
+    const setView = useStore((s) => s.setView);
+    const otherViews = [
+        { key: 'dashboard', label: 'Dashboard' },
+        { key: 'defects', label: 'Defect register' },
+        { key: 'kb', label: 'Knowledge base' },
+    ] as const;
+    const options = [...STEPS.map(({ key, label }) => ({ key, label })), ...otherViews];
+    const stepIndex = STEPS.findIndex((step) => step.key === view);
+
+    return (
+        <label className="step-picker">
+            <span>{stepIndex >= 0 ? `Step ${stepIndex + 1} of ${STEPS.length}` : 'Views'}</span>
+            <select className="inp" aria-label="Navigate to step or view" value={view} onChange={(event) => setView(event.target.value as (typeof options)[number]['key'])}>
+                {options.map((option) => <option key={option.key} value={option.key}>{option.label}</option>)}
+            </select>
+        </label>
+    );
+}
+
 function NavItem({
     vkey,
     view,
@@ -108,31 +131,28 @@ function NavItem({
     vkey: any;
     view: string;
     setView: (v: any) => void;
-    icon: string;
+    icon: IconName;
     label: string;
     sub: string;
     children?: ReactNode;
 }) {
     return (
-        <div
+        <a
             className={'stepitem' + (view === vkey ? ' active' : '')}
-            role="button"
-            tabIndex={0}
+            href={`#/${encodeURIComponent(vkey)}`}
             aria-current={view === vkey ? 'page' : undefined}
-            onClick={() => setView(vkey)}
-            onKeyDown={(e) => {
-                if (e.key === 'Enter' || e.key === ' ') {
-                    e.preventDefault();
-                    setView(vkey);
-                }
+            onClick={(event) => {
+                if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+                event.preventDefault();
+                setView(vkey);
             }}
         >
-            <span className="icon" aria-hidden="true">{icon}</span>
+            <span className="icon" aria-hidden="true"><Icon name={icon} width={18} height={18} /></span>
             <span className="lbl">
                 {label}
                 <small>{sub}</small>
             </span>
             {children}
-        </div>
+        </a>
     );
 }

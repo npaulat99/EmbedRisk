@@ -135,7 +135,7 @@ export default function SystemPanel() {
                                     <div className="head">
                                         <IdInput id={c.id} />
                                         <input className="inp grow" value={c.name} onChange={(e) => upd({ name: e.target.value })} />
-                                        <button className="btn sm danger" aria-label={`Delete component ${c.id}`} onClick={() => confirmDelete(`component ${c.id}`) && set({ components: sys.components.filter((_, j) => j !== i) })}>
+                                        <button className="btn sm danger" aria-label={`Delete component ${c.id}`} onClick={async () => { if (await confirmDelete(`component ${c.id}`)) set({ components: sys.components.filter((_, j) => j !== i) }); }}>
                                             ✕
                                         </button>
                                     </div>
@@ -189,7 +189,7 @@ export default function SystemPanel() {
                                     <div className="head">
                                         <IdInput id={c.id} />
                                         <input className="inp grow" value={c.name} onChange={(e) => upd({ name: e.target.value })} />
-                                        <button className="btn sm danger" aria-label={`Delete interface ${c.id}`} onClick={() => confirmDelete(`interface ${c.id}`) && set({ interfaces: sys.interfaces.filter((_, j) => j !== i) })}>
+                                        <button className="btn sm danger" aria-label={`Delete interface ${c.id}`} onClick={async () => { if (await confirmDelete(`interface ${c.id}`)) set({ interfaces: sys.interfaces.filter((_, j) => j !== i) }); }}>
                                             ✕
                                         </button>
                                     </div>
@@ -257,7 +257,7 @@ export default function SystemPanel() {
                                                     Mandatory device housing
                                                 </span>
                                             ) : (
-                                                <button className="btn sm danger" aria-label={`Delete trust boundary ${c.id}`} onClick={() => confirmDelete(`trust boundary ${c.id}`) && (set({ trustBoundaries: sys.trustBoundaries.filter((x) => x.id !== c.id) }), setEditingId(null))}>
+                                                <button className="btn sm danger" aria-label={`Delete trust boundary ${c.id}`} onClick={async () => { if (await confirmDelete(`trust boundary ${c.id}`)) { set({ trustBoundaries: sys.trustBoundaries.filter((x) => x.id !== c.id) }); setEditingId(null); } }}>
                                                     ✕
                                                 </button>
                                             )}
@@ -299,7 +299,7 @@ export default function SystemPanel() {
                                                     Mandatory device housing
                                                 </span>
                                             ) : (
-                                                <button className="btn sm danger" aria-label={`Delete trust boundary ${c.id}`} onClick={() => confirmDelete(`trust boundary ${c.id}`) && set({ trustBoundaries: sys.trustBoundaries.filter((x) => x.id !== c.id) })}>
+                                                <button className="btn sm danger" aria-label={`Delete trust boundary ${c.id}`} onClick={async () => { if (await confirmDelete(`trust boundary ${c.id}`)) set({ trustBoundaries: sys.trustBoundaries.filter((x) => x.id !== c.id) }); }}>
                                                     ✕
                                                 </button>
                                             )}
@@ -338,7 +338,7 @@ export default function SystemPanel() {
                                             <IdInput id={c.id} onRename={setEditingId} />
                                             <input className="inp grow" value={c.name} onChange={(e) => upd({ name: e.target.value })} />
                                             <ComboInput value={c.type || 'function'} onChange={(v) => upd({ type: v })} options={ASSET_TYPE_OPTS} width={150} />
-                                            <button className="btn sm danger" aria-label={`Delete asset ${c.id}`} onClick={() => confirmDelete(`asset ${c.id}`) && (set({ assets: sys.assets.filter((x) => x.id !== c.id) }), setEditingId(null))}>
+                                            <button className="btn sm danger" aria-label={`Delete asset ${c.id}`} onClick={async () => { if (await confirmDelete(`asset ${c.id}`)) { set({ assets: sys.assets.filter((x) => x.id !== c.id) }); setEditingId(null); } }}>
                                                 ✕
                                             </button>
                                         </div>
@@ -402,7 +402,7 @@ export default function SystemPanel() {
                                                 <button className="btn sm" onClick={() => setEditingId(c.id)}>
                                                     Edit
                                                 </button>
-                                                <button className="btn sm danger" aria-label={`Delete asset ${c.id}`} onClick={() => confirmDelete(`asset ${c.id}`) && set({ assets: sys.assets.filter((x) => x.id !== c.id) })}>
+                                                <button className="btn sm danger" aria-label={`Delete asset ${c.id}`} onClick={async () => { if (await confirmDelete(`asset ${c.id}`)) set({ assets: sys.assets.filter((x) => x.id !== c.id) }); }}>
                                                     ✕
                                                 </button>
                                             </div>

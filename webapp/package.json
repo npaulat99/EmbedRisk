@@ -18,15 +18,18 @@
         "dev:client": "npm --workspace client run dev",
         "build": "npm --workspace client run build",
         "lint": "npm test && npm --workspace client run typecheck && node --check bin/embedrisk.js && node --check server/src/index.js",
+        "test:ux": "node test/run-ux.mjs",
+        "capture:ux": "node test/ux.capture.mjs",
         "format:check": "npm --workspace client run build",
         "open": "node bin/embedrisk.js",
-        "test": "node test/embedrisk.test.mjs && node test/validation.test.mjs && node test/dfd-layer-visibility.test.mjs",
+        "test": "node test/embedrisk.test.mjs && node test/validation.test.mjs && node test/dfd-layer-visibility.test.mjs && node test/save-protocol.test.mjs && node test/save-queue.test.mjs",
         "validate": "node server/src/validate-cli.js",
         "start": "node server/src/index.js",
         "serve": "npm run build && npm start"
     },
     "devDependencies": {
-        "concurrently": "^9.1.0"
+        "concurrently": "^9.1.0",
+        "playwright": "^1.65.1"
     },
     "overrides": {
         "nanoid": "^3.3.18"

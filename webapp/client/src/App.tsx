@@ -1,6 +1,9 @@
+import { useEffect, useRef, useState } from 'react';
 import { useStore } from './state/store';
+import { parseHashRoute } from './lib/route';
+import type { ProjectData } from './types';
 import TopBar from './components/TopBar';
-import StepNav from './components/StepNav';
+import StepNav, { StepPicker } from './components/StepNav';
 import Inspector from './components/Inspector';
 import WizardBar from './components/WizardBar';
 import DfdView from './components/dfd/DfdView';
@@ -20,15 +23,83 @@ import KbPanel from './components/panels/KbPanel';
 import SettingsModal from './components/SettingsModal';
 import StrideBoundaryEditor from './components/StrideBoundaryEditor';
 import TutorialOnboarding from './components/TutorialOnboarding';
+import DialogProvider from './components/DialogProvider';
+import AppDialog from './components/AppDialog';
+import LiveStatus from './components/LiveStatus';
+import SaveSyncDialogs from './components/SaveSyncDialogs';
+import { useDialogs } from './lib/useDialogs';
 
-function promptNewProject(): string | null {
-    return window.prompt('New device / project name:', 'New device');
+function routeTargetExists(data: ProjectData, view: string, id: string | undefined) {
+    if (!id) return true;
+    const has = (items: { id: string }[] | undefined) => !!items?.some((item) => item.id === id);
+    switch (view) {
+        case 'project': return data.project.projectId === id;
+        case 'assumptions': return has(data.assumptions.attacker) || has(data.assumptions.device) || has(data.assumptions.system) || has(data.assumptions.environment) || has(data.assumptions.operational);
+        case 'system': return has(data.system.components) || has(data.system.interfaces) || has(data.system.trustBoundaries) || has(data.system.assets);
+        case 'dfd': return has(data.dfd.nodes) || has(data.dfd.flows) || has(data.system.interfaces);
+        case 'useCases': return (data.useCases?.diagrams || []).some((diagram) => diagram.id === id || diagram.entities?.some((entity) => entity.id === id) || diagram.connections?.some((connection) => connection.id === id) || diagram.groups?.some((group) => group.id === id));
+        case 'threats': return has(data.threats.threats);
+        case 'requirements': return has(data.requirements.requirements);
+        case 'countermeasures': return has(data.countermeasures.countermeasures);
+        case 'attackTrees': {
+            const contains = (node: any): boolean => node?.id === id || (node?.children || []).some(contains);
+            return (data.attackTrees?.trees || []).some((tree) => tree.id === id || contains(tree.root));
+        }
+        case 'defects': return has(data.defects?.defects);
+        case 'versions': return data.changeTracker.entries.some((entry) => entry.version === id);
+        default: return false;
+    }
 }
 
-export default function App() {
+function AppContent() {
     const data = useStore((s) => s.data);
     const view = useStore((s) => s.activeView);
+    const activeId = useStore((s) => s.activeId);
     const newProject = useStore((s) => s.newProject);
+    const dialogs = useDialogs();
+    const [inspectorOpen, setInspectorOpen] = useState(false);
+    const hasInspector = view !== 'dashboard' && view !== 'kb' && view !== 'defects' && view !== 'versions';
+    const routeContext = useRef({ data, activeId });
+    routeContext.current = { data, activeId };
+    const applyHashRoute = useRef<() => void>(() => { });
+    applyHashRoute.current = () => {
+        const project = routeContext.current.data;
+        if (!project || window.location.hash === '#main-content') return;
+        const route = parseHashRoute(window.location.hash);
+        if (!route) {
+            useStore.getState().setView('project', 'replace');
+            return;
+        }
+        if (!routeTargetExists(project, route.view, route.id)) {
+            useStore.getState().setView(route.view, 'replace');
+            return;
+        }
+        if (route.id) useStore.getState().goto(route.view, route.id, 'none');
+        else useStore.getState().setView(route.view, 'none');
+    };
+
+    useEffect(() => {
+        const syncRoute = () => applyHashRoute.current();
+        window.addEventListener('hashchange', syncRoute);
+        window.addEventListener('popstate', syncRoute);
+        syncRoute();
+        return () => {
+            window.removeEventListener('hashchange', syncRoute);
+            window.removeEventListener('popstate', syncRoute);
+        };
+    }, []);
+
+    useEffect(() => {
+        if (data) applyHashRoute.current();
+    }, [activeId, !!data]);
+
+    useEffect(() => {
+        const openInspector = () => setInspectorOpen(true);
+        window.addEventListener('embedrisk:open-inspector', openInspector);
+        return () => window.removeEventListener('embedrisk:open-inspector', openInspector);
+    }, []);
+
+    useEffect(() => setInspectorOpen(false), [view]);
 
     const main = () => {
         switch (view) {
@@ -67,16 +138,48 @@ export default function App() {
 
     return (
         <div className="app">
+            <a
+                className="skip-link"
+                href="#main-content"
+                onClick={(event) => {
+                    event.preventDefault();
+                    document.getElementById('main-content')?.focus();
+                }}
+            >
+                Skip to main content
+            </a>
             <TopBar />
+            <SaveSyncDialogs />
             {data ? (
-                <div className={'layout' + (view === 'dashboard' || view === 'kb' || view === 'defects' || view === 'versions' ? ' wide' : '')}>
-                    <StepNav />
-                    <main className={'main' + (view === 'dfd' ? ' is-dfd' : '')}>
-                        {main()}
-                        {view !== 'dfd' && <WizardBar />}
-                    </main>
-                    {view !== 'dashboard' && view !== 'kb' && view !== 'defects' && view !== 'versions' && <Inspector />}
-                </div>
+                <>
+                    <div className="shell-compact-tools">
+                        <StepPicker />
+                        {hasInspector && (
+                            <button
+                                className="btn sm inspector-toggle"
+                                type="button"
+                                aria-expanded={inspectorOpen}
+                                aria-controls="inspector-drawer"
+                                onClick={() => setInspectorOpen(true)}
+                            >
+                                Inspector
+                            </button>
+                        )}
+                    </div>
+                    <div className={'layout' + (!hasInspector ? ' wide' : '')}>
+                        <StepNav />
+                        <main id="main-content" tabIndex={-1} className={'main' + (view === 'dfd' ? ' is-dfd' : '')}>
+                            {main()}
+                            {view !== 'dfd' && <WizardBar />}
+                        </main>
+                        {hasInspector && <Inspector />}
+                    </div>
+                    {hasInspector && (
+                        <AppDialog id="inspector-drawer" open={inspectorOpen} onClose={() => setInspectorOpen(false)} title="Inspector" size="md" dismissOnBackdrop className="inspector-drawer">
+                            <Inspector />
+                        </AppDialog>
+                    )}
+                </>
             ) : (
                 <div className="empty">
                     <div className="box">
@@ -88,7 +191,12 @@ export default function App() {
                         <button
                             className="btn primary"
                             onClick={async () => {
-                                const name = promptNewProject();
+                                const name = await dialogs.prompt({
+                                    title: 'New project',
+                                    label: 'Device / project name',
+                                    defaultValue: 'New device',
+                                    validate: (value) => value ? null : 'Enter a project name.',
+                                });
                                 if (name) await newProject(name);
                             }}
                         >
@@ -101,5 +209,14 @@ export default function App() {
             <StrideBoundaryEditor />
             <TutorialOnboarding />
         </div>
+    );
+}
+
+export default function App() {
+    return (
+        <DialogProvider>
+            <AppContent />
+            <LiveStatus />
+        </DialogProvider>
     );
 }

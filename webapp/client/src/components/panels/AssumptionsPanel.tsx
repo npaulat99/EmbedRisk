@@ -53,7 +53,7 @@ export default function AssumptionsPanel() {
                             <div className="head" style={{ alignItems: 'flex-start' }}>
                                 <IdInput id={item.id} />
                                 <textarea className="inp grow" rows={2} value={item.text} onChange={(e) => upd({ text: e.target.value })} placeholder="Assumption text (wraps to fit)" />
-                                <button className="btn sm danger" aria-label="Delete assumption" onClick={() => confirmDelete('this assumption') && setList(cat.key, list.filter((_, j) => j !== i))}>
+                                <button className="btn sm danger" aria-label="Delete assumption" onClick={async () => { if (await confirmDelete('this assumption')) setList(cat.key, list.filter((_, j) => j !== i)); }}>
                                     ✕
                                 </button>
                             </div>

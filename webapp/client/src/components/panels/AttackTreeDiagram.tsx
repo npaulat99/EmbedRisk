@@ -19,6 +19,7 @@ import {
 } from '../../lib/attackTree';
 import { ACTOR_LEVELS, actorLevelOption, normalizeActorLevel } from '@shared/attackerScale.js';
 import BugBarImpactSelector from '../BugBarImpactSelector';
+import AppDialog from '../AppDialog';
 import type { AdGate, AdKind, AdNode, AttackTree } from '../../types';
 
 const NW = 182; // node width
@@ -149,10 +150,19 @@ export default function AttackTreeDiagram({ tree, ops }: { tree: AttackTree; ops
                 </svg>
             </div>
 
-            {editingId && posById.get(editingId)?.node && createPortal(
-                <div className="modal-overlay" onClick={() => setEditingId(null)}>
-                    <NodeAssessmentOverlay node={posById.get(editingId)!.node} ops={ops} isRoot={editingId === tree.root.id} cms={cms} onClose={() => setEditingId(null)} />
-                </div>,
+            {createPortal(
+                <AppDialog
+                    open={!!editingId && !!posById.get(editingId)?.node}
+                    onClose={() => setEditingId(null)}
+                    title={`Assess ${posById.get(editingId || '')?.node?.label || 'attack tree node'}`}
+                    size="xl"
+                    className="adt-page-modal"
+                    dismissOnBackdrop
+                >
+                    {editingId && posById.get(editingId)?.node && (
+                        <NodeAssessmentOverlay node={posById.get(editingId)!.node} ops={ops} isRoot={editingId === tree.root.id} cms={cms} onClose={() => setEditingId(null)} />
+                    )}
+                </AppDialog>,
                 document.body,
             )}
         </div>
@@ -219,63 +229,60 @@ function NodeAssessmentOverlay({
         ops.upd(node.id, { impactDimensions: d });
     };
     return (
-        <div className="modal adt-page-modal" role="dialog" aria-modal="true" aria-label={`Assess ${node.label}`} onClick={(event) => event.stopPropagation()}>
-            <div className="modalhead">
+        <div className="adt-node-modal-body">
+            <div className="adt-editrow">
                 <span className={'adkind k-' + node.kind}>{KIND_LABEL[node.kind]}</span>
-                <input className="inp grow" value={node.label} onChange={(e) => ops.upd(node.id, { label: e.target.value })} />
-                <button className="btn sm" type="button" onClick={onClose}>Close</button>
+                <input className="inp grow" aria-label="Node label" value={node.label} onChange={(e) => ops.upd(node.id, { label: e.target.value })} />
             </div>
-            <div className="adt-node-modal-body">
-                <div className="adt-editrow">
-                    {isStructural && node.kind !== 'category' && (
-                        <label className="minifield" style={{ width: 120 }}><span>Gate</span><select className="inp" value={node.gate || 'AND'} onChange={(e) => ops.upd(node.id, { gate: e.target.value as AdGate })}>{GATES.map((gate) => <option key={gate}>{gate}</option>)}</select></label>
-                    )}
-                    {node.kind === 'category' && <span className="hint">Categories always aggregate alternatives with OR.</span>}
-                    {isCountermeasure && (
-                        <label className="minifield" style={{ width: 260 }}><span>Linked countermeasure</span><select className="inp" value={node.countermeasureRef || ''} onChange={(e) => ops.upd(node.id, { countermeasureRef: e.target.value || undefined })}>
-                            <option value="">(link CM…)</option>
-                            {cms.map((c) => (
-                                <option key={c.id} value={c.id}>
-                                    {c.id} · {c.title}
-                                </option>
-                            ))}
-                        </select></label>
-                    )}
-                    {!isRoot && <button className="btn sm danger" type="button" onClick={() => { ops.del(node.id); onClose(); }}>Delete node</button>}
-                </div>
-                <div className="adderived">
-                    <span className="dtag">{metricsLabel} probability <b>{Math.round(metrics.prob * 100)}%</b></span>
-                    <span className="dtag">{metricsLabel} access <b>{metrics.accessReq || '–'} · {accessLabel(metrics.accessReq)}</b></span>
-                    <span className="dtag">{metricsLabel} capability <b>{skillLabel(metrics.skillReq)}</b></span>
-                </div>
+            <div className="adt-editrow">
+                {isStructural && node.kind !== 'category' && (
+                    <label className="minifield" style={{ width: 120 }}><span>Gate</span><select className="inp" value={node.gate || 'AND'} onChange={(e) => ops.upd(node.id, { gate: e.target.value as AdGate })}>{GATES.map((gate) => <option key={gate}>{gate}</option>)}</select></label>
+                )}
+                {node.kind === 'category' && <span className="hint">Categories always aggregate alternatives with OR.</span>}
+                {isCountermeasure && (
+                    <label className="minifield" style={{ width: 260 }}><span>Linked countermeasure</span><select className="inp" value={node.countermeasureRef || ''} onChange={(e) => ops.upd(node.id, { countermeasureRef: e.target.value || undefined })}>
+                        <option value="">(link CM…)</option>
+                        {cms.map((c) => (
+                            <option key={c.id} value={c.id}>
+                                {c.id} · {c.title}
+                            </option>
+                        ))}
+                    </select></label>
+                )}
+                {!isRoot && <button className="btn sm danger" type="button" onClick={() => { ops.del(node.id); onClose(); }}>Delete node</button>}
+            </div>
+            <div className="adderived">
+                <span className="dtag">{metricsLabel} probability <b>{Math.round(metrics.prob * 100)}%</b></span>
+                <span className="dtag">{metricsLabel} access <b>{metrics.accessReq || '–'} · {accessLabel(metrics.accessReq)}</b></span>
+                <span className="dtag">{metricsLabel} capability <b>{skillLabel(metrics.skillReq)}</b></span>
+            </div>
 
-                {directAssessment && (
-                    <div className="adattrs">
-                        <label className="minifield" style={{ width: 220 }}><span>Required access</span><select className="inp" value={node.access ?? 3} onChange={(e) => ops.upd(node.id, { access: Number(e.target.value) })}>
-                            {ACCESS_OPTS.map(([v, l]) => (
-                                <option key={v} value={v}>{v} · {l}</option>
-                            ))}
-                        </select></label>
-                        <label className="minifield" style={{ width: 220 }}><span>Required capability (threat actor)</span><select className="inp" style={{ width: '100%', maxWidth: '100%', textOverflow: 'ellipsis' }} value={normalizeActorLevel(node.skill ?? 2)} onChange={(e) => ops.upd(node.id, { skill: Number(e.target.value) })}>
-                            {ACTOR_LEVELS.map(({ level }) => (
-                                <option key={level} value={level}>{actorLevelOption(level)}</option>
-                            ))}
-                        </select><span className="hint">{ACTOR_LEVELS.find((l) => l.level === normalizeActorLevel(node.skill ?? 2))?.description}</span></label>
-                    </div>
-                )}
-                {isStep && !hasAttackChildren && <CostAssessment title="Step difficulty assessment" cost={node.cost} rationales={node.costRationales} onChange={(cost, costRationales) => ops.upd(node.id, { cost, costRationales })} />}
-                {isCountermeasure && <CostAssessment title="Residual difficulty after this defence" cost={node.residualCost} rationales={node.residualCostRationales} onChange={(residualCost, residualCostRationales) => ops.upd(node.id, { residualCost, residualCostRationales })} />}
-                {isVulnerability && <CostAssessment title="Residual difficulty after exploiting this vulnerability" cost={node.residualCost} rationales={node.residualCostRationales} onChange={(residualCost, residualCostRationales) => ops.upd(node.id, { residualCost, residualCostRationales })} />}
-                {isGoal && (
-                    <section className="adt-assessment-section">
-                        <h4>Bug Bar impact</h4>
-                        <BugBarImpactSelector dims={node.impactDimensions} onSelect={(key, value) => setImpact(key as any, value)} />
-                    </section>
-                )}
-                <div className="adadd">
-                    <span className="hint" style={{ marginRight: 4 }}>Add child:</span>
-                    {addKinds.map((kind) => <button key={kind} className="btn sm ghost" type="button" onClick={() => ops.add(node.id, kind)}>+ {KIND_LABEL[kind]}</button>)}
+            {directAssessment && (
+                <div className="adattrs">
+                    <label className="minifield" style={{ width: 220 }}><span>Required access</span><select className="inp" value={node.access ?? 3} onChange={(e) => ops.upd(node.id, { access: Number(e.target.value) })}>
+                        {ACCESS_OPTS.map(([v, l]) => (
+                            <option key={v} value={v}>{v} · {l}</option>
+                        ))}
+                    </select></label>
+                    <label className="minifield" style={{ width: 220 }}><span>Required capability (threat actor)</span><select className="inp" style={{ width: '100%', maxWidth: '100%', textOverflow: 'ellipsis' }} value={normalizeActorLevel(node.skill ?? 2)} onChange={(e) => ops.upd(node.id, { skill: Number(e.target.value) })}>
+                        {ACTOR_LEVELS.map(({ level }) => (
+                            <option key={level} value={level}>{actorLevelOption(level)}</option>
+                        ))}
+                    </select><span className="hint">{ACTOR_LEVELS.find((l) => l.level === normalizeActorLevel(node.skill ?? 2))?.description}</span></label>
                 </div>
+            )}
+            {isStep && !hasAttackChildren && <CostAssessment title="Step difficulty assessment" cost={node.cost} rationales={node.costRationales} onChange={(cost, costRationales) => ops.upd(node.id, { cost, costRationales })} />}
+            {isCountermeasure && <CostAssessment title="Residual difficulty after this defence" cost={node.residualCost} rationales={node.residualCostRationales} onChange={(residualCost, residualCostRationales) => ops.upd(node.id, { residualCost, residualCostRationales })} />}
+            {isVulnerability && <CostAssessment title="Residual difficulty after exploiting this vulnerability" cost={node.residualCost} rationales={node.residualCostRationales} onChange={(residualCost, residualCostRationales) => ops.upd(node.id, { residualCost, residualCostRationales })} />}
+            {isGoal && (
+                <section className="adt-assessment-section">
+                    <h4>Bug Bar impact</h4>
+                    <BugBarImpactSelector dims={node.impactDimensions} onSelect={(key, value) => setImpact(key as any, value)} />
+                </section>
+            )}
+            <div className="adadd">
+                <span className="hint" style={{ marginRight: 4 }}>Add child:</span>
+                {addKinds.map((kind) => <button key={kind} className="btn sm ghost" type="button" onClick={() => ops.add(node.id, kind)}>+ {KIND_LABEL[kind]}</button>)}
             </div>
         </div>
     );

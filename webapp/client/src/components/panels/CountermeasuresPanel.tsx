@@ -141,7 +141,7 @@ export default function CountermeasuresPanel() {
                         <input type="checkbox" checked={isSelected(c)} onChange={(e) => toggleSelected(c, e.target.checked)} />
                         <span className="hint">Implement</span>
                     </label>
-                    <button className="btn sm danger" aria-label={`Delete countermeasure ${c.id}`} onClick={() => confirmDelete(`countermeasure ${c.id}`) && (removeCm(c.id), setEditingId(null))}>
+                    <button className="btn sm danger" aria-label={`Delete countermeasure ${c.id}`} onClick={async () => { if (await confirmDelete(`countermeasure ${c.id}`)) { removeCm(c.id); setEditingId(null); } }}>
                         ✕
                     </button>
                 </div>
@@ -358,7 +358,7 @@ export default function CountermeasuresPanel() {
                         <>
                             <table className="cmp-table" style={{ width: '100%', borderCollapse: 'collapse' }}>
                                 <thead>
-                                    <tr style={{ textAlign: 'left', color: 'var(--text-dim)', fontSize: 12 }}>
+                                    <tr style={{ textAlign: 'left', color: 'var(--text-dim)', fontSize: '0.75rem' }}>
                                         <th style={{ padding: 6 }}>Countermeasure</th>
                                         <th style={{ padding: 6, width: 260 }}>Residual (L × I)</th>
                                         <th style={{ padding: 6 }}>Negative effects</th>
@@ -387,11 +387,11 @@ export default function CountermeasuresPanel() {
                                                     </div>
                                                 </td>
                                                 <td style={{ padding: 6 }}>
-                                                    <textarea className="inp" style={{ minHeight: 48, fontSize: 12 }} value={negOf(c)} placeholder="one per line" onChange={(e) => setNeg(c.id, e.target.value)} />
+                                                    <textarea className="inp" style={{ minHeight: 48, fontSize: '0.75rem' }} value={negOf(c)} placeholder="one per line" onChange={(e) => setNeg(c.id, e.target.value)} />
                                                 </td>
                                                 <td style={{ padding: 6, whiteSpace: 'nowrap' }}>
                                                     <button className="btn sm" onClick={() => setEditingId(c.id)}>Edit</button>
-                                                    <button className="btn sm danger" aria-label={`Delete countermeasure ${c.id}`} onClick={() => confirmDelete(`countermeasure ${c.id}`) && removeCm(c.id)}>✕</button>
+                                                    <button className="btn sm danger" aria-label={`Delete countermeasure ${c.id}`} onClick={async () => { if (await confirmDelete(`countermeasure ${c.id}`)) removeCm(c.id); }}>✕</button>
                                                 </td>
                                                 <td style={{ padding: 6, textAlign: 'center' }}>
                                                     <input type="checkbox" checked={isSelected(c)} onChange={(e) => toggleSelected(c, e.target.checked)} aria-label={`Implement ${c.id}`} />
@@ -433,7 +433,7 @@ export default function CountermeasuresPanel() {
                                             <span className="hint">Implement</span>
                                         </label>
                                         <button className="btn sm" onClick={() => setEditingId(c.id)}>Edit</button>
-                                        <button className="btn sm danger" aria-label={`Delete countermeasure ${c.id}`} onClick={() => confirmDelete(`countermeasure ${c.id}`) && removeCm(c.id)}>✕</button>
+                                        <button className="btn sm danger" aria-label={`Delete countermeasure ${c.id}`} onClick={async () => { if (await confirmDelete(`countermeasure ${c.id}`)) removeCm(c.id); }}>✕</button>
                                     </div>
                                     <div className="summary-links">
                                         <span className="lbl">Addresses:</span>
@@ -520,7 +520,7 @@ export default function CountermeasuresPanel() {
                                         <button className="btn sm" onClick={() => setEditingId(c.id)}>
                                             Edit
                                         </button>
-                                        <button className="btn sm danger" aria-label={`Delete countermeasure ${c.id}`} onClick={() => confirmDelete(`countermeasure ${c.id}`) && removeCm(c.id)}>
+                                        <button className="btn sm danger" aria-label={`Delete countermeasure ${c.id}`} onClick={async () => { if (await confirmDelete(`countermeasure ${c.id}`)) removeCm(c.id); }}>
                                             ✕
                                         </button>
                                     </div>

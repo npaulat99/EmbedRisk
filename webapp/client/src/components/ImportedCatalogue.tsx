@@ -1,7 +1,7 @@
 // Renders a git-pulled catalogue file (see webapp/.assets/knowledge-base/imported/<name>/*.json)
 // as browsable threat/countermeasure tables instead of a raw JSON dump.
 import React, { useState } from 'react';
-import { sortStride } from './common';
+import { sortStride, TableRegion } from './common';
 
 type CatalogueDoc = {
     name?: string;
@@ -31,55 +31,57 @@ function ThreatsTable({ threats, docKey }: { threats: any[]; docKey: string }) {
             return next;
         });
     return (
-        <table className="tbl">
-            <thead>
-                <tr>
-                    <th>Key</th>
-                    <th>Title</th>
-                    <th>STRIDE</th>
-                    <th>Applies to</th>
-                    <th>Typ. impact</th>
-                    <th></th>
-                </tr>
-            </thead>
-            <tbody>
-                {threats.map((t) => {
-                    const rowKey = `${docKey}:${t.key}`;
-                    const isOpen = open.has(rowKey);
-                    return (
-                        <React.Fragment key={rowKey}>
-                            <tr>
-                                <td className="mono">{t.key}</td>
-                                <td>{t.title}</td>
-                                <td className="mono stride">{sortStride(t.stride || []).join('')}</td>
-                                <td className="mono">{(t.appliesTo || []).join(', ')}</td>
-                                <td>{t.typicalImpact ?? '—'}</td>
-                                <td>
-                                    <ExpandButton open={isOpen} onClick={() => toggle(rowKey)} />
-                                </td>
-                            </tr>
-                            {isOpen && (
-                                <tr className="rowdetail">
-                                    <td colSpan={6}>
-                                        {t.description && <p>{t.description}</p>}
-                                        <div className="inline" style={{ flexWrap: 'wrap', gap: 6 }}>
-                                            {t.emb3dId && <span className="tag">EMB3D {t.emb3dId}</span>}
-                                            {t.category && <span className="tag">{t.category}</span>}
-                                            {t.tier && <span className="tag">{t.tier}</span>}
-                                            {(t.cwe || []).map((c: string) => (
-                                                <span className="tag" key={c}>
-                                                    {c}
-                                                </span>
-                                            ))}
-                                        </div>
+        <TableRegion label={`Threat catalogue ${docKey}`}>
+            <table className="tbl">
+                <thead>
+                    <tr>
+                        <th scope="col">Key</th>
+                        <th scope="col">Title</th>
+                        <th scope="col">STRIDE</th>
+                        <th scope="col">Applies to</th>
+                        <th scope="col">Typ. impact</th>
+                        <th scope="col">Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {threats.map((t) => {
+                        const rowKey = `${docKey}:${t.key}`;
+                        const isOpen = open.has(rowKey);
+                        return (
+                            <React.Fragment key={rowKey}>
+                                <tr>
+                                    <th scope="row" className="mono">{t.key}</th>
+                                    <td>{t.title}</td>
+                                    <td className="mono stride">{sortStride(t.stride || []).join('')}</td>
+                                    <td className="mono">{(t.appliesTo || []).join(', ')}</td>
+                                    <td>{t.typicalImpact ?? '—'}</td>
+                                    <td>
+                                        <ExpandButton open={isOpen} onClick={() => toggle(rowKey)} />
                                     </td>
                                 </tr>
-                            )}
-                        </React.Fragment>
-                    );
-                })}
-            </tbody>
-        </table>
+                                {isOpen && (
+                                    <tr className="rowdetail">
+                                        <td colSpan={6}>
+                                            {t.description && <p>{t.description}</p>}
+                                            <div className="inline" style={{ flexWrap: 'wrap', gap: 6 }}>
+                                                {t.emb3dId && <span className="tag">EMB3D {t.emb3dId}</span>}
+                                                {t.category && <span className="tag">{t.category}</span>}
+                                                {t.tier && <span className="tag">{t.tier}</span>}
+                                                {(t.cwe || []).map((c: string) => (
+                                                    <span className="tag" key={c}>
+                                                        {c}
+                                                    </span>
+                                                ))}
+                                            </div>
+                                        </td>
+                                    </tr>
+                                )}
+                            </React.Fragment>
+                        );
+                    })}
+                </tbody>
+            </table>
+        </TableRegion>
     );
 }
 
@@ -92,46 +94,48 @@ function CountermeasuresTable({ countermeasures, docKey }: { countermeasures: an
             return next;
         });
     return (
-        <table className="tbl">
-            <thead>
-                <tr>
-                    <th>Key</th>
-                    <th>Title</th>
-                    <th>For</th>
-                    <th>Maturity</th>
-                    <th></th>
-                </tr>
-            </thead>
-            <tbody>
-                {countermeasures.map((c) => {
-                    const rowKey = `${docKey}:${c.key}`;
-                    const isOpen = open.has(rowKey);
-                    return (
-                        <React.Fragment key={rowKey}>
-                            <tr>
-                                <td className="mono">{c.key}</td>
-                                <td>{c.title}</td>
-                                <td className="mono">{(c.for || []).join(', ')}</td>
-                                <td>{c.maturity ?? '—'}</td>
-                                <td>
-                                    <ExpandButton open={isOpen} onClick={() => toggle(rowKey)} />
-                                </td>
-                            </tr>
-                            {isOpen && (
-                                <tr className="rowdetail">
-                                    <td colSpan={5}>
-                                        <div className="inline" style={{ flexWrap: 'wrap', gap: 6 }}>
-                                            {c.emb3dId && <span className="tag">EMB3D {c.emb3dId}</span>}
-                                            {c.iec62443 && <span className="tag">{c.iec62443}</span>}
-                                        </div>
+        <TableRegion label={`Countermeasure catalogue ${docKey}`}>
+            <table className="tbl">
+                <thead>
+                    <tr>
+                        <th scope="col">Key</th>
+                        <th scope="col">Title</th>
+                        <th scope="col">For</th>
+                        <th scope="col">Maturity</th>
+                        <th scope="col">Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {countermeasures.map((c) => {
+                        const rowKey = `${docKey}:${c.key}`;
+                        const isOpen = open.has(rowKey);
+                        return (
+                            <React.Fragment key={rowKey}>
+                                <tr>
+                                    <th scope="row" className="mono">{c.key}</th>
+                                    <td>{c.title}</td>
+                                    <td className="mono">{(c.for || []).join(', ')}</td>
+                                    <td>{c.maturity ?? '—'}</td>
+                                    <td>
+                                        <ExpandButton open={isOpen} onClick={() => toggle(rowKey)} />
                                     </td>
                                 </tr>
-                            )}
-                        </React.Fragment>
-                    );
-                })}
-            </tbody>
-        </table>
+                                {isOpen && (
+                                    <tr className="rowdetail">
+                                        <td colSpan={5}>
+                                            <div className="inline" style={{ flexWrap: 'wrap', gap: 6 }}>
+                                                {c.emb3dId && <span className="tag">EMB3D {c.emb3dId}</span>}
+                                                {c.iec62443 && <span className="tag">{c.iec62443}</span>}
+                                            </div>
+                                        </td>
+                                    </tr>
+                                )}
+                            </React.Fragment>
+                        );
+                    })}
+                </tbody>
+            </table>
+        </TableRegion>
     );
 }
 

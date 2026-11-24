@@ -41,7 +41,7 @@ export default function KbPanel() {
     };
 
     const deleteCatalogue = async (name: string) => {
-        if (!confirmDelete(`imported catalogue "${name}"`)) return;
+        if (!(await confirmDelete(`imported catalogue "${name}"`))) return;
         setBusy(true);
         setPullMsg(`Removing ${name}…`);
         const r = await fetch(`/api/kb/imported/${encodeURIComponent(name)}`, { method: 'DELETE' })

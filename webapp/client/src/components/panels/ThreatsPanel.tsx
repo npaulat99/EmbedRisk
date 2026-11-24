@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useId, useState } from 'react';
 import { useStore, uid } from '../../state/store';
 import { Field, Chips, TagSelect, cx, STRIDE, sortStride, RiskPill, useFocus, useEditMode, EditBackBar, ScaleSelect, Jump, HelpButton, confirmDelete, IdInput } from '../common';
 import { createRiskEngine, riskOf } from '../../lib/risk';
@@ -19,8 +19,15 @@ export default function ThreatsPanel() {
     const save = useStore((s) => s.save);
     const setView = useStore((s) => s.setView);
     const [sortBy, setSortBy] = useState<'id' | 'name' | 'initial' | 'residual'>('id');
+    const [kbFilter, setKbFilter] = useState('');
+    const [recordFilter, setRecordFilter] = useState('');
+    const kbSearchId = useId();
+    const recordSearchId = useId();
 
     const threats = data.threats.threats || [];
+    const knowledgeThreats = kb?.threats || [];
+    const filteredKnowledgeThreats = knowledgeThreats.filter((item: any) => `${item.key} ${item.title} ${(item.stride || []).join(' ')}`.toLowerCase().includes(kbFilter.trim().toLowerCase()));
+    const filteredThreats = threats.filter((threat) => `${threat.id} ${threat.title} ${threat.classification || ''} ${(threat.stride || []).join(' ')}`.toLowerCase().includes(recordFilter.trim().toLowerCase()));
     const cms = data.countermeasures.countermeasures || [];
     const focusId = useFocus('threats');
     const { editingId, setEditingId } = useEditMode(focusId);
@@ -120,7 +127,7 @@ export default function ThreatsPanel() {
                 <div className="head">
                     <IdInput id={t.id} onRename={setEditingId} />
                     <input className="inp grow" value={t.title} onChange={(e) => upd({ title: e.target.value })} />
-                    <button className="btn sm danger" aria-label={`Delete threat ${t.id}`} onClick={() => confirmDelete(`threat ${t.id}`) && (setThreats(threats.filter((x) => x.id !== t.id)), setEditingId(null))}>
+                    <button className="btn sm danger" aria-label={`Delete threat ${t.id}`} onClick={async () => { if (await confirmDelete(`threat ${t.id}`)) { setThreats(threats.filter((x) => x.id !== t.id)); setEditingId(null); } }}>
                         ✕
                     </button>
                 </div>
@@ -307,29 +314,40 @@ export default function ThreatsPanel() {
             ) : (
                 <>
                     <div className="toolbar">
-                        <button className="btn primary sm" onClick={add}>
-                            + Threat
-                        </button>
-                        {kb?.threats?.length ? (
-                            <select
-                                className="inp"
-                                style={{ width: 280 }}
-                                value=""
-                                onChange={(e) => {
-                                    if (e.target.value) importKb(e.target.value);
-                                    e.target.value = '';
-                                }}
-                            >
-                                <option value="">+ Add from knowledge base…</option>
-                                {kb.threats.map((k: any) => (
-                                    <option key={k.key} value={k.key}>
-                                        {k.title}
-                                    </option>
-                                ))}
-                            </select>
+                        <div className="threat-record-actions" role="group" aria-label="Threat record actions">
+                            <button className="btn primary sm" onClick={add}>+ Threat</button>
+                            <ThreatCmImportExport />
+                        </div>
+                        {knowledgeThreats.length ? (
+                            <div className="kb-threat-picker">
+                                <search className="threat-search">
+                                    <label htmlFor={kbSearchId}>
+                                        Search knowledge base <span className="filter-count">{filteredKnowledgeThreats.length} of {knowledgeThreats.length}</span>
+                                    </label>
+                                    <input id={kbSearchId} className="inp" type="search" value={kbFilter} onChange={(event) => setKbFilter(event.target.value)} />
+                                </search>
+                                <select
+                                    className="inp"
+                                    aria-label="Add filtered knowledge-base threat"
+                                    value=""
+                                    onChange={(e) => {
+                                        if (e.target.value) importKb(e.target.value);
+                                        e.target.value = '';
+                                    }}
+                                >
+                                    <option value="">+ Add from knowledge base…</option>
+                                    {filteredKnowledgeThreats.map((item: any) => <option key={item.key} value={item.key}>{item.title}</option>)}
+                                </select>
+                                {kbFilter && (
+                                    <span className="tag active-filter">
+                                        Knowledge base: {kbFilter}
+                                        <button className="filter-clear" type="button" aria-label="Clear knowledge-base search" onClick={() => setKbFilter('')}>Clear</button>
+                                    </span>
+                                )}
+                                {kbFilter && !filteredKnowledgeThreats.length && <span className="hint">No knowledge-base threats match this search.</span>}
+                            </div>
                         ) : null}
-                        <ThreatCmImportExport />
-                        <label className="inline" style={{ gap: 6 }}>
+                        <label className="inline threat-sort">
                             <span className="hint">Sort by</span>
                             <select className="inp sort-select" value={sortBy} onChange={(e) => setSortBy(e.target.value as typeof sortBy)}>
                                 <option value="id">ID</option>
@@ -340,8 +358,21 @@ export default function ThreatsPanel() {
                         </label>
                     </div>
 
+                    <search className="threat-search threat-record-search">
+                        <label htmlFor={recordSearchId}>
+                            Search threats <span className="filter-count">{filteredThreats.length} of {threats.length}</span>
+                        </label>
+                        <input id={recordSearchId} className="inp" type="search" value={recordFilter} onChange={(event) => setRecordFilter(event.target.value)} />
+                        {recordFilter && (
+                            <span className="tag active-filter">
+                                Threats: {recordFilter}
+                                {filteredThreats.length > 0 && <button className="filter-clear" type="button" aria-label="Clear threat search" onClick={() => setRecordFilter('')}>Clear</button>}
+                            </span>
+                        )}
+                    </search>
+
                     <div className="list">
-                        {[...threats].sort((a, b) => {
+                        {[...filteredThreats].sort((a, b) => {
                             if (sortBy === 'id') return a.id.localeCompare(b.id, undefined, { numeric: true });
                             if (sortBy === 'name') return a.title.localeCompare(b.title, undefined, { sensitivity: 'base' });
                             const aRisk = riskOf(a, cms, scheme);
@@ -354,7 +385,7 @@ export default function ThreatsPanel() {
                                 <div id={`f-threats-${t.id}`} className={'itemcard collapsed' + (focusId === t.id ? ' focused' : '')} key={t.id} style={orphan ? { borderColor: '#f0c9a8' } : undefined}>
                                     <div className="head">
                                         <span className="summary-id">{t.id}</span>
-                                        <span className="summary-title" title={t.title}>{t.title}</span>
+                                        <span className="summary-title">{t.title}</span>
                                         <RiskPill score={r.initial} band={r.initialBand} title="Initial risk" />
                                         <span className="muted">→</span>
                                         <RiskPill score={r.residual} band={r.residualBand} title="Residual risk" />
@@ -362,7 +393,7 @@ export default function ThreatsPanel() {
                                         <button className="btn sm" onClick={() => setEditingId(t.id)}>
                                             Edit
                                         </button>
-                                        <button className="btn sm danger" aria-label={`Delete threat ${t.id}`} onClick={() => confirmDelete(`threat ${t.id}`) && setThreats(threats.filter((x) => x.id !== t.id))}>
+                                        <button className="btn sm danger" aria-label={`Delete threat ${t.id}`} onClick={async () => { if (await confirmDelete(`threat ${t.id}`)) setThreats(threats.filter((x) => x.id !== t.id)); }}>
                                             ✕
                                         </button>
                                     </div>
@@ -385,7 +416,18 @@ export default function ThreatsPanel() {
                                 </div>
                             );
                         })}
-                        {!threats.length && <p className="hint">No threats yet.</p>}
+                        {!threats.length ? (
+                            <div className="empty-state">
+                                <h2>No threats yet</h2>
+                                <p>Start with a substantive STRIDE scenario, or search the knowledge base for a common threat.</p>
+                                <button className="btn primary sm" onClick={add}>+ Threat</button>
+                            </div>
+                        ) : !filteredThreats.length ? (
+                            <div className="empty-state">
+                                <p role="status">No threats match “{recordFilter}”. There are {threats.length} threats in this project.</p>
+                                <button className="btn sm" type="button" onClick={() => setRecordFilter('')}>Clear search</button>
+                            </div>
+                        ) : null}
                     </div>
                 </>
             )}

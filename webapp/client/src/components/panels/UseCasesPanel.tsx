@@ -6,7 +6,7 @@
 // matching step 04's canvas + sidebar feel.
 import { useEffect, useRef, useState } from 'react';
 import { useStore, uid } from '../../state/store';
-import { cx } from '../common';
+import { confirmDelete, cx } from '../common';
 import type { UseCaseConnection, UseCaseDiagram, UseCaseEntity, UseCaseEntityKind } from '../../types';
 import IndependentDfdEditor from './IndependentDfdEditor';
 
@@ -170,8 +170,8 @@ export default function UseCasesPanel() {
         setDiagrams([...diagrams, next]);
         setUcDiagram(id);
     };
-    const deleteDiagram = (id: string) => {
-        if (!window.confirm('Delete this use-case diagram? This cannot be undone.')) return;
+    const deleteDiagram = async (id: string) => {
+        if (!(await confirmDelete(`use-case diagram ${id}`))) return;
         const next = diagrams.filter((d) => d.id !== id);
         setDiagrams(next);
         setUcDiagram(next[0]?.id || null);

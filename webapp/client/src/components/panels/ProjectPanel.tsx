@@ -3,6 +3,7 @@ import { useStore } from '../../state/store';
 import type { StepKey } from '../../types';
 import { Field, HelpButton, confirmDelete } from '../common';
 import { attackerForSlc, slcLevel, syncThreatFeasibility } from '../../lib/slc';
+import { useDialogs } from '../../lib/useDialogs';
 
 type GitWorkspace = {
     repoUrl: string;
@@ -81,7 +82,7 @@ function ScopeList({ items, onChange, placeholder }: { items: string[]; onChange
                     value={draft}
                     onChange={(e) => setDraft(e.target.value)}
                     onKeyDown={(e) => {
-                        if (e.key === 'Enter') {
+                        if (e.key === 'Enter' && !e.nativeEvent.isComposing && e.nativeEvent.keyCode !== 229) {
                             e.preventDefault();
                             add();
                         }
@@ -97,6 +98,7 @@ function ScopeList({ items, onChange, placeholder }: { items: string[]; onChange
 }
 
 export default function ProjectPanel() {
+    const dialogs = useDialogs();
     const data = useStore((s) => s.data)!;
     const save = useStore((s) => s.save);
     const setView = useStore((s) => s.setView);
@@ -224,7 +226,12 @@ export default function ProjectPanel() {
         if (!activeId) return;
         if (!(await flushProjectData())) return;
         if (!(await ensureWorkspace())) return;
-        const msg = window.prompt('Commit message:', `TRA ${p.title || ''}`.trim());
+        const msg = await dialogs.prompt({
+            title: 'Commit project changes',
+            label: 'Commit message',
+            defaultValue: `TRA ${p.title || ''}`.trim(),
+            validate: (value) => value ? null : 'Enter a commit message.',
+        });
         if (msg === null) return;
         setGit('Committing project…');
         const r = await fetch(`/api/projects/${activeId}/git/commit`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ message: msg, push: false }) })
@@ -237,7 +244,12 @@ export default function ProjectPanel() {
         if (!activeId) return;
         if (!(await flushProjectData())) return;
         if (!(await ensureWorkspace())) return;
-        const msg = window.prompt('Commit message:', `TRA ${p.title || ''}`.trim());
+        const msg = await dialogs.prompt({
+            title: 'Commit and push project changes',
+            label: 'Commit message',
+            defaultValue: `TRA ${p.title || ''}`.trim(),
+            validate: (value) => value ? null : 'Enter a commit message.',
+        });
         if (msg === null) return;
         setGit('Committing and pushing…');
         const r = await fetch(`/api/projects/${activeId}/git/commit`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ message: msg, push: true }) })
@@ -468,7 +480,7 @@ export default function ProjectPanel() {
                                     className="btn sm danger"
                                     title="Remove scenario"
                                     aria-label="Remove use scenario"
-                                    onClick={() => confirmDelete('this use scenario') && set({ foreseeableUse: (p.foreseeableUse || []).filter((_, j) => j !== i) })}
+                                    onClick={async () => { if (await confirmDelete('this use scenario')) set({ foreseeableUse: (p.foreseeableUse || []).filter((_, j) => j !== i) }); }}
                                 >
                                     ✕
                                 </button>

@@ -1,0 +1,63 @@
+.sr-only {
+    position: absolute !important;
+    width: 1px !important;
+    height: 1px !important;
+    padding: 0 !important;
+    margin: -1px !important;
+    overflow: hidden !important;
+    clip-path: inset(50%) !important;
+    white-space: nowrap !important;
+    border: 0 !important;
+}
+
+.skip-link {
+    position: fixed;
+    inset: 8px auto auto 8px;
+    z-index: 2000;
+    padding: 8px 12px;
+    color: var(--text);
+    background: var(--surface);
+    border: 1px solid var(--border-strong);
+    border-radius: var(--radius-sm);
+    transform: translateY(calc(-100% - 12px));
+}
+
+.skip-link:focus-visible {
+    transform: translateY(0);
+}
+
+input::placeholder,
+textarea::placeholder {
+    color: var(--text-faint);
+    opacity: 1;
+}
+
+:where(button, a[href], input, select, textarea, [tabindex]:not([tabindex='-1'])):focus-visible {
+    outline: 2px solid var(--focus-ring, #1d70b8);
+    outline-offset: 2px;
+}
+
+@media (forced-colors: active) {
+    :where(button, a[href], input, select, textarea, [tabindex]:not([tabindex='-1'])):focus-visible {
+        outline-color: Highlight;
+    }
+
+    .pill,
+    .matrix .cell,
+    .matrix button.cell {
+        border: 1px solid CanvasText;
+        background: Canvas !important;
+        color: CanvasText !important;
+    }
+
+    .matrix .cell .n,
+    .matrix .cell .bandmark {
+        color: CanvasText;
+    }
+
+    .chip.on {
+        border: 2px solid Highlight;
+        background: Canvas;
+        color: Highlight;
+    }
+}

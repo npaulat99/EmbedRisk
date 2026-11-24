@@ -4,6 +4,18 @@
 <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="text-scale" content="scale" />
+    <meta name="color-scheme" content="light dark" />
+    <script>
+        try {
+            const theme = localStorage.getItem('tra-theme');
+            if (theme === 'light' || theme === 'dark') {
+                document.documentElement.dataset.theme = theme;
+                document.documentElement.style.colorScheme = theme;
+                document.querySelector('meta[name="color-scheme"]').content = theme;
+            }
+        } catch { }
+    </script>
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <title>EmbedRisk</title>
 </head>
