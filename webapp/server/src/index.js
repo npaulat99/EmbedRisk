@@ -20,8 +20,12 @@ import {
     STEP_KEYS,
     listProjects,
     readProject,
+    readProjectWithRevisions,
+    readArtifactRevision,
     readChangeTracker,
-    writeArtifact,
+    writeArtifactWithRevision,
+    writeArtifactIfRevision,
+    writeArtifactsIfRevisions,
     scaffoldProject,
     pathToStep,
     isExternalChange,
@@ -168,8 +172,10 @@ app.post('/api/projects', async (req, res) => {
 });
 
 app.get('/api/projects/:id', async (req, res) => {
-    const data = await readProject(req.params.id);
-    res.json(data);
+    const snapshot = await readProjectWithRevisions(req.params.id);
+    res.set('X-Artifact-Revisions', JSON.stringify(snapshot.revisions));
+    res.set('Cache-Control', 'no-store');
+    res.json(snapshot.data);
 });
 
 app.get('/api/projects/:id/change-tracker', async (req, res) => {
@@ -180,7 +186,10 @@ app.get('/api/projects/:id/change-tracker', async (req, res) => {
 app.post('/api/projects/:id/change-tracker/versions', async (req, res) => {
     try {
         const result = await recordAssessmentVersion(req.params.id, req.body || {});
-        if (result.ok && result.project) broadcastArtifact(req.params.id, 'project', result.project, null);
+        if (result.ok && result.project) {
+            const revision = await readArtifactRevision(req.params.id, 'project');
+            broadcastArtifact(req.params.id, 'project', result.project, revision);
+        }
         res.json(result);
     } catch (error) {
         res.status(400).json({ ok: false, error: error?.message || 'Could not record the TRA version.' });
@@ -199,9 +208,31 @@ app.get('/api/projects/:id/change-tracker/diff', async (req, res) => {
 app.put('/api/projects/:id/:step', async (req, res) => {
     const { id, step } = req.params;
     if (!STEP_KEYS.includes(step)) return res.status(400).json({ error: 'unknown step' });
-    await writeArtifact(id, step, req.body);
-    broadcastArtifact(id, step, req.body, null);
-    res.json({ ok: true });
+    const ifMatch = req.get('If-Match');
+    const baseRevision = ifMatch?.replace(/^W\//, '').replace(/^"|"$/g, '');
+    try {
+        const result = baseRevision === undefined
+            ? await writeArtifactWithRevision(id, step, req.body)
+            : await writeArtifactIfRevision(id, step, req.body, baseRevision);
+        if (result.ok === false) return res.status(412).json({ error: 'conflict', step, revision: result.revision });
+        broadcastArtifact(id, step, req.body, result.revision, null, req.get('X-Client-Id'));
+        return res.set('ETag', `"${result.revision}"`).json({ ok: true, revision: result.revision });
+    } catch {
+        return res.status(500).json({ error: 'save-failed', step });
+    }
+});
+
+app.post('/api/projects/:id/save-group', async (req, res) => {
+    const { id } = req.params;
+    const { snapshots, baseRevisions } = req.body || {};
+    try {
+        const result = await writeArtifactsIfRevisions(id, snapshots, baseRevisions);
+        if (result.ok === false) return res.status(412).json({ error: 'conflict', step: result.step, revision: result.revision });
+        for (const [step, revision] of Object.entries(result.revisions)) broadcastArtifact(id, step, snapshots[step], revision, null, req.get('X-Client-Id'));
+        return res.json({ ok: true, revisions: result.revisions });
+    } catch (error) {
+        return res.status(400).json({ error: 'save-group-failed', message: error?.message || 'The save group could not be written.' });
+    }
 });
 
 app.post('/api/projects/:id/validate', async (req, res) => {
@@ -251,8 +282,10 @@ const clients = new Set();
 
 wss.on('connection', (ws) => {
     ws.subscribedId = null;
+    ws.clientId = null;
+    ws.saveChain = Promise.resolve();
     clients.add(ws);
-    ws.on('message', async (raw) => {
+    ws.on('message', (raw) => {
         let msg;
         try {
             msg = JSON.parse(raw.toString());
@@ -261,20 +294,51 @@ wss.on('connection', (ws) => {
         }
         if (msg.type === 'subscribe') {
             ws.subscribedId = msg.id;
+            ws.clientId = typeof msg.clientId === 'string' ? msg.clientId : null;
+        } else if (msg.type === 'save-group' && msg.id && msg.snapshots && typeof msg.snapshots === 'object') {
+            ws.saveChain = ws.saveChain.then(() => handleSocketSaveGroup(ws, msg)).catch(() => { });
         } else if (msg.type === 'save' && msg.id && STEP_KEYS.includes(msg.step)) {
-            await writeArtifact(msg.id, msg.step, msg.data);
-            broadcastArtifact(msg.id, msg.step, msg.data, ws);
-            if (ws.readyState === 1) ws.send(JSON.stringify({ type: 'saved', id: msg.id, step: msg.step }));
+            ws.saveChain = ws.saveChain.then(() => handleSocketSave(ws, msg)).catch(() => { });
         }
     });
     ws.on('close', () => clients.delete(ws));
     ws.on('error', () => clients.delete(ws));
 });
 
-function broadcastArtifact(id, step, data, except) {
-    const payload = JSON.stringify({ type: 'artifact', id, step, data });
+async function handleSocketSave(ws, msg) {
+    try {
+        const result = typeof msg.baseRevision === 'string'
+            ? await writeArtifactIfRevision(msg.id, msg.step, msg.data, msg.baseRevision)
+            : await writeArtifactWithRevision(msg.id, msg.step, msg.data);
+        if (result.ok === false) {
+            if (ws.readyState === 1) ws.send(JSON.stringify({ type: 'save-conflict', id: msg.id, step: msg.step, requestId: msg.requestId ?? null, revision: result.revision }));
+            return;
+        }
+        broadcastArtifact(msg.id, msg.step, msg.data, result.revision, ws);
+        if (ws.readyState === 1) ws.send(JSON.stringify({ type: 'saved', id: msg.id, step: msg.step, requestId: msg.requestId ?? null, revision: result.revision }));
+    } catch {
+        if (ws.readyState === 1) ws.send(JSON.stringify({ type: 'save-error', id: msg.id, step: msg.step, requestId: msg.requestId ?? null, message: 'The artifact could not be saved.' }));
+    }
+}
+
+async function handleSocketSaveGroup(ws, msg) {
+    try {
+        const result = await writeArtifactsIfRevisions(msg.id, msg.snapshots, msg.baseRevisions);
+        if (result.ok === false) {
+            if (ws.readyState === 1) ws.send(JSON.stringify({ type: 'save-group-conflict', id: msg.id, requestId: msg.requestId ?? null, step: result.step, revision: result.revision }));
+            return;
+        }
+        for (const [step, revision] of Object.entries(result.revisions)) broadcastArtifact(msg.id, step, msg.snapshots[step], revision, ws);
+        if (ws.readyState === 1) ws.send(JSON.stringify({ type: 'saved-group', id: msg.id, requestId: msg.requestId ?? null, revisions: result.revisions }));
+    } catch {
+        if (ws.readyState === 1) ws.send(JSON.stringify({ type: 'save-group-error', id: msg.id, requestId: msg.requestId ?? null, message: 'The save group could not be saved.' }));
+    }
+}
+
+function broadcastArtifact(id, step, data, revision, except = null, exceptClientId = null) {
+    const payload = JSON.stringify({ type: 'artifact', id, step, data, revision });
     for (const ws of clients) {
-        if (ws !== except && ws.readyState === 1 && ws.subscribedId === id) ws.send(payload);
+        if (ws !== except && (!exceptClientId || ws.clientId !== exceptClientId) && ws.readyState === 1 && ws.subscribedId === id) ws.send(payload);
     }
 }
 function broadcastProjects() {
@@ -299,14 +363,14 @@ watcher.on('all', async (event, path) => {
         return;
     }
     if (!isExternalChange(path, txt)) return; // our own write — ignore the echo
-    recordHash(path, txt);
+    const revision = recordHash(path, txt);
     let data;
     try {
         data = JSON.parse(txt);
     } catch {
         return; // half-written / invalid JSON during manual editing — skip until valid
     }
-    broadcastArtifact(loc.id, loc.step, data, null);
+    broadcastArtifact(loc.id, loc.step, data, revision);
     if (loc.step === 'project') broadcastProjects();
 });
 

@@ -4,7 +4,7 @@
 // ArrowDown on) a process drills into its child layer; ArrowUp / the breadcrumb returns to
 // the parent. Left/Right cycle the sibling selection. Every structural change (move, add,
 // connect, delete) is written straight back to 04-dfd/dfd.json via the live-sync store.
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 import type { KeyboardEvent as ReactKeyboardEvent } from 'react';
 import {
     ReactFlow,
@@ -249,6 +249,8 @@ function Canvas({ connMode, setConnMode, mode, setMode }: { connMode: boolean; s
 
     const [rfNodes, setRfNodes, applyNodesChange] = useNodesState<any>([]);
     const [rfEdges, setRfEdges, onEdgesChange] = useEdgesState<any>([]);
+    const [addMenuOpen, setAddMenuOpen] = useState(false);
+    const addMenuId = useId();
     const dragging = useRef(false);
     const keyboardConnectFrom = useRef<string | null>(null);
     const canvasRef = useRef<HTMLDivElement>(null);
@@ -1162,11 +1164,12 @@ function Canvas({ connMode, setConnMode, mode, setMode }: { connMode: boolean; s
                         )}
                         <select
                             className="inp navsel"
+                            aria-label="Select node to inspect"
                             value={selectedNodeId || ''}
                             title="Select a node to inspect"
                             onChange={(e) => selectNode(e.target.value || null)}
                         >
-                            <option value="">Select node…</option>
+                            <option value="">Select node to inspect…</option>
                             {visible.map((n) => (
                                 <option key={n.id} value={n.id}>
                                     {n.label}
@@ -1185,22 +1188,42 @@ function Canvas({ connMode, setConnMode, mode, setMode }: { connMode: boolean; s
                         <div className="dfd-actions" role="group" aria-label="Diagram actions">
                             <button
                                 className={cx('btn sm', connMode && 'primary')}
+                                aria-pressed={connMode}
                                 onClick={() => setConnMode(!connMode)}
                                 title="Connections mode: locks the nodes and shows only entities + connections, so links are easy to grab, move and reconnect"
                             >
-                                {connMode ? '✓ Connections' : '🔗 Connections'}
+                                {connMode ? 'Exit connections' : 'Connect flows'}
                             </button>
                             {!connMode && (
                                 <button className="btn sm" onClick={tidy} title="Space overlapping nodes apart for readability">
                                     ⤢ Tidy
                                 </button>
                             )}
-                            {!connMode &&
-                                PALETTE.map((t) => (
-                                    <button key={t} className="btn sm" onClick={() => addNode(t)} title={`Add ${TYPE_LABEL[t]}`}>
-                                        + {TYPE_LABEL[t]}
-                                    </button>
-                                ))}
+                            {!connMode && (
+                                <>
+                                    <div className="dfd-desktop-add">
+                                        {PALETTE.map((t) => (
+                                            <button key={t} className="btn sm" onClick={() => addNode(t)} title={`Add ${TYPE_LABEL[t]}`}>
+                                                + {TYPE_LABEL[t]}
+                                            </button>
+                                        ))}
+                                    </div>
+                                    <div className="dfd-mobile-add">
+                                        <button className="btn sm" type="button" aria-expanded={addMenuOpen} aria-controls={addMenuId} onClick={() => setAddMenuOpen((open) => !open)}>
+                                            Add element
+                                        </button>
+                                        {addMenuOpen && (
+                                            <div id={addMenuId} className="dfd-add-options" role="group" aria-label="Add DFD element">
+                                                {PALETTE.map((t) => (
+                                                    <button key={t} className="btn sm" onClick={() => addNode(t)}>
+                                                        + {TYPE_LABEL[t]}
+                                                    </button>
+                                                ))}
+                                            </div>
+                                        )}
+                                    </div>
+                                </>
+                            )}
                         </div>
                     )}
                 </div>

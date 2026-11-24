@@ -1,67 +1,12 @@
 import assert from 'node:assert/strict';
-import { spawn } from 'node:child_process';
-import { cp, mkdtemp, rm } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
-import { join, resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { chromium } from 'playwright';
+import { createUxHarness, stopServer } from './lib/ux-harness.mjs';
 
-const webappRoot = resolve(fileURLToPath(new URL('..', import.meta.url)));
-const sampleProject = join(webappRoot, 'projects', 'RL-100');
-
-async function reservePort() {
-    const { createServer } = await import('node:net');
-    const server = createServer();
-    await new Promise((resolveListen, rejectListen) => {
-        server.once('error', rejectListen);
-        server.listen(0, '127.0.0.1', resolveListen);
-    });
-    const address = server.address();
-    const port = typeof address === 'object' && address ? address.port : 0;
-    await new Promise((resolveClose, rejectClose) => server.close((error) => error ? rejectClose(error) : resolveClose()));
-    if (!port) throw new Error('Could not reserve a port for the UX smoke test.');
-    return port;
-}
-
-async function waitForServer(url, child) {
-    const deadline = Date.now() + 15000;
-    while (Date.now() < deadline) {
-        if (child.exitCode !== null) throw new Error(`Webapp server exited early with code ${child.exitCode}.`);
-        try {
-            const response = await fetch(url, { signal: AbortSignal.timeout(500) });
-            if (response.ok) return;
-        } catch { }
-        await new Promise((resolveWait) => setTimeout(resolveWait, 100));
-    }
-    throw new Error(`Timed out waiting for the webapp server at ${url}.`);
-}
-
-async function stopServer(child) {
-    if (!child || child.exitCode !== null || child.signalCode) return;
-    child.kill('SIGTERM');
-    await Promise.race([
-        new Promise((resolveExit) => child.once('exit', resolveExit)),
-        new Promise((resolveTimeout) => setTimeout(resolveTimeout, 3000)),
-    ]);
-    if (child.exitCode === null && !child.signalCode) child.kill('SIGKILL');
-}
-
-const temporaryRoot = await mkdtemp(join(tmpdir(), 'embedrisk-ux-'));
-const projectsDir = join(temporaryRoot, 'projects');
-const temporaryProject = join(projectsDir, 'RL-100');
-await cp(sampleProject, temporaryProject, { recursive: true });
-
-const port = await reservePort();
-const baseUrl = `http://127.0.0.1:${port}`;
-const server = spawn(process.execPath, ['server/src/index.js'], {
-    cwd: webappRoot,
-    env: { ...process.env, HOST: '127.0.0.1', PORT: String(port), TRA_PROJECTS_DIR: projectsDir },
-    stdio: 'ignore',
-});
+const harness = await createUxHarness();
+const { baseUrl, server } = harness;
 
 let browser;
 try {
-    await waitForServer(baseUrl, server);
     browser = await chromium.launch({ headless: true });
     const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
     const nativeDialogs = [];
@@ -128,9 +73,9 @@ try {
     assert.ok(editorDimensions.scrollWidth <= editorDimensions.clientWidth, `Threat editor overflows its workspace: ${JSON.stringify(editorDimensions)}`);
 
     await stopServer(server);
-    await page.waitForFunction(() => document.querySelector('.conn')?.textContent?.includes('Offline, sync pending'), { timeout: 10000 });
+    await page.waitForFunction(() => document.querySelector('.conn')?.textContent?.includes('Offline, nothing unsaved'), { timeout: 10000 });
     const offlineLabel = await page.locator('.conn').getAttribute('aria-label');
-    assert.match(offlineLabel || '', /not saved to disk.*keep this tab open/i);
+    assert.match(offlineLabel || '', /Offline, nothing unsaved/i);
 
     assert.deepEqual(nativeDialogs, [], `Unexpected native browser dialogs: ${nativeDialogs.join(', ')}`);
     assert.deepEqual(pageErrors, [], `Browser page errors: ${pageErrors.join('; ')}`);
@@ -138,5 +83,5 @@ try {
 } finally {
     await browser?.close();
     await stopServer(server);
-    await rm(temporaryRoot, { recursive: true, force: true });
+    await harness.cleanup();
 }

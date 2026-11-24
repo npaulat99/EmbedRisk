@@ -314,13 +314,16 @@ export default function ThreatsPanel() {
             ) : (
                 <>
                     <div className="toolbar">
-                        <button className="btn primary sm" onClick={add}>
-                            + Threat
-                        </button>
+                        <div className="threat-record-actions" role="group" aria-label="Threat record actions">
+                            <button className="btn primary sm" onClick={add}>+ Threat</button>
+                            <ThreatCmImportExport />
+                        </div>
                         {knowledgeThreats.length ? (
                             <div className="kb-threat-picker">
                                 <search className="threat-search">
-                                    <label htmlFor={kbSearchId}>Search knowledge base</label>
+                                    <label htmlFor={kbSearchId}>
+                                        Search knowledge base <span className="filter-count">{filteredKnowledgeThreats.length} of {knowledgeThreats.length}</span>
+                                    </label>
                                     <input id={kbSearchId} className="inp" type="search" value={kbFilter} onChange={(event) => setKbFilter(event.target.value)} />
                                 </search>
                                 <select
@@ -344,8 +347,7 @@ export default function ThreatsPanel() {
                                 {kbFilter && !filteredKnowledgeThreats.length && <span className="hint">No knowledge-base threats match this search.</span>}
                             </div>
                         ) : null}
-                        <ThreatCmImportExport />
-                        <label className="inline" style={{ gap: 6 }}>
+                        <label className="inline threat-sort">
                             <span className="hint">Sort by</span>
                             <select className="inp sort-select" value={sortBy} onChange={(e) => setSortBy(e.target.value as typeof sortBy)}>
                                 <option value="id">ID</option>
@@ -357,12 +359,14 @@ export default function ThreatsPanel() {
                     </div>
 
                     <search className="threat-search threat-record-search">
-                        <label htmlFor={recordSearchId}>Search threats</label>
+                        <label htmlFor={recordSearchId}>
+                            Search threats <span className="filter-count">{filteredThreats.length} of {threats.length}</span>
+                        </label>
                         <input id={recordSearchId} className="inp" type="search" value={recordFilter} onChange={(event) => setRecordFilter(event.target.value)} />
                         {recordFilter && (
                             <span className="tag active-filter">
                                 Threats: {recordFilter}
-                                <button className="filter-clear" type="button" aria-label="Clear threat search" onClick={() => setRecordFilter('')}>Clear</button>
+                                {filteredThreats.length > 0 && <button className="filter-clear" type="button" aria-label="Clear threat search" onClick={() => setRecordFilter('')}>Clear</button>}
                             </span>
                         )}
                     </search>
@@ -381,7 +385,7 @@ export default function ThreatsPanel() {
                                 <div id={`f-threats-${t.id}`} className={'itemcard collapsed' + (focusId === t.id ? ' focused' : '')} key={t.id} style={orphan ? { borderColor: '#f0c9a8' } : undefined}>
                                     <div className="head">
                                         <span className="summary-id">{t.id}</span>
-                                        <span className="summary-title" title={t.title}>{t.title}</span>
+                                        <span className="summary-title">{t.title}</span>
                                         <RiskPill score={r.initial} band={r.initialBand} title="Initial risk" />
                                         <span className="muted">→</span>
                                         <RiskPill score={r.residual} band={r.residualBand} title="Residual risk" />
@@ -419,7 +423,10 @@ export default function ThreatsPanel() {
                                 <button className="btn primary sm" onClick={add}>+ Threat</button>
                             </div>
                         ) : !filteredThreats.length ? (
-                            <p className="empty-state" role="status">No threats match “{recordFilter}”. Clear the search to see all {threats.length} threats.</p>
+                            <div className="empty-state">
+                                <p role="status">No threats match “{recordFilter}”. There are {threats.length} threats in this project.</p>
+                                <button className="btn sm" type="button" onClick={() => setRecordFilter('')}>Clear search</button>
+                            </div>
                         ) : null}
                     </div>
                 </>

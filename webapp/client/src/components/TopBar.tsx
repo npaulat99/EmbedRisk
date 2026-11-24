@@ -5,13 +5,16 @@ import { announce } from './LiveStatus';
 import Icon from './Icon';
 import type { AppTheme } from '../state/store';
 
-type SaveStatus = 'unsaved' | 'saving' | 'saved' | 'offline' | 'live';
+type SaveStatus = 'saving' | 'saved' | 'retrying' | 'offline-pending' | 'offline-empty' | 'conflict';
 
 export default function TopBar() {
     const projects = useStore((s) => s.projects);
     const activeId = useStore((s) => s.activeId);
     const connected = useStore((s) => s.connected);
-    const saveState = useStore((s) => s.saveState);
+    const syncSummary = useStore((s) => s.syncSummary);
+    const syncQueueEntries = useStore((s) => s.syncQueueEntries);
+    const retrySync = useStore((s) => s.retrySync);
+    const showSyncConflict = useStore((s) => s.setSyncConflictVisible);
     const select = useStore((s) => s.selectProject);
     const newProject = useStore((s) => s.newProject);
     const setView = useStore((s) => s.setView);
@@ -31,29 +34,39 @@ export default function TopBar() {
     const helpRef = useRef<HTMLDivElement>(null);
     const overflowId = useId();
     const previousSaveStatus = useRef<SaveStatus | null>(null);
-    const saveStatus: SaveStatus = !connected || saveState === 'offline'
-        ? 'offline'
-        : saveState === 'saving'
+    const conflictStep = syncQueueEntries.find((entry) => entry.state === 'conflict')?.conflict?.step || null;
+    const hasPending = syncSummary.pendingCount > 0;
+    const saveStatus: SaveStatus = syncSummary.hasConflict
+        ? 'conflict'
+        : syncSummary.inFlight || syncSummary.debouncing
             ? 'saving'
-            : saveState === 'saved'
-                ? 'saved'
-                : 'live';
+            : !connected && hasPending
+                ? 'offline-pending'
+                : !connected
+                    ? 'offline-empty'
+                    : hasPending
+                        ? 'retrying'
+                        : 'saved';
 
     useEffect(() => {
         const previous = previousSaveStatus.current;
         previousSaveStatus.current = saveStatus;
         if (previous === null) return;
-        const message = previous === 'offline' && saveStatus !== 'offline'
-            ? 'Live'
-            : saveStatus === 'offline' && previous !== 'offline'
-                ? 'Offline. Changes are pending sync and are not saved to disk; keep this tab open.'
-                : saveStatus === 'saved' && (previous === 'saving' || previous === 'unsaved')
-                    ? 'Saved'
-                    : null;
+        const message = saveStatus === 'offline-pending' && previous !== 'offline-pending'
+            ? 'Offline. Unsaved changes are held in this tab only.'
+            : saveStatus === 'offline-empty' && previous !== 'offline-empty'
+                ? 'Offline. Nothing is unsaved.'
+                : saveStatus === 'conflict' && previous !== 'conflict'
+                    ? `Sync conflict${conflictStep ? ` on ${conflictStep}` : ''}. Review before continuing.`
+                    : saveStatus === 'saved' && previous !== 'saved' && previous !== 'offline-empty'
+                        ? 'Saved to disk.'
+                        : previous?.startsWith('offline') && !saveStatus.startsWith('offline')
+                            ? 'Live sync reconnected.'
+                            : null;
         if (!message) return;
         const timer = setTimeout(() => announce(message), 800);
         return () => clearTimeout(timer);
-    }, [saveStatus]);
+    }, [conflictStep, saveStatus]);
 
     // Close the Help menu when clicking elsewhere.
     useEffect(() => {
@@ -86,6 +99,13 @@ export default function TopBar() {
     }, []);
 
     const onNew = async () => {
+        if (syncSummary.pendingCount > 0) {
+            await dialogs.alert({
+                title: 'Unsynced changes',
+                message: 'Save or resolve the current project changes before creating a new project. Unsynced edits are held only in this tab.',
+            });
+            return;
+        }
         const name = await dialogs.prompt({
             title: 'New project',
             label: 'Device / project name',
@@ -97,13 +117,18 @@ export default function TopBar() {
 
     const changeTheme = (value: string) => setTheme(value as AppTheme);
 
-    const statusLabel = saveStatus === 'offline'
-        ? 'Offline, sync pending'
-        : saveStatus === 'saved'
-            ? 'Saved'
-            : saveStatus === 'saving'
-                ? 'Unsaved changes'
-                : 'Live';
+    const statusLabel = saveStatus === 'conflict'
+        ? `Sync conflict${conflictStep ? ` on ${conflictStep}` : ''}`
+        : saveStatus === 'offline-pending'
+            ? `Offline, ${syncSummary.pendingCount} change${syncSummary.pendingCount === 1 ? '' : 's'} held in this tab only`
+            : saveStatus === 'offline-empty'
+                ? 'Offline, nothing unsaved'
+                : saveStatus === 'retrying'
+                    ? 'Unsaved changes held in this tab (retrying)'
+                    : saveStatus === 'saving'
+                        ? 'Saving'
+                        : 'Saved';
+    const unsavedDetail = 'Unsaved changes are only in this tab’s memory. They can be lost if you close or reload this tab.';
 
     return (
         <header className="topbar">
@@ -186,12 +211,16 @@ export default function TopBar() {
             </div>
             <span
                 className="conn"
-                title={saveStatus === 'offline' ? 'Changes are in this tab’s memory and have not been saved to disk. Keep this tab open until sync resumes.' : connected ? 'Live sync connected' : 'Reconnecting…'}
-                aria-label={saveStatus === 'offline' ? 'Offline. Changes are pending sync and are not saved to disk; keep this tab open.' : connected ? 'Live sync connected' : 'Reconnecting…'}
+                title={hasPending ? `${unsavedDetail} ${syncSummary.nextRetryAt ? 'A retry is scheduled.' : ''}` : connected ? 'All current changes are saved to disk.' : 'Offline. Nothing is unsaved.'}
+                aria-label={`${statusLabel}${hasPending ? `. ${unsavedDetail}` : ''}`}
             >
                 <span className={'dot ' + (connected ? 'on' : 'off')} />
                 {statusLabel}
             </span>
+            {syncSummary.hasConflict && <button className="btn sm" type="button" onClick={() => showSyncConflict(true)}>Review conflict</button>}
+            {hasPending && !syncSummary.hasConflict && syncSummary.nextRetryAt !== null && (
+                <button className="btn sm" type="button" onClick={retrySync}>Retry sync</button>
+            )}
         </header>
     );
 }

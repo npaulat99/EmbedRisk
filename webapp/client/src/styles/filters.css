@@ -2,16 +2,37 @@
     display: grid;
     grid-template-columns: minmax(180px, 1fr) minmax(220px, 300px);
     align-items: end;
-    gap: 6px 10px;
+    gap: var(--ux-space-1) var(--ux-space-2);
     flex: 1 1 320px;
     min-inline-size: min(100%, 320px);
+}
+
+.threat-record-actions {
+    display: flex;
+    align-items: flex-end;
+    flex-wrap: wrap;
+    gap: var(--ux-space-2);
+}
+
+.threat-sort {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--ux-space-2);
+    margin-inline-start: auto;
+}
+
+.filter-count {
+    margin-inline-start: var(--ux-space-1);
+    color: var(--ux-text-muted);
+    font-weight: 600;
+    white-space: nowrap;
 }
 
 .threat-search {
     display: grid;
     grid-template-columns: minmax(120px, 1fr) auto;
     align-items: end;
-    gap: 4px 8px;
+    gap: var(--ux-space-1) var(--ux-space-2);
     color: var(--text-dim);
     font-size: 0.75rem;
 }
@@ -28,7 +49,7 @@
 .threat-record-search {
     grid-template-columns: minmax(160px, 300px) auto;
     justify-content: start;
-    margin-bottom: 12px;
+    margin-block-end: var(--ux-space-3);
 }
 
 .threat-record-search input {
@@ -54,6 +75,15 @@
 }
 
 @media (max-width: 719px) {
+
+    .toolbar .threat-record-actions,
+    .toolbar .kb-threat-picker {
+        flex: 1 1 100%;
+    }
+
+    .toolbar .threat-sort {
+        margin-inline-start: 0;
+    }
 
     .kb-threat-picker,
     .threat-record-search {

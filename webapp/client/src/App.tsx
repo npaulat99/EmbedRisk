@@ -26,6 +26,7 @@ import TutorialOnboarding from './components/TutorialOnboarding';
 import DialogProvider from './components/DialogProvider';
 import AppDialog from './components/AppDialog';
 import LiveStatus from './components/LiveStatus';
+import SaveSyncDialogs from './components/SaveSyncDialogs';
 import { useDialogs } from './lib/useDialogs';
 
 function routeTargetExists(data: ProjectData, view: string, id: string | undefined) {
@@ -148,6 +149,7 @@ function AppContent() {
                 Skip to main content
             </a>
             <TopBar />
+            <SaveSyncDialogs />
             {data ? (
                 <>
                     <div className="shell-compact-tools">

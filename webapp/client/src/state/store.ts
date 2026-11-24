@@ -7,6 +7,7 @@
 //   - When a JSON file is edited externally, the backend pushes an {type:'artifact'}
 //     message which `applyArtifact` merges back into state — so the UI tracks the files live.
 import { create } from 'zustand';
+import { createSaveQueue } from './saveQueue.js';
 import type { LaunchConfig, ProjectData, ProjectSummary, RiskScheme, RiskSchemeV2, StepKey, ViewKey } from '../types';
 import { tutorialStorageKey } from '../tutorial/tutorialData';
 import { alignedManagedAttacker } from '../lib/slc';
@@ -106,10 +107,10 @@ function inferFlowBoundaryId(system: any, dfd: any, flow: any) {
 function reconcileSystemDfd(system: any, dfd: any, authoritative: 'system' | 'dfd' = 'system') {
     const compIds = new Set((system?.components || []).map((c: any) => c.id));
     const sysTbIds = new Set((system?.trustBoundaries || []).map((b: any) => b.id));
-    const nodes = [...(dfd?.nodes || [])].filter((n: any) => {
+    const nodes = [...(dfd?.nodes || [])].filter((node: any) => {
         if (authoritative !== 'system') return true;
-        if (n.type === 'trust-boundary') return sysTbIds.has(n.id);
-        if (n.componentRef) return compIds.has(n.componentRef);
+        if (node.type === 'trust-boundary') return sysTbIds.has(node.id);
+        if (node.componentRef) return compIds.has(node.componentRef);
         return true;
     });
     const flows = [...(dfd?.flows || [])];
@@ -287,6 +288,12 @@ async function getJSON<T>(url: string): Promise<T> {
     if (!r.ok) throw new Error(`${url} -> ${r.status}`);
     return r.json();
 }
+async function getProjectSnapshot(id: string): Promise<{ data: ProjectData; revisions: Record<string, string> }> {
+    const response = await fetch(`/api/projects/${id}`, { cache: 'no-store' });
+    if (!response.ok) throw new Error(`/api/projects/${id} -> ${response.status}`);
+    const revisionHeader = response.headers.get('X-Artifact-Revisions');
+    return { data: await response.json(), revisions: revisionHeader ? JSON.parse(revisionHeader) : {} };
+}
 async function postJSON<T>(url: string, body?: unknown): Promise<T> {
     const r = await fetch(url, {
         method: 'POST',
@@ -298,7 +305,19 @@ async function postJSON<T>(url: string, body?: unknown): Promise<T> {
 
 let socket: WebSocket | null = null;
 let reconnectTimer: ReturnType<typeof setTimeout> | undefined;
-const saveTimers: Record<string, ReturnType<typeof setTimeout>> = {};
+let saveQueue: ReturnType<typeof createSaveQueue>;
+const pendingRemoteArtifacts = new Map<string, { step: StepKey; data: any; revision: string }>();
+const clientId = (() => {
+    try {
+        const existing = sessionStorage.getItem('tra-client-id');
+        if (existing) return existing;
+        const next = crypto.randomUUID();
+        sessionStorage.setItem('tra-client-id', next);
+        return next;
+    } catch {
+        return crypto.randomUUID();
+    }
+})();
 
 // ---- Undo / redo history --------------------------------------------------
 // A stack of whole-project snapshots. Every edit (save / renameId) records the pre-edit state;
@@ -358,10 +377,11 @@ function restoreSnapshot(target: ProjectData, current: ProjectData) {
     useStore.setState({ data: target, selectedNodeId: null, selectedEdgeId: null, ucSelection: null });
     const id = useStore.getState().activeId;
     if (!id) return;
-    useStore.setState({ saveState: 'saving' });
+    const snapshots: Partial<ProjectData> = {};
     for (const step of STEP_KEYS) {
-        if (JSON.stringify((target as any)[step]) !== JSON.stringify((current as any)[step])) sendSave(id, step, (target as any)[step]);
+        if (JSON.stringify((target as any)[step]) !== JSON.stringify((current as any)[step])) snapshots[step] = (target as any)[step];
     }
+    if (Object.keys(snapshots).length) queueProjectSave(id, 'undo-redo', snapshots);
 }
 
 function clearHistory() {
@@ -422,14 +442,24 @@ interface Store {
     settingsOpen: boolean;
     focus: { view: string; id: string } | null;
     lastSavedAt: number;
-    saveState: 'idle' | 'saving' | 'saved' | 'offline';
+    revisionsByProject: Record<string, Record<string, string>>;
+    syncQueueEntries: any[];
+    syncSummary: { connected: boolean; pendingCount: number; inFlight: boolean; debouncing: boolean; hasConflict: boolean; oldestUnsavedAt: number | null; nextRetryAt: number | null };
+    syncConflictVisible: boolean;
+    pendingProjectSwitchId: string | null;
     tutorialPromptOpen: boolean;
     tutorialWalkthroughOpen: boolean;
 
     init(): Promise<void>;
     refreshProjects(): Promise<void>;
     refreshKb(): Promise<void>;
-    selectProject(id: string): Promise<void>;
+    selectProject(id: string): Promise<boolean>;
+    cancelProjectSwitch(): void;
+    waitAndSwitchProject(): Promise<boolean>;
+    discardAndSwitchProject(): Promise<boolean>;
+    resolveSaveConflict(sequence: number, choice: 'keep-local' | 'accept-remote'): Promise<boolean>;
+    retrySync(): boolean;
+    setSyncConflictVisible(visible: boolean): void;
     newProject(name: string): Promise<string>;
     startTutorial(): void;
     skipTutorial(): void;
@@ -449,7 +479,7 @@ interface Store {
     drillInto(id: string): void;
     save(step: StepKey, value: any): void;
     renameId(oldId: string, newId: string): void;
-    applyArtifact(step: StepKey, value: any): void;
+    applyArtifact(step: StepKey, value: any, revision?: string, force?: boolean): void;
     undo(): void;
     redo(): void;
     undoDepth: number;
@@ -480,7 +510,11 @@ export const useStore = create<Store>((set, get) => ({
     settingsOpen: false,
     focus: null,
     lastSavedAt: 0,
-    saveState: 'idle',
+    revisionsByProject: {},
+    syncQueueEntries: [],
+    syncSummary: { connected: false, pendingCount: 0, inFlight: false, debouncing: false, hasConflict: false, oldestUnsavedAt: null, nextRetryAt: null },
+    syncConflictVisible: false,
+    pendingProjectSwitchId: null,
     tutorialPromptOpen: false,
     tutorialWalkthroughOpen: false,
     undoDepth: 0,
@@ -497,8 +531,7 @@ export const useStore = create<Store>((set, get) => ({
             useStore.setState({ theme: next });
         });
         window.addEventListener('beforeunload', (e) => {
-            const s = useStore.getState().saveState;
-            if (s === 'saving' || s === 'offline') {
+            if (useStore.getState().syncSummary.pendingCount > 0) {
                 e.preventDefault();
                 e.returnValue = '';
             }
@@ -533,16 +566,88 @@ export const useStore = create<Store>((set, get) => ({
     },
 
     async selectProject(id) {
-        const data = await getJSON<ProjectData>(`/api/projects/${id}`);
-        const selection = schemeForProject(data.project || {}, get().riskSchemes, get().riskSchemeFingerprints);
-        set({ activeId: id, data, ...selection, dfdPath: [], selectedNodeId: null, selectedEdgeId: null, ucDiagramId: null, ucSelection: null });
-        const aligned = alignedManagedAttacker(data.project?.slTarget, data.assumptions?.attacker);
-        if (aligned) get().save('assumptions', { ...data.assumptions, attacker: [aligned] });
-        clearHistory();
-        subscribe(id);
+        const currentId = get().activeId;
+        if (currentId === id) return true;
+        if (currentId && saveQueue.getSummary(currentId).pendingCount > 0) {
+            set({ pendingProjectSwitchId: id });
+            return false;
+        }
+        return loadProject(id);
+    },
+
+    cancelProjectSwitch() {
+        set({ pendingProjectSwitchId: null });
+    },
+
+    async waitAndSwitchProject() {
+        const currentId = get().activeId;
+        const targetId = get().pendingProjectSwitchId;
+        if (!currentId || !targetId) return false;
+        const saved = await saveQueue.flushOrHold(currentId);
+        if (!saved) return false;
+        set({ pendingProjectSwitchId: null });
+        return loadProject(targetId);
+    },
+
+    async discardAndSwitchProject() {
+        const currentId = get().activeId;
+        const targetId = get().pendingProjectSwitchId;
+        if (!currentId || !targetId || !saveQueue.discard(currentId)) return false;
+        set({ pendingProjectSwitchId: null });
+        return loadProject(targetId);
+    },
+
+    async resolveSaveConflict(sequence, choice) {
+        const projectId = get().activeId;
+        if (!projectId) return false;
+        const entry = get().syncQueueEntries.find((item) => item.sequence === sequence);
+        if (!entry) return false;
+        let remoteSnapshot: { data: ProjectData; revisions: Record<string, string> } | null = null;
+        if (choice === 'accept-remote') {
+            try {
+                remoteSnapshot = await getProjectSnapshot(projectId);
+            } catch {
+                return false;
+            }
+        }
+        const resolved = saveQueue.resolveConflict(projectId, sequence, choice, {
+            data: remoteSnapshot?.data || entry.conflict?.remoteData,
+            revisions: remoteSnapshot?.revisions || entry.conflict?.remoteRevisions,
+        });
+        if (resolved === false) return false;
+        if (choice === 'accept-remote' && resolved !== true) {
+            const current = get().data;
+            if (current && remoteSnapshot && get().activeId === projectId) {
+                const nextData = { ...current } as ProjectData;
+                for (const step of resolved.steps as StepKey[]) (nextData as any)[step] = (remoteSnapshot.data as any)[step];
+                set({ data: nextData });
+            }
+            updateProjectRevisions(projectId, remoteSnapshot?.revisions || entry.conflict?.remoteRevisions || {});
+            clearHistory();
+        }
+        const pendingSwitch = get().pendingProjectSwitchId;
+        if (pendingSwitch && saveQueue.getSummary(projectId).pendingCount === 0) {
+            set({ pendingProjectSwitchId: null });
+            await loadProject(pendingSwitch);
+        }
+        return true;
+    },
+
+    retrySync() {
+        const id = get().activeId;
+        return id ? saveQueue.retry(id) : false;
+    },
+
+    setSyncConflictVisible(visible) {
+        set({ syncConflictVisible: visible });
     },
 
     async newProject(name) {
+        const currentId = get().activeId;
+        if (currentId && saveQueue.getSummary(currentId).pendingCount > 0) {
+            set({ pendingProjectSwitchId: null });
+            return '';
+        }
         const { id } = await postJSON<{ id: string }>('/api/projects', { name });
         await get().refreshProjects();
         await get().selectProject(id);
@@ -670,36 +775,10 @@ export const useStore = create<Store>((set, get) => ({
         set({ data: nextData, ...schemeSelection });
         const id = get().activeId;
         if (!id) return;
-        clearTimeout(saveTimers[step]);
-        clearTimeout(saveTimers.dfd);
-        clearTimeout(saveTimers.system);
-        set({ saveState: 'saving' });
-        saveTimers[step] = setTimeout(() => {
-            const latest = get().data;
-            if (latest) sendSave(id, step, (latest as any)[step]);
-        }, 160);
-        if (step === 'system') {
-            saveTimers.dfd = setTimeout(() => {
-                const latest = get().data;
-                if (latest) sendSave(id, 'dfd', latest.dfd);
-            }, 160);
-        }
-        if (step === 'project') {
-            saveTimers.system = setTimeout(() => {
-                const latest = get().data;
-                if (latest) sendSave(id, 'system', latest.system);
-            }, 160);
-            saveTimers.dfd = setTimeout(() => {
-                const latest = get().data;
-                if (latest) sendSave(id, 'dfd', latest.dfd);
-            }, 160);
-        }
-        if (step === 'dfd') {
-            saveTimers.system = setTimeout(() => {
-                const latest = get().data;
-                if (latest) sendSave(id, 'system', latest.system);
-            }, 160);
-        }
+        const snapshots: Partial<ProjectData> = { [step]: (nextData as any)[step] };
+        if (step === 'project' || step === 'system' || step === 'dfd') snapshots.system = nextData.system;
+        if (step === 'project' || step === 'system' || step === 'dfd') snapshots.dfd = nextData.dfd;
+        queueProjectSave(id, `save-${step}`, snapshots);
     },
 
     renameId(oldId, newId) {
@@ -787,17 +866,33 @@ export const useStore = create<Store>((set, get) => ({
         set({ undoDepth: undoStack.length, redoDepth: redoStack.length });
     },
 
-    applyArtifact(step, value) {
+    applyArtifact(step, value, revision, force = false) {
         const data = get().data;
         if (!data) return;
-        const activeTag = (document.activeElement as HTMLElement | null)?.tagName;
-        if (activeTag === 'INPUT' || activeTag === 'TEXTAREA') return;
-        if (JSON.stringify((data as any)[step]) === JSON.stringify(value)) return;
+        const id = get().activeId;
+        if (!force && id && saveQueue.remoteChange(id, step, {
+            step,
+            remoteData: { partial: true, step, value },
+            remoteRevisions: revision ? { [step]: revision } : {},
+            revision,
+        })) return;
+        if (!force) {
+            const activeTag = (document.activeElement as HTMLElement | null)?.tagName;
+            if (activeTag === 'INPUT' || activeTag === 'TEXTAREA') {
+                if (id) pendingRemoteArtifacts.set(`${id}:${step}`, { step, data: value, revision: revision || '' });
+                return;
+            }
+        }
+        if (JSON.stringify((data as any)[step]) === JSON.stringify(value)) {
+            if (id && revision) updateProjectRevisions(id, { [step]: revision });
+            return;
+        }
         const nextData = { ...data, [step]: value };
         const schemeSelection = step === 'project'
             ? schemeForProject(nextData.project, get().riskSchemes, get().riskSchemeFingerprints)
             : {};
         set({ data: nextData, ...schemeSelection });
+        if (id && revision) updateProjectRevisions(id, { [step]: revision });
     },
 
     async report() {
@@ -807,53 +902,206 @@ export const useStore = create<Store>((set, get) => ({
     },
 }));
 
+function queueProjectSave(projectId: string, groupId: string, snapshots: Partial<ProjectData>) {
+    const revisions = useStore.getState().revisionsByProject[projectId] || {};
+    saveQueue.enqueue({ projectId, groupId, snapshots, baseRevisions: revisions });
+}
+
+function updateProjectRevisions(projectId: string, updates: Record<string, string>) {
+    const state = useStore.getState();
+    const revisionsByProject = {
+        ...state.revisionsByProject,
+        [projectId]: { ...(state.revisionsByProject[projectId] || {}), ...updates },
+    };
+    useStore.setState({ revisionsByProject });
+}
+
+async function loadProject(id: string): Promise<boolean> {
+    const snapshot = await getProjectSnapshot(id);
+    const selection = schemeForProject(snapshot.data.project || {}, useStore.getState().riskSchemes, useStore.getState().riskSchemeFingerprints);
+    const state = useStore.getState();
+    const revisionsByProject = { ...state.revisionsByProject, [id]: snapshot.revisions };
+    useStore.setState({
+        activeId: id,
+        data: snapshot.data,
+        revisionsByProject,
+        pendingProjectSwitchId: null,
+        ...selection,
+        dfdPath: [],
+        selectedNodeId: null,
+        selectedEdgeId: null,
+        ucDiagramId: null,
+        ucSelection: null,
+    });
+    clearHistory();
+    subscribe(id);
+    saveQueue.reconcile(id, snapshot);
+    const aligned = alignedManagedAttacker(snapshot.data.project?.slTarget, snapshot.data.assumptions?.attacker);
+    if (aligned) useStore.getState().save('assumptions', { ...snapshot.data.assumptions, attacker: [aligned] });
+    return true;
+}
+
+async function reconcileActiveProject(id: string) {
+    try {
+        const snapshot = await getProjectSnapshot(id);
+        if (useStore.getState().activeId !== id) return;
+        const current = useStore.getState().data;
+        if (current) {
+            const dirtySteps = new Set(saveQueue.getEntries(id).flatMap((entry) => entry.steps));
+            const merged = { ...current } as ProjectData;
+            for (const step of STEP_KEYS) if (!dirtySteps.has(step)) (merged as any)[step] = (snapshot.data as any)[step];
+            useStore.setState({ data: merged, revisionsByProject: { ...useStore.getState().revisionsByProject, [id]: snapshot.revisions } });
+        }
+        saveQueue.reconcile(id, snapshot);
+    } catch {
+        useStore.setState({ connected: false });
+    }
+}
+
+function queueStatusChanged(entries: any[]) {
+    const state = useStore.getState();
+    const activeEntries = state.activeId ? entries.filter((entry) => entry.projectId === state.activeId) : [];
+    const summary = state.activeId ? saveQueue.getSummary(state.activeId) : saveQueue.getSummary('');
+    const justSaved = state.syncQueueEntries.length > 0 && activeEntries.length === 0;
+    useStore.setState({
+        syncQueueEntries: activeEntries,
+        syncSummary: { ...summary, connected: state.connected },
+        syncConflictVisible: summary.hasConflict ? state.syncConflictVisible || !state.syncSummary.hasConflict : false,
+        ...(justSaved ? { lastSavedAt: Date.now() } : {}),
+    });
+}
+
+function sendSaveGroup(entry: any, signal: AbortSignal) {
+    const projectId = entry.projectId as string;
+    if (socket && socket.readyState === WebSocket.OPEN) {
+        socket.send(JSON.stringify({
+            type: 'save-group',
+            id: projectId,
+            requestId: entry.requestId,
+            baseRevisions: entry.baseRevisions,
+            snapshots: entry.snapshots,
+        }));
+        return;
+    }
+
+    return fetch(`/api/projects/${projectId}/save-group`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', 'x-client-id': clientId },
+        body: JSON.stringify({ requestId: entry.requestId, baseRevisions: entry.baseRevisions, snapshots: entry.snapshots }),
+        signal,
+    }).then(async (response) => {
+        const body = await response.json().catch(() => ({}));
+        if (response.status === 412) {
+            const remote = await getProjectSnapshot(projectId);
+            return { conflict: true, step: body.step, revision: body.revision, remoteData: remote.data, remoteRevisions: remote.revisions };
+        }
+        if (!response.ok) throw new Error('The server could not save an artifact group.');
+        updateProjectRevisions(projectId, body.revisions || {});
+        return { ok: true, revisions: body.revisions };
+    });
+}
+
+async function receiveSaveConflict(message: any) {
+    try {
+        const remote = await getProjectSnapshot(message.id);
+        updateProjectRevisions(message.id, remote.revisions);
+        saveQueue.reconcile(message.id, remote);
+    } catch {
+        saveQueue.fail({ requestId: message.requestId, message: 'Could not load the current server version for conflict review.' });
+    }
+}
+
+async function receiveArtifact(message: any) {
+    const state = useStore.getState();
+    if (message.id !== state.activeId) return;
+    const revision = typeof message.revision === 'string' ? message.revision : undefined;
+    const pending = saveQueue.getEntries(message.id).some((entry) => entry.steps.includes(message.step));
+    if (pending) {
+        try {
+            const snapshot = await getProjectSnapshot(message.id);
+            updateProjectRevisions(message.id, snapshot.revisions);
+            saveQueue.reconcile(message.id, snapshot);
+            if (saveQueue.getEntries(message.id).some((entry) => entry.steps.includes(message.step))) return;
+            const latestState = useStore.getState();
+            if (latestState.activeId !== message.id) return;
+            latestState.applyArtifact(message.step, (snapshot.data as any)[message.step], snapshot.revisions[message.step], true);
+            return;
+        } catch {
+            saveQueue.remoteChange(message.id, message.step, {
+                step: message.step,
+                revision,
+                remoteData: { partial: true, step: message.step, value: message.data },
+                remoteRevisions: revision ? { [message.step]: revision } : {},
+            });
+            return;
+        }
+    }
+    const activeTag = (document.activeElement as HTMLElement | null)?.tagName;
+    if (activeTag === 'INPUT' || activeTag === 'TEXTAREA') {
+        pendingRemoteArtifacts.set(`${message.id}:${message.step}`, { step: message.step, data: message.data, revision: revision || '' });
+        return;
+    }
+    state.applyArtifact(message.step, message.data, revision, true);
+}
+
 function connect() {
     socket = new WebSocket(wsUrl());
     socket.onopen = () => {
         useStore.setState({ connected: true });
         const id = useStore.getState().activeId;
-        if (id) subscribe(id);
+        if (id) {
+            subscribe(id);
+            void reconcileActiveProject(id);
+        }
     };
     socket.onclose = () => {
-        const s = useStore.getState();
-        useStore.setState({ connected: false, saveState: s.saveState === 'saving' ? 'offline' : s.saveState });
+        useStore.setState({ connected: false });
+        saveQueue.disconnect();
         clearTimeout(reconnectTimer);
         reconnectTimer = setTimeout(connect, 1500);
     };
     socket.onerror = () => socket?.close();
-    socket.onmessage = (ev) => {
-        let msg: any;
+    socket.onmessage = (event) => {
+        let message: any;
         try {
-            msg = JSON.parse(ev.data);
+            message = JSON.parse(event.data);
         } catch {
             return;
         }
-        const st = useStore.getState();
-        if (msg.type === 'artifact' && msg.id === st.activeId) st.applyArtifact(msg.step, msg.data);
-        else if (msg.type === 'saved' && msg.id === st.activeId) useStore.setState({ saveState: 'saved', lastSavedAt: Date.now() });
-        else if (msg.type === 'projects-changed') st.refreshProjects();
+        if (message.type === 'artifact') void receiveArtifact(message);
+        else if (message.type === 'saved-group' && message.requestId) {
+            updateProjectRevisions(message.id, message.revisions || {});
+            saveQueue.ackGroup({ requestId: message.requestId, revisions: message.revisions });
+        } else if (message.type === 'save-group-conflict' && message.requestId) void receiveSaveConflict(message);
+        else if (message.type === 'save-group-error' && message.requestId) {
+            saveQueue.fail({ requestId: message.requestId, message: message.message });
+        } else if (message.type === 'projects-changed') useStore.getState().refreshProjects();
     };
 }
 
 function subscribe(id: string) {
-    if (socket && socket.readyState === WebSocket.OPEN) socket.send(JSON.stringify({ type: 'subscribe', id }));
+    if (socket && socket.readyState === WebSocket.OPEN) socket.send(JSON.stringify({ type: 'subscribe', id, clientId }));
 }
 
-function sendSave(id: string, step: string, data: unknown) {
-    if (socket && socket.readyState === WebSocket.OPEN) {
-        socket.send(JSON.stringify({ type: 'save', id, step, data }));
-        // The server replies with a 'saved' ack, which flips saveState to 'saved'.
-    } else {
-        // Fallback to REST if the socket is momentarily down.
-        fetch(`/api/projects/${id}/${step}`, {
-            method: 'PUT',
-            headers: { 'content-type': 'application/json' },
-            body: JSON.stringify(data),
-        })
-            .then((r) => useStore.setState(r.ok ? { saveState: 'saved', lastSavedAt: Date.now() } : { saveState: 'offline' }))
-            .catch(() => useStore.setState({ saveState: 'offline' }));
-    }
-}
+saveQueue = createSaveQueue({
+    send: sendSaveGroup,
+    debounceMs: 160,
+    onChange: () => queueStatusChanged(saveQueue.getAllEntries()),
+});
+
+window.addEventListener('focusout', () => {
+    setTimeout(() => {
+        const activeTag = (document.activeElement as HTMLElement | null)?.tagName;
+        if (activeTag === 'INPUT' || activeTag === 'TEXTAREA') return;
+        const activeId = useStore.getState().activeId;
+        if (!activeId) return;
+        for (const [key, pending] of pendingRemoteArtifacts) {
+            if (!key.startsWith(`${activeId}:`)) continue;
+            pendingRemoteArtifacts.delete(key);
+            void receiveArtifact({ id: activeId, step: pending.step, data: pending.data, revision: pending.revision || undefined });
+        }
+    }, 0);
+});
 
 // Small id helper used across panels.
 export const uid = (prefix: string, existing: string[]) => {

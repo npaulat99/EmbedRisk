@@ -45,6 +45,7 @@ export const DEFAULTS = {
 
 const sha1 = (s) => createHash('sha1').update(s).digest('hex');
 const hashes = new Map(); // absolute path -> last known content hash
+const artifactLocks = new Map(); // absolute path -> queued writes/reads
 const fileOf = (id, step) => join(projectsDir, id, STEP_FILES[step]);
 const changeTrackerPath = (id) => join(projectsDir, id, CHANGE_TRACKER_FILE);
 const snapshotDirOf = (id, version) => join(projectsDir, id, SNAPSHOTS_DIR, version);
@@ -221,23 +222,130 @@ export function diffProjectData(beforeProject, afterProject) {
 
 export async function readArtifact(id, step) {
     const p = fileOf(id, step);
+    return withArtifactLock(p, async () => {
+        const snapshot = await readArtifactSnapshotUnlocked(id, step);
+        return snapshot.data;
+    });
+}
+
+async function readArtifactSnapshotUnlocked(id, step) {
+    const p = fileOf(id, step);
     try {
         const txt = await fs.readFile(p, 'utf8');
-        hashes.set(p, sha1(txt));
-        return JSON.parse(txt);
-    } catch {
-        return DEFAULTS[step] ? DEFAULTS[step]() : null;
+        const revision = sha1(txt);
+        hashes.set(p, revision);
+        let data;
+        try {
+            data = JSON.parse(txt);
+        } catch {
+            data = DEFAULTS[step] ? DEFAULTS[step]() : null;
+        }
+        return { data, revision, raw: txt };
+    } catch (error) {
+        if (error?.code === 'ENOENT') return { data: DEFAULTS[step] ? DEFAULTS[step]() : null, revision: 'absent', raw: null };
+        throw error;
     }
 }
 
-export async function writeArtifact(id, step, data) {
+async function writeArtifactUnlocked(id, step, data) {
     const p = fileOf(id, step);
     const txt = JSON.stringify(data, null, 2) + '\n';
+    const revision = sha1(txt);
     // Record the expected hash *before* writing so the watcher recognises the echo.
-    hashes.set(p, sha1(txt));
+    hashes.set(p, revision);
     await fs.mkdir(dirname(p), { recursive: true });
     await fs.writeFile(p, txt, 'utf8');
-    return data;
+    return { data, revision };
+}
+
+async function withArtifactLock(path, operation) {
+    const previous = artifactLocks.get(path) || Promise.resolve();
+    let release;
+    const current = new Promise((resolveLock) => { release = resolveLock; });
+    const queued = previous.then(() => current);
+    artifactLocks.set(path, queued);
+    await previous;
+    try {
+        return await operation();
+    } finally {
+        release();
+        if (artifactLocks.get(path) === queued) artifactLocks.delete(path);
+    }
+}
+
+async function withArtifactLocks(paths, operation) {
+    const orderedPaths = [...new Set(paths)].sort();
+    const acquire = (index) => index >= orderedPaths.length
+        ? operation()
+        : withArtifactLock(orderedPaths[index], () => acquire(index + 1));
+    return acquire(0);
+}
+
+export async function readArtifactRevision(id, step) {
+    if (!STEP_FILES[step]) throw new Error(`Unknown artifact step: ${step}`);
+    const p = fileOf(id, step);
+    return withArtifactLock(p, async () => (await readArtifactSnapshotUnlocked(id, step)).revision);
+}
+
+export async function writeArtifactWithRevision(id, step, data) {
+    if (!STEP_FILES[step]) throw new Error(`Unknown artifact step: ${step}`);
+    const p = fileOf(id, step);
+    return withArtifactLock(p, () => writeArtifactUnlocked(id, step, data));
+}
+
+export async function writeArtifactIfRevision(id, step, data, baseRevision) {
+    if (!STEP_FILES[step]) throw new Error(`Unknown artifact step: ${step}`);
+    const p = fileOf(id, step);
+    return withArtifactLock(p, async () => {
+        const current = await readArtifactSnapshotUnlocked(id, step);
+        if (current.revision !== baseRevision) return { ok: false, revision: current.revision };
+        const written = await writeArtifactUnlocked(id, step, data);
+        return { ok: true, data: written.data, revision: written.revision };
+    });
+}
+
+export async function writeArtifactsIfRevisions(id, snapshots, baseRevisions) {
+    const steps = Object.keys(snapshots || {}).sort((left, right) => STEP_KEYS.indexOf(left) - STEP_KEYS.indexOf(right));
+    if (!steps.length || steps.some((step) => !STEP_FILES[step])) throw new Error('A save group must contain known artifact steps.');
+    const paths = steps.map((step) => fileOf(id, step));
+    return withArtifactLocks(paths, async () => {
+        const revisions = {};
+        const previous = {};
+        for (const step of steps) {
+            const current = await readArtifactSnapshotUnlocked(id, step);
+            if (baseRevisions?.[step] !== undefined && current.revision !== baseRevisions[step]) return { ok: false, step, revision: current.revision };
+            revisions[step] = current.revision;
+            previous[step] = current;
+        }
+        const committed = {};
+        const written = [];
+        try {
+            for (const step of steps) {
+                const result = await writeArtifactUnlocked(id, step, snapshots[step]);
+                committed[step] = result.revision;
+                written.push(step);
+            }
+        } catch (error) {
+            for (const step of written.reverse()) {
+                const path = fileOf(id, step);
+                const original = previous[step];
+                if (original.raw === null) {
+                    await fs.rm(path, { force: true }).catch(() => { });
+                    hashes.delete(path);
+                } else {
+                    await fs.writeFile(path, original.raw, 'utf8').catch(() => { });
+                    hashes.set(path, original.revision);
+                }
+            }
+            throw error;
+        }
+        return { ok: true, revisions: committed };
+    });
+}
+
+export async function writeArtifact(id, step, data) {
+    const written = await writeArtifactWithRevision(id, step, data);
+    return written.data;
 }
 
 export async function ensureProjectVersioning(id) {
@@ -271,9 +379,19 @@ export async function ensureProjectVersioning(id) {
 }
 
 export async function readProject(id) {
+    const snapshot = await readProjectWithRevisions(id);
+    return snapshot.data;
+}
+
+export async function readProjectWithRevisions(id) {
     const changeTracker = await ensureProjectVersioning(id);
-    const artifacts = await readProjectArtifacts(id);
-    return { ...artifacts, changeTracker };
+    const paths = STEP_KEYS.map((step) => fileOf(id, step));
+    return withArtifactLocks(paths, async () => {
+        const entries = await Promise.all(STEP_KEYS.map(async (step) => [step, await readArtifactSnapshotUnlocked(id, step)]));
+        const artifacts = Object.fromEntries(entries.map(([step, snapshot]) => [step, snapshot.data]));
+        const revisions = Object.fromEntries(entries.map(([step, snapshot]) => [step, snapshot.revision]));
+        return { data: { ...artifacts, changeTracker }, revisions };
+    });
 }
 
 export async function listProjects() {
@@ -315,7 +433,9 @@ export function isExternalChange(absPath, txt) {
     return hashes.get(absPath) !== sha1(txt);
 }
 export function recordHash(absPath, txt) {
-    hashes.set(absPath, sha1(txt));
+    const revision = sha1(txt);
+    hashes.set(absPath, revision);
+    return revision;
 }
 
 export async function readChangeTracker(id) {
