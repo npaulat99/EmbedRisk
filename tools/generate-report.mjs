@@ -34,7 +34,36 @@ function resolveProjectPath() {
 const { display: proj, base } = resolveProjectPath();
 const read = (p) => JSON.parse(readFileSync(join(base, p), "utf8"));
 const RiskEngine = globalThis.RiskEngine;
-const esc = (s) => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+const esc = (s) => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+const contrastTextColor = (background) => {
+  const match = /^#?([\da-f]{6})$/i.exec(String(background || ''));
+  if (!match) return '#1d2430';
+  const channels = [0, 2, 4].map((index) => Number.parseInt(match[1].slice(index, index + 2), 16) / 255);
+  const luminance = channels.map((channel) => channel <= 0.04045 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4)
+    .reduce((sum, channel, index) => sum + channel * [0.2126, 0.7152, 0.0722][index], 0);
+  const contrast = (value) => (Math.max(luminance, value) + 0.05) / (Math.min(luminance, value) + 0.05);
+  return contrast(1) >= contrast(0.018) ? '#fff' : '#1d2430';
+};
+const safeHref = (value) => {
+  const href = String(value ?? '').trim();
+  if (!href || href.startsWith('/') || href.includes('\\') || /[\u0000-\u0020\u007f]/.test(href)) return null;
+  let parsed;
+  try { parsed = new URL(href, 'https://embedrisk.invalid/'); } catch { return null; }
+  if (/^[A-Za-z][A-Za-z\d+.-]*:/.test(href)) return (parsed.protocol === 'http:' || parsed.protocol === 'https:') && /^https?:\/\//i.test(href) ? href : null;
+  if (parsed.origin !== 'https://embedrisk.invalid') return null;
+  const path = href.split(/[?#]/, 1)[0];
+  try {
+    const decodedPath = decodeURIComponent(path);
+    if (decodedPath.startsWith('/') || decodedPath.includes('\\') || decodedPath.split('/').some((part) => part === '..')) return null;
+  } catch { return null; }
+  return href;
+};
+const renderLink = (value, label) => {
+  const href = safeHref(value);
+  if (!href) return esc(label);
+  const external = /^https?:\/\//i.test(href);
+  return `<a href="${esc(href)}"${external ? ' target="_blank"' : ''} rel="noopener noreferrer">${esc(label)}</a>`;
+};
 const capLabel = (v) => (typeof v === 'number' && v >= 1 ? `capability ${Math.min(4, v)} · Threat actor ${Math.min(4, v)}` : `capability ${v ?? '—'}`);
 const ID_PATTERN = /^[A-Za-z0-9 _\-:.]+$/;
 const assumptionAnchor = (id) => `assumption-${String(id ?? '').replace(/[^A-Za-z0-9_.:-]/g, '-')}`;
@@ -89,6 +118,8 @@ const ass = read(project.steps["02-assumptions"]);
 const sys = read(project.steps["03-system-assets"]);
 const threats = read(project.steps["06-threats"]).threats;
 const cms = read(project.steps["08-countermeasures"]).countermeasures;
+let reqs = [];
+try { reqs = read(project.steps["05-requirements"]).requirements || []; } catch { }
 let useCases = { diagrams: [] };
 try { useCases = read(project.steps["04b-use-cases"] || "04b-use-cases/use-cases.json"); } catch { }
 
@@ -124,10 +155,10 @@ const riskSchemeSection = (() => {
     const cell = cells.find((item) => item.likelihood === likelihood.value && item.impact === impact.value);
     const level = riskEngine.classify(likelihood.value, impact.value);
     const label = scheme.classification.kind === 'lookup' ? level.label : cell.score;
-    return `<td style="background:${esc(level.color)};color:#fff" title="${esc(likelihood.code)} × ${esc(impact.code)} · ${esc(level.label)}">${esc(label)}</td>`;
+    return `<td style="background:${esc(level.color)};color:${contrastTextColor(level.color)}" title="${esc(likelihood.code)} × ${esc(impact.code)} · ${esc(level.label)}">${esc(label)}</td>`;
   }).join('')}</tr>`).join('');
   const legend = scheme.classification.levels.map((level) => `<span style="display:inline-flex;align-items:center;gap:4px;margin-right:10px"><i style="display:inline-block;width:10px;height:10px;background:${esc(level.color)}"></i>${esc(level.label)}</span>`).join('');
-  return `<h2>Risk scheme</h2><p><b>${esc(scheme.title)}</b> · v${esc(scheme.version)} · fingerprint <code>${schemeResolution.fingerprint}</code></p><div>${legend}</div><table aria-label="Active risk matrix"><thead><tr><th>Impact / Likelihood</th>${likelihoods.map((level) => `<th>${esc(level.code)}</th>`).join('')}</tr></thead><tbody>${rows}</tbody></table>`;
+  return `<h2>Risk scheme</h2><p><b>${esc(scheme.title)}</b> · v${esc(scheme.version)} · fingerprint <code>${schemeResolution.fingerprint}</code></p><div>${legend}</div><table><caption>Active risk matrix</caption><thead><tr><th scope="col">Impact / Likelihood</th>${likelihoods.map((level) => `<th scope="col">${esc(level.code)}</th>`).join('')}</tr></thead><tbody>${rows}</tbody></table>`;
 })();
 
 // Plausibility checker (PR/NFR review step)
@@ -166,7 +197,7 @@ const rows = threats.map((t) => {
     if (!ID_PATTERN.test(aid)) return `<span>${esc(aid)}</span> (invalid ID)`;
     const a = assumptionById.get(aid);
     if (!a) return `<span>${esc(aid)}</span> (missing)`;
-    return `<a href="#${esc(assumptionAnchor(aid))}">${esc(aid)}</a> (${esc(a.source)})`;
+    return `${renderLink(`#${assumptionAnchor(aid)}`, aid)} (${esc(a.source)})`;
   }).join(', ');
   const rationale = [t.likelihoodRationale ? `L: ${esc(t.likelihoodRationale)}` : '', t.impactRationale ? `I: ${esc(t.impactRationale)}` : ''].filter(Boolean).join('<br>');
   const classification = [
@@ -186,25 +217,48 @@ const assRows = ['device', 'system', 'environment', 'operational'].map((k) => {
   const items = ass[k] || [];
   if (!items.length) return '';
   return `<h3>${k[0].toUpperCase() + k.slice(1)} assumptions</h3><ul>${items.map((a) => {
-    const cited = (assumptionCitedBy.get(a.id) || []).map((tid) => `<a href="#threat-${esc(tid)}">${esc(tid)}</a>`).join(', ');
+    const cited = (assumptionCitedBy.get(a.id) || []).map((tid) => renderLink(`#threat-${tid}`, tid)).join(', ');
     return `<li id="${esc(assumptionAnchor(a.id))}"><b>${esc(a.id)}</b> — ${esc(a.text || '')}${cited ? `<br><span style="font-size:11px;color:#555">cited by: ${cited}</span>` : ''}</li>`;
   }).join('')}</ul>`;
 }).join('');
 const atkRows = (ass.attacker || []).map((a) => {
-  const cited = (assumptionCitedBy.get(a.id) || []).map((tid) => `<a href="#threat-${esc(tid)}">${esc(tid)}</a>`).join(', ');
+  const cited = (assumptionCitedBy.get(a.id) || []).map((tid) => renderLink(`#threat-${tid}`, tid)).join(', ');
   return `<li id="${esc(assumptionAnchor(a.id))}"><b>${esc(a.id)}</b> · <b>${esc(a.name)}</b> ${esc(capLabel(a.capability))}, ${esc(a.access)}: ${esc(a.text || '')}${cited ? `<br><span style="font-size:11px;color:#555">cited by: ${cited}</span>` : ''}</li>`;
 }).join('');
 
-const html = `<!doctype html><meta charset=utf8><title>TRA ${project.title}</title>
-<style>body{font:14px system-ui;margin:2rem;max-width:60rem}table{border-collapse:collapse;width:100%}td,th{border:1px solid #ccc;padding:6px;text-align:left}h1{font-size:1.4rem}.warn{color:#c62828}</style>
-<h1>${project.title}</h1><p>Device: ${project.device.name} (${project.device.type}) | SL-C ${project.slTarget} | mode ${project.scope.mode} | status ${project.status}</p>
+const requirementIdsFor = (threatId) => reqs.filter((requirement) => (requirement.derivedFromThreat || []).includes(threatId)).map((requirement) => requirement.id);
+const disclosureItem = (threat, extra = '') => {
+  const requirementIds = requirementIdsFor(threat.id);
+  return `<li><b>${esc(threat.id)}</b> ${esc(threat.title)}${threat.responsibility ? ` · ${esc(threat.responsibility)}` : ''}${extra}${threat.deploymentConstraints ? `<br><b>Deployment constraints:</b> ${esc(threat.deploymentConstraints)}` : ''}<br><b>Requirements:</b> ${esc(requirementIds.join(', ') || '—')}</li>`;
+};
+const byResponsibility = threats.filter((threat) => {
+  const risk = riskOf(threat);
+  const aboveAcceptable = risk?.residual > 0 && (riskEngine
+    ? !riskEngine.isAcceptable(threat, cms, project)
+    : risk.residual > (Number.isFinite(project.acceptableRisk) ? project.acceptableRisk : 12));
+  return (threat.classification && threat.classification !== 'product-vulnerability')
+    || ['accepted', 'transferred'].includes(threat.status) || aboveAcceptable;
+});
+const avoidedThreats = threats.filter((threat) => threat.status === 'avoided');
+const acceptedDeviations = threats.filter((threat) => threat.status === 'accepted' && threat.acceptanceDeviation);
+const riskDisclosureSection = byResponsibility.length || avoidedThreats.length || acceptedDeviations.length
+  ? `<h2>Residual risks and expectations on users and integrators</h2>` +
+  (byResponsibility.length ? `<h3>By responsibility</h3><ul>${byResponsibility.map((threat) => disclosureItem(threat)).join('')}</ul>` : '') +
+  (avoidedThreats.length ? `<h3>Avoided</h3><ul>${avoidedThreats.map((threat) => disclosureItem(threat, `<br><b>Avoidance rationale:</b> ${esc(threat.avoidanceRationale || '—')}`)).join('')}</ul>` : '') +
+  (acceptedDeviations.length ? `<h3>Accepted deviations from the acceptance criteria</h3><ul>${acceptedDeviations.map((threat) => disclosureItem(threat, `<br><b>Circumstance:</b> ${esc(threat.acceptanceDeviation.circumstance || '—')}<br><b>Communicated to:</b> ${esc(threat.acceptanceDeviation.communicatedTo || '—')}`)).join('')}</ul>` : '')
+  : '';
+
+const html = `<!doctype html><html lang="en"><head><meta charset=utf8><meta name="viewport" content="width=device-width, initial-scale=1"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src data:; style-src 'unsafe-inline'"><title>TRA ${esc(project.title)}</title>
+<style>body{font:14px system-ui;margin:2rem;max-width:60rem}table{border-collapse:collapse;width:100%}td,th{border:1px solid #ccc;padding:6px;text-align:left}h1{font-size:1.4rem}.warn{color:#c62828}@media print{body{margin:0;max-width:none}table{page-break-inside:auto}tr{break-inside:avoid;page-break-inside:avoid}}</style></head><body><main>
+<h1>${esc(project.title)}</h1><p>Device: ${esc(project.device.name)} (${esc(project.device.type)}) | SL-C ${esc(project.slTarget)} | mode ${esc(project.scope.mode)} | status ${esc(project.status)}</p>
 <h2>Attacker profiles</h2><ul>${atkRows}</ul>
 ${assRows ? `<h2>Assumptions</h2>${assRows}` : ''}
-<h2>Assets</h2><ul>${sys.assets.map((a) => `<li>${a.name} (C${a.objectives.confidentiality}/I${a.objectives.integrity}/A${a.objectives.availability}/S${a.objectives.safety})</li>`).join("")}</ul>
+<h2>Assets</h2><ul>${sys.assets.map((a) => `<li>${esc(a.name)} (C${esc(a.objectives.confidentiality)}/I${esc(a.objectives.integrity)}/A${esc(a.objectives.availability)}/S${esc(a.objectives.safety)})</li>`).join("")}</ul>
 ${riskSchemeSection}
-<h2>Threats & risk</h2><table><tr><th>ID</th><th>Threat</th><th>STRIDE</th><th>Assumptions</th><th>Rationale</th><th>Classification</th><th>Initial</th><th>Residual</th><th>Status</th></tr>${rows}</table>
+<h2>Threats & risk</h2><table><caption>Threats and risk</caption><thead><tr><th scope="col">ID</th><th scope="col">Threat</th><th scope="col">STRIDE</th><th scope="col">Assumptions</th><th scope="col">Rationale</th><th scope="col">Classification</th><th scope="col">Initial</th><th scope="col">Residual</th><th scope="col">Status</th></tr></thead><tbody>${rows}</tbody></table>
+${riskDisclosureSection}
 ${project.reportOptions?.includeUseCases ? `<h2>Use-case diagrams</h2>${ucRows ? `<ul>${ucRows}</ul>` : '<p>No use-case diagrams defined.</p>'}` : ''}
-<h2>Plausibility check</h2>${issues.length ? `<ul class=warn>${issues.map((i) => `<li>${i}</li>`).join("")}</ul>` : "<p>No issues found.</p>"}`;
+<h2>Plausibility check</h2>${issues.length ? `<ul class=warn>${issues.map((i) => `<li>${i}</li>`).join("")}</ul>` : "<p>No issues found.</p>"}</main></body></html>`;
 
 mkdirSync(join(base, "report"), { recursive: true });
 writeFileSync(join(base, "report/index.html"), html);

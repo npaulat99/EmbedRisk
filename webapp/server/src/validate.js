@@ -274,6 +274,10 @@ export function validate({ project = {}, assumptions = {}, system = {}, threats 
         if (c.kind !== 'external-entity' && c.kind !== 'device' && !parents.has(c.id) && !threatComps.has(c.id))
             add('warning', `Coverage: component '${c.id}' (${c.name}) has no threat — STRIDE-per-element coverage gap.`);
     const threatIfaces = new Set(threatList.flatMap((t) => [...arr(t.interfaceRefs), ...(t.interfaceRef ? [t.interfaceRef] : [])]).filter(Boolean));
+    const threatAssets = new Set(threatList.flatMap((t) => arr(t.assets)));
+    for (const asset of arr(system.assets))
+        if (!threatAssets.has(asset.id) && !hasText(asset.noThreatRationale))
+            add('warning', `${asset.id}: no threat is linked to this asset. Add a threat or state why none applies (noThreatRationale).`);
     for (const i of interfaces)
         if (!threatIfaces.has(i.id)) add('warning', `Coverage: interface '${i.id}' (${i.name}) has no threat — every external interface should have at least one.`);
 

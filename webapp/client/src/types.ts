@@ -234,6 +234,7 @@ export interface Asset {
     type?: string; // suggested: data | function | credential | firmware | config | physical-process
     components?: string[];
     storage?: string; // where the data/asset is stored (e.g. internal flash, secure element)
+    noThreatRationale?: string;
     objectives: Objectives;
 }
 export interface SystemDef {

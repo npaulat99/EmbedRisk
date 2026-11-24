@@ -31,6 +31,19 @@ function issueMessages(issues, severity) {
     return issues.filter((issue) => !severity || issue.severity === severity).map((issue) => issue.message);
 }
 
+function testAssetWithoutThreatRequiresRationale() {
+    const project = baseProject();
+    const expected = 'AS-1: no threat is linked to this asset. Add a threat or state why none applies (noThreatRationale).';
+
+    assert.equal(issueMessages(validate(project), 'warning').filter((message) => message === expected).length, 1);
+    project.system.assets[0].noThreatRationale = 'This asset has no applicable threat.';
+    assert.ok(!issueMessages(validate(project), 'warning').includes(expected));
+
+    delete project.system.assets[0].noThreatRationale;
+    project.threats.threats.push({ id: 'T-ASSET', assets: ['AS-1'] });
+    assert.ok(!issueMessages(validate(project), 'warning').includes(expected));
+}
+
 function testClassificationNoticeAndTransferRequirementWarning() {
     const project = baseProject();
     project.threats.threats.push({
@@ -246,6 +259,8 @@ function testActorScaleValidation() {
 }
 
 testActorScaleValidation();
+testActorScaleValidation();
+testAssetWithoutThreatRequiresRationale();
 testClassificationNoticeAndTransferRequirementWarning();
 testDeploymentConstraintsRuleSkipsAcceptedOrTransferredAndFlagsOpen();
 testContradictoryProductVulnerabilityClassification();

@@ -1,0 +1,15 @@
+{
+    "device": [],
+    "system": [],
+    "environment": [],
+    "operational": [],
+    "attacker": [
+        {
+            "id": "AT-1",
+            "name": "Attacker marker",
+            "capability": 2,
+            "access": "remote",
+            "text": "Assumption marker"
+        }
+    ]
+}

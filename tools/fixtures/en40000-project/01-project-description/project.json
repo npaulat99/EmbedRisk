@@ -1,0 +1,32 @@
+{
+    "projectId": "en40000-contract",
+    "title": "EN40000 contract fixture",
+    "slTarget": "SL-C 2",
+    "device": {
+        "name": "Device marker"
+    },
+    "scope": {
+        "mode": "graybox",
+        "boundary": "Scope marker <img src=x onerror=alert(1)>",
+        "inScope": [],
+        "outOfScope": []
+    },
+    "intendedUse": "Intended use marker",
+    "status": "draft",
+    "traVersion": "v1.0",
+    "riskSchemeId": "builtin:5x5-cost",
+    "acceptableRisk": 10,
+    "steps": {
+        "02-assumptions": "02-assumptions/assumptions.json",
+        "03-system-assets": "03-system-assets/system.json",
+        "04-dfd": "04-dfd/dfd.json",
+        "05-requirements": "05-requirements/requirements.json",
+        "06-threats": "06-threats/threats.json",
+        "08-countermeasures": "08-countermeasures/countermeasures.json",
+        "09-defects": "09-defects/defects.json"
+    },
+    "sbom": {
+        "mode": "external",
+        "url": "javascript:alert(1)"
+    }
+}

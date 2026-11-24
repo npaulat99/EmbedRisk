@@ -195,7 +195,7 @@ async function runImportedKbTests() {
     const reportDir = path.join(projectDir, "report");
     const trace = JSON.parse(fs.readFileSync(path.join(reportDir, "traceability.json"), "utf8"));
     ok("traceability JSON matches webapp field order and derived values",
-      Object.keys(trace[0]).join(",") === "asset,cias,threat,title,stride,assumptionRefs,likelihoodRationale,impactRationale,initial,initialBand,requirement,control,residual,residualBand,evidence,status,ratedBy,signoff"
+      Object.keys(trace[0]).join(",") === "asset,cias,threat,title,stride,assumptionRefs,likelihoodRationale,impactRationale,initial,initialBand,requirement,control,residual,residualBand,evidence,status,ratedBy,signoff,classification,responsibility,deploymentConstraints"
       && trace[0].stride === "SE" && trace[0].initial === 6 && trace[0].residual === 2
       && trace[0].requirement === "R-1 [IEC 1] → CM-1" && trace[0].signoff === "by Approver · accepted");
     const csv = fs.readFileSync(path.join(reportDir, "traceability.csv"), "utf8");
@@ -1082,7 +1082,7 @@ async function runRiskSchemeTests() {
     for (const [command, script] of generators) {
       execFileSync(command, [script, projectCopy], { cwd: root, env: environment, stdio: "pipe" });
       const html = fs.readFileSync(path.join(projectCopy, "report/index.html"), "utf8");
-      const matrixHtml = html.match(/<table aria-label=["']Active risk matrix["']>([\s\S]*?)<\/table>/);
+      const matrixHtml = html.match(/<table\b[^>]*><caption>Active risk matrix<\/caption>([\s\S]*?)<\/table>/);
       assert.ok(matrixHtml, `${script} omitted the active risk matrix`);
       assert.strictEqual((matrixHtml[1].match(/<td style=/g) || []).length, 16, `${script} did not render a 4x4 matrix`);
       assert.ok(html.includes(`<code>${reportFingerprint}</code>`), `${script} omitted the normalized scheme fingerprint`);
@@ -1101,7 +1101,7 @@ async function runRiskSchemeTests() {
       env: { ...process.env, TRA_PROJECTS_DIR: reportTemp },
       stdio: "pipe",
     }).toString();
-    const serverMatrix = serverHtml.match(/<table aria-label=['"]Active risk matrix['"]>([\s\S]*?)<\/table>/);
+    const serverMatrix = serverHtml.match(/<table\b[^>]*><caption>Active risk matrix<\/caption>([\s\S]*?)<\/table>/);
     assert.ok(serverMatrix, "webapp server report omitted the active risk matrix");
     assert.strictEqual((serverMatrix[1].match(/<td style=/g) || []).length, 25);
     assert.ok(serverHtml.includes(`<code>${fingerprint(cost)}</code>`), "webapp server report omitted the scheme fingerprint");
@@ -1465,6 +1465,21 @@ function runStrideTests() {
 async function runValidationCoreTests() {
   const { validateCore, validate: validateExtension } = require(path.join(root, "vscode-extension/media/validation-model.js"));
   const { validate } = await import("../webapp/server/src/validate.js");
+  const { pathToFileURL } = require("node:url");
+  const vitePath = require.resolve("vite", { paths: [path.join(root, "webapp")] });
+  const { createServer } = await import(pathToFileURL(vitePath).href);
+  const vite = await createServer({
+    configFile: path.join(root, "webapp/client/vite.config.ts"),
+    root: path.join(root, "webapp/client"),
+    server: { middlewareMode: true },
+    appType: "custom",
+  });
+  let validateClient;
+  try {
+    ({ validate: validateClient } = await vite.ssrLoadModule("/src/lib/validate.ts"));
+  } finally {
+    await vite.close();
+  }
   const norm = (issues) => issues.map((i) => JSON.stringify([i.severity, i.key, i.message])).sort();
   const webErrors = (input) => validate(input).filter((i) => i.severity === "error");
   const clean = {
@@ -1485,6 +1500,21 @@ async function runValidationCoreTests() {
   };
   ok("validation core: clean project has no extension issues", validateCore(clean).length === 0);
   ok("validation core: clean project has no webapp errors", webErrors(clean).length === 0);
+  const assetWithoutThreat = structuredClone(clean);
+  assetWithoutThreat.system.assets.push({ id: "AS2" });
+  const assetWarning = "AS2: no threat is linked to this asset. Add a threat or state why none applies (noThreatRationale).";
+  const matchingAssetWarnings = (issues) => issues.filter((issue) => issue.message === assetWarning);
+  assert.deepStrictEqual(matchingAssetWarnings(validateExtension(assetWithoutThreat)), matchingAssetWarnings(validate(assetWithoutThreat)));
+  assert.deepStrictEqual(matchingAssetWarnings(validateClient(assetWithoutThreat)), matchingAssetWarnings(validate(assetWithoutThreat)));
+  assert.equal(matchingAssetWarnings(validateExtension(assetWithoutThreat)).length, 1);
+  assetWithoutThreat.system.assets[1].noThreatRationale = "No applicable threat identified.";
+  assert.equal(matchingAssetWarnings(validateExtension(assetWithoutThreat)).length, 0);
+  assert.equal(matchingAssetWarnings(validateClient(assetWithoutThreat)).length, 0);
+  assetWithoutThreat.system.assets[1].noThreatRationale = "  ";
+  assetWithoutThreat.threats.threats[0].assets = ["AS1", "AS2"];
+  assert.equal(matchingAssetWarnings(validateExtension(assetWithoutThreat)).length, 0);
+  assert.equal(matchingAssetWarnings(validateClient(assetWithoutThreat)).length, 0);
+  passed++;
 
   const bad = {
     assumptions: { system: [{ id: "A-SYS-1" }], attacker: [{ id: "ATK-1" }] },

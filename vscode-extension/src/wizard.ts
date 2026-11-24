@@ -1556,6 +1556,8 @@ function renderSystem(){
         '<div class="grid3"><div class="field"><label>Type</label><select class="inp" data-as='+i+' data-k="type">'+optTags(ASSET_TYPES,a.type||'function')+'</select></div>'+
           '<div class="field" style="grid-column:span 2"><label>Storage</label><input class="inp" data-as='+i+' data-k="storage" value="'+esc(a.storage||'')+'"></div></div>'+
         '<div class="hint" style="margin-top:6px">Components</div><div class="chips">'+comp+'</div>'+
+        '<div class="hint" style="margin-top:6px">Components</div><div class="chips">'+comp+'</div>'+
+        '<div class="field"><label for="asset-no-threat-'+i+'">No-threat rationale</label><textarea class="inp" id="asset-no-threat-'+i+'" rows="2" maxlength="200" data-as='+i+' data-k="noThreatRationale" aria-describedby="asset-no-threat-hint-'+i+'">'+esc(a.noThreatRationale||'')+'</textarea><span class="hint" id="asset-no-threat-hint-'+i+'">Explain why no threat applies to this asset. Maximum 200 characters.</span></div>'+
         '<div class="hint" style="margin-top:6px">Security objectives (0–5)</div><div class="objgrid">'+objs+'</div></div>';
     }).join(''):'<p class="hint">No assets yet.</p>';
     html+='<button class="btn sm" data-act="addAs">+ Asset</button>';

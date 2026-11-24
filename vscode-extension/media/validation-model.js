@@ -313,6 +313,10 @@
     }
 
     const parents = new Set(components.map((c) => c.parent).filter(Boolean));
+    const threatAssets = new Set(threatList.flatMap((t) => arr(t.assets)));
+    for (const asset of arr(system.assets))
+      if (!threatAssets.has(asset.id) && !hasText(asset.noThreatRationale))
+        add("warning", `${asset.id}: no threat is linked to this asset. Add a threat or state why none applies (noThreatRationale).`);
     const threatComps = new Set(threatList.flatMap((t) => arr(t.components)));
     for (const c of components)
       if (c.kind !== "external-entity" && c.kind !== "device" && !parents.has(c.id) && !threatComps.has(c.id))

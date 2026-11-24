@@ -52,6 +52,7 @@
         "properties": {
           "id": { "type": "string" },
           "name": { "type": "string" },
+          "noThreatRationale": { "type": "string", "maxLength": 200 },
           "type": { "type": "string", "enum": ["data", "function", "credential", "firmware", "config", "physical-process"] },
           "components": { "type": "array", "items": { "type": "string" }, "description": "Components holding this asset." },
           "objectives": {
