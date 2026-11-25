@@ -91,7 +91,8 @@ Read [docs/HOW-TO-TRA.md](docs/HOW-TO-TRA.md) for:
 For the risk-scheme format, local installation, and an AI-ready workflow for translating a scoring
 policy into a validated scheme, see [docs/RISK-SCHEMES.md](docs/RISK-SCHEMES.md).
 
-For the clause-by-clause support mapping, treatment conventions, and known limits for EN 40000-1-2,
+For the clause-by-clause support mapping, treatment conventions, and known limits for EN 40000-1-2
+and the draft EN IEC 62443-4-1:2018/prAA:2026 (Practice 2, SRM-1 to SRM-6),
 see [docs/EN-40000-1-2-MAPPING.md](docs/EN-40000-1-2-MAPPING.md).
 
 ## AI-assisted TRA workflow

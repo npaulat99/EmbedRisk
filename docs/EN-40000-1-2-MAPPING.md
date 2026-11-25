@@ -1,8 +1,12 @@
-# EmbedRisk Mapping to EN 40000-1-2
+# EmbedRisk Mapping to EN 40000-1-2 and EN IEC 62443-4-1:2018/prAA:2026
 
-EmbedRisk supports the risk-management workflow described in clause 6 of EN 40000-1-2; this mapping explains where the tool records and communicates the work. It is not a claim of compliance or certification, and the tool does not assess whether a project's content is adequate for its product or deployment.
+EmbedRisk supports the risk-management workflow described in clause 6 of EN 40000-1-2 and in Practice 2 (Security risk management, SRM-1 to SRM-6) of the draft EN IEC 62443-4-1:2018/prAA:2026. Both documents describe the same process: establish the product context, define the assessment method and criteria, build a threat model, rate the risks, and treat them. The methodology is therefore aligned to both, and this mapping explains where the tool records and communicates the work. It is not a claim of compliance or certification, and the tool does not assess whether a project's content is adequate for its product or deployment.
+
+The prAA is a draft amendment, not published text. This mapping uses the draft excerpt of Practice 2 (6.1 to 6.7) supplied to the project. That excerpt contains SRM-1 to SRM-6 only; the draft's references to Annex B, SM-9, SM-16, SR-1/SR-2, SG-1 to SG-3, and Practice 7 (DM-3, DM-4) were not reviewed here.
 
 ## Diagrams
+
+The diagrams follow the clause structure of EN 40000-1-2. The correspondence to the prAA is in [Alignment with EN IEC 62443-4-1:2018/prAA:2026](#alignment-with-en-iec-62443-4-12018praa2026).
 
 - [Risk-management overview](img/en40000-1-2-risk-management-overview.svg)
 - [Risk-management process](img/en40000-1-2-risk-management.svg)
@@ -30,6 +34,87 @@ Coverage ratings describe tool support, not the adequacy of a particular assessm
 | 6.7 Review | Version history, change reasons, per-threat `reviewDate`, defects, and risk-scheme fingerprint checks | Organisational, supported by records |
 
 Project records and reports are structured by the tool. Judging whether the recorded functions, threats, ratings, controls, evidence, and disclosures are complete or technically adequate remains an assessor and organization responsibility. In particular, stakeholder-specific wording and the justified review frequency are outside the tool.
+
+## Alignment with EN IEC 62443-4-1:2018/prAA:2026
+
+### Correspondence of the two documents
+
+The prAA subclause numbers 6.2 to 6.7 do not match the EN 40000-1-2 clause numbers above; for example prAA 6.2 is the method and criteria, which is EN 6.3.
+
+| EN 40000-1-2 | EN IEC 62443-4-1:2018/prAA:2026 | EmbedRisk support |
+|---|---|---|
+| 6.2 Product context | SRM-2 Intended use (6.3); SRM-3 Product security context (6.4) | Tool plus convention |
+| 6.3 Risk criteria and methodology | SRM-1 Method and criteria (6.2) | Tool plus convention |
+| 6.4 Risk assessment (threat model, rating) | SRM-4 Threat model (6.5); SRM-5 Security risk rating (6.6) | Tool |
+| 6.5 Risk treatment | SRM-6 Security risk treatment (6.7) | Tool plus convention |
+| 6.6 Risk communication | Purpose f) in 6.1; no subclause in the supplied excerpt | Tool plus convention (see EN mapping above) |
+| 6.7 Review | Purpose g) and the yearly review in 6.1 (SM-16); no subclause in the supplied excerpt | Organisational, supported by records |
+
+Because the correspondence is one-to-one in substance, the existing EN mapping above applies to the prAA as well. The tables below add the prAA-specific requirements.
+
+### SRM-1 Security risk assessment method and criteria (6.2)
+
+| Requirement | Support in EmbedRisk |
+|---|---|
+| Method defining how the threat model is established and how risk is assessed per threat scenario | The TRA steps in [HOW-TO-TRA](HOW-TO-TRA.md) and the active risk scheme |
+| Likelihood, impact, and risk as a combination of both | Active scheme: likelihood and impact scales and a lookup or product-band classification |
+| Risk acceptance criteria (tolerable or not, prioritization) | Scheme acceptance levels and the project `acceptableLevel` |
+| General, reusable method, not specific to one product | Versioned schemes shared between projects; each project binds to a scheme by ID and fingerprint, so ratings stay comparable across products |
+| Qualitative or quantitative scales | Both are possible: qualitative matrix schemes, or the optional cost-based feasibility model |
+
+### SRM-2 Intended use (6.3)
+
+| Required documentation | Where recorded |
+|---|---|
+| a) Intended use | `intendedUse` in the project description |
+| b) Foreseeable conditions of use that are not explicitly intended | `foreseeableUse`; `scope.outOfScope` for excluded use |
+| c) Functions provided | `productContext.functions` |
+| d) Data stored and processed | Assets of step 03 (`type`, `storage`, CIA and safety objectives) and the step 04 flows |
+
+Intended users are recorded in `productContext.users`. The tool does not check that the entries are complete.
+
+### SRM-3 Product security context (6.4)
+
+| Requirement | Where recorded |
+|---|---|
+| Product security context categories of Annex B | Not reviewed (Annex B was not supplied). By convention, 6.4.2 names persons, physical access, and communication access: persons in `productContext.users` and the `environment` assumptions; physical and communication access in the interface `exposure` and `protocol` and the `environment` assumptions |
+| Supporting measures provided by the system or the environment | `environment` and `system` assumptions; for a threat, `deploymentConstraints`; countermeasures with deployment or shared responsibility |
+| List of essential functions and their constraints | `productContext.functions`; by convention, state in the description which functions are essential and what constrains them. There is no separate essential flag |
+
+### SRM-4 Threat model (6.5)
+
+| Characteristic | Where recorded |
+|---|---|
+| a) Flow of categorized information | Step 04 flows and the assets with their CIA and safety objectives. A flow is not linked to an asset category directly |
+| b) Trust boundaries | `trustBoundaries` and DFD boundary nodes; `crossesBoundary` on flows |
+| c) Processes; d) data stores | DFD `process` and `store` nodes; components of kind `store` |
+| e) Interfaces for physical and communication access | Interfaces with `exposure` (`physical`, `local`, `adjacent`, `remote`) |
+| f) Interacting supporting measures | Components of kind `external-entity` and the `environment` and `system` assumptions |
+| g) Internal and external protocols | Interface `protocol`; the per-pair STRIDE strengths and weaknesses |
+| h) Threat actors and attack vectors | Attacker profiles `ATK-SLC-n` (`attackerRef`) and the threat's `interfaceRef`. The four-level actor scale is the one given in the prAA (see README) |
+| i) Weaknesses and vulnerabilities, including third-party components | Threat `cause` and `classification`; attack-tree `vulnerability` nodes; component `provenance`, `supplier`, `version`, and `cpe`; SBOM settings |
+| j) Threat scenarios with attack actions, weaknesses, violated protection goals, and impact | Threats with STRIDE, `cause`, `compromisedObjectives`, and the impact rating; attack trees for the attack actions |
+
+Security-related issues from Practice 7 enter the model through step 09 defects with a `threatRef`; an open defect triggers a re-assessment warning for that threat. The tool does not define the criteria for deciding which issues are relevant to the threat model; record that rule as an `operational` assumption. It also does not check that every third-party component is covered by a threat.
+
+### SRM-5 Security risk rating (6.6)
+
+Likelihood, impact, and the resulting rating are determined for each threat by the active scheme, and the acceptance level classifies the result. The checker flags out-of-range ratings. Prioritization is supported through the scheme's risk levels and the acceptance classification; the tool has no separate priority field.
+
+### SRM-6 Security risk treatment (6.7)
+
+| Option | Support |
+|---|---|
+| a) Avoidance | Status `avoided` with `avoidanceRationale` |
+| b) Reduction through security controls | Status `mitigated`; requirements and countermeasures with residual ratings |
+| c) Sharing or transfer | Status `transferred` with `transferRationale` and a requirement for the communication to users |
+| d) Acceptance | Status `accepted` with `acceptedBy`, `acceptanceRationale`, and `reviewDate` |
+
+SRM-6 allows acceptance and transfer only when the residual risk is tolerable under the SRM-1 acceptance criteria. The checker warns when a residual exceeds the acceptable level and the threat is not accepted, and when an accepted threat above that level has no `acceptanceDeviation.circumstance`. It does not block an acceptance above the criteria, because EN 40000-1-2 allows a documented deviation. An organisation following the prAA should treat every threat that has an `acceptanceDeviation` as an open point, not as a valid acceptance.
+
+### Review (6.1)
+
+The prAA adds that the risk management processes are reviewed at least once a year for released products, and when new threats emerge even if the design does not change. The per-threat `reviewDate` and the version history record these reviews. The tool does not enforce the yearly interval, and does not link it to the project status `released`.
 
 ## 6.7 Review
 
@@ -91,3 +176,6 @@ These outputs support communication under 6.6. The organization remains responsi
 - Product context is structured, but RDPS details use the convention above and are not independently validated.
 - Aggregated-risk support is a modeling convention; no combined score is calculated.
 - The review frequency, its justification, and noticing review triggers (clause 6.7) are organisational; the tool only records and flags them as described above.
+- The tool does not enforce the yearly review of released products that the prAA requires.
+- The prAA text used here is a draft excerpt (SRM-1 to SRM-6). Annex B, the third-party component process (SM-9), and the requirements referenced from other practices are not covered by this mapping.
+- An acceptance above the acceptance criteria is recordable as a deviation (EN 40000-1-2) but is not permitted by prAA SRM-6; the checker warns and does not block.

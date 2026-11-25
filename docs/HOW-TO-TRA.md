@@ -149,18 +149,18 @@ Generate the report, review unresolved high risks, and document acceptance decis
 
 Output: auditable TRA baseline for release or milestone decisions.
 
-### EN 40000-1-2 clause map
+### EN 40000-1-2 and EN IEC 62443-4-1:2018/prAA:2026 clause map
 
-| EmbedRisk step or view | EN 40000-1-2 clause |
-|---|---|
-| Project description and product context | 6.2 |
-| Risk scheme, acceptance level, and `riskCriteria` | 6.3 |
-| System/assets and DFD | 6.2, 6.4.2 |
-| Threats, `cause`, `compromisedObjectives`, and attack trees | 6.4.3 |
-| Risk rating and residual evaluation | 6.4.4, 6.4.5 |
-| Requirements and countermeasures, including treatment status | 6.5 |
-| Report and traceability exports | 6.6 |
-| Version history, defects, review dates, and reassessment reason | 6.7 (supporting evidence; organization sets review frequency) |
+| EmbedRisk step or view | EN 40000-1-2 clause | EN IEC 62443-4-1:2018/prAA:2026 |
+|---|---|---|
+| Project description and product context | 6.2 | SRM-2, SRM-3 (6.3, 6.4) |
+| Risk scheme, acceptance level, and `riskCriteria` | 6.3 | SRM-1 (6.2) |
+| System/assets and DFD | 6.2, 6.4.2 | SRM-3, SRM-4 (6.4, 6.5) |
+| Threats, `cause`, `compromisedObjectives`, and attack trees | 6.4.3 | SRM-4 (6.5) |
+| Risk rating and residual evaluation | 6.4.4, 6.4.5 | SRM-5 (6.6) |
+| Requirements and countermeasures, including treatment status | 6.5 | SRM-6 (6.7) |
+| Report and traceability exports | 6.6 | Purpose f) in 6.1 |
+| Version history, defects, review dates, and reassessment reason | 6.7 (supporting evidence; organization sets review frequency) | Purpose g) and yearly review in 6.1 (supporting evidence) |
 
 ### RDPS convention
 
