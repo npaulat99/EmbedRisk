@@ -239,6 +239,12 @@
       }
       if (t.status === "accepted" && (!t.acceptedBy || !t.acceptanceRationale || !t.reviewDate))
         add("warning", `${t.id}: accepted residual risk requires a sign-off owner (acceptedBy), a rationale (acceptanceRationale) and a next-review date (reviewDate).`);
+      if (t.status === "avoided" && !hasText(t.avoidanceRationale))
+        add("warning", `${t.id}: an avoided risk requires avoidanceRationale describing the design or context change.`);
+      if (t.status === "avoided" && !reqList.some((requirement) => arr(requirement.derivedFromThreat).includes(t.id)) && !arr(t.assumptionRefs).length)
+        add("notice", `${t.id}: avoided risk is not linked to a requirement or assumption; the changed context should be re-assessed.`, `avoided-link:${t.id}`);
+      if (t.status === "transferred" && !hasText(t.transferRationale))
+        add("warning", `${t.id}: a transferred risk requires transferRationale (who receives the risk and how they are informed).`);
       if (arr(t.stride).some((s) => s === "S" || s === "T" || s === "I") && !t.classification)
         add("notice", `${t.id}: classification is unset for a spoofing/tampering/information-disclosure threat; classify whether this is a product vulnerability, protocol limitation, deployment risk, or shared responsibility.`, `threat-classification:${t.id}`);
       if (["protocol-limitation", "deployment-risk", "shared-responsibility"].includes(t.classification) && !hasText(t.deploymentConstraints) && t.status !== "accepted" && t.status !== "transferred")
@@ -252,7 +258,9 @@
       }
       const [rl, ri] = residual(t, cmList);
       const res = (rl || 0) * (ri || 0);
-      if (res > acceptableRisk && t.status !== "accepted")
+      if (t.status === "accepted" && res > acceptableRisk && !hasText(t.acceptanceDeviation?.circumstance))
+        add("warning", `${t.id}: acceptance above the acceptable level requires acceptanceDeviation.circumstance.`);
+      if (res > acceptableRisk && t.status !== "accepted" && t.status !== "avoided")
         add("warning", `${t.id || "threat"}: residual risk ${res} exceeds the acceptable risk (${acceptableRisk}) — reduce it or accept the residual.`, t.id ? `risk-over-acceptable:${t.id}` : undefined);
       if (project.rigorousMode) {
         if (!t.impactDimensions) add("warning", `${t.id}: rigorous mode requires the Bug Bar impact dimensions to be set.`);
@@ -306,7 +314,7 @@
     }
     const reqThreats = new Set(reqList.flatMap((r) => arr(r.derivedFromThreat)));
     for (const t of threatList) {
-      if ((t.likelihood || 0) * (t.impact || 0) >= 12 && !reqThreats.has(t.id) && t.status !== "accepted")
+      if ((t.likelihood || 0) * (t.impact || 0) >= 12 && !reqThreats.has(t.id) && t.status !== "accepted" && t.status !== "avoided")
         add("warning", `${t.id}: high/critical threat has no security requirement derived from it.`);
       if (t.status === "transferred" && !reqThreats.has(t.id))
         add("warning", `${t.id}: transferred risk requires a linked requirement documenting the risk transfer in the user guide.`);

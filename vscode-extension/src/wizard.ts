@@ -502,6 +502,7 @@ export async function openWizard(ctx: vscode.ExtensionContext, focusThreatId?: s
           'impactDimensions', 'likelihoodFactors', 'cvss',
           'likelihoodRationale', 'impactRationale',
           'acceptedBy', 'acceptanceRationale', 'reviewDate',
+          'avoidanceRationale', 'transferRationale', 'acceptanceDeviation',
           'assumptionRefs'].forEach(pick);
         return threatCostFields(out);
       });
@@ -911,7 +912,7 @@ function shell(cssUri: vscode.Uri, riskEngineUri: vscode.Uri, riskUri: vscode.Ur
 const vs=acquireVsCodeApi(), AS=window.EmbedRiskAttackerScale, R=window.RiskModel;
 if(!R)throw new Error('EmbedRisk risk model failed to load.');
 const STRIDE=[['S','Spoofing'],['T','Tampering'],['R','Repudiation'],['I','Info disclosure'],['D','Denial of service'],['E','Elevation']];
-const T_STATUS=[['open','Open'],['mitigated','Mitigated'],['accepted','Accepted'],['transferred','Transferred'],['unfeasible','Unfeasible']];
+const T_STATUS=[['open','Open'],['mitigated','Mitigated'],['accepted','Accepted'],['transferred','Transferred'],['unfeasible','Unfeasible'],['avoided','Avoided']];
 const SKILL_OPTS=AS.ACTOR_LEVELS.map(function(l){return [l.level,l.description];});
 const COST_ACCESS_OPTS=[[1,'Remote (unauth.)'],[2,'Remote (auth.)'],[3,'Adjacent / fieldbus'],[4,'Local (on site)'],[5,'Physical (open enclosure)']];
 const COST_FACTORS=[
@@ -951,7 +952,17 @@ function esc(s){return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'
 function uid(prefix,ids){var used={};(ids||[]).forEach(function(id){if(typeof id!=='string'||id.indexOf(prefix)!==0)return;var rest=id.slice(prefix.length);if(/^[0-9]+$/.test(rest))used[Number(rest)]=true;});var n=1;while(used[n])n++;return prefix+n;}
 var ASM_PREFIX={device:'AD-',system:'SYSA-',environment:'AE-',operational:'AO-'};
 function optTags(list,val){return list.map(function(o){var v=o&&o.length&&typeof o!=='string'?o[0]:o;var l=o&&o.length&&typeof o!=='string'?o[1]:o;return '<option value="'+esc(v)+'"'+(String(val)===String(v)?' selected':'')+'>'+esc(l)+'</option>';}).join('');}
-function statusLabel(s){var m={open:'Open',mitigated:'Mitigated',accepted:'Accepted',transferred:'Transferred',unfeasible:'Unfeasible'};return m[s||'open']||'Open';}
+function statusLabel(s){var m={open:'Open',mitigated:'Mitigated',accepted:'Accepted',transferred:'Transferred',unfeasible:'Unfeasible',avoided:'Avoided'};return m[s||'open']||'Open';}
+function aboveAcceptable(t){
+  if(schemeWarning)return false;
+  var engine=window.RiskEngine.createRiskEngine(riskScheme,project),axes=engine.residual(t,cms);
+  var level=engine.classify(axes[0],axes[1]);
+  if(!level||level.id==='none'||level.treatment==='auto-accept')return false;
+  var acceptableLevel=project.acceptableLevel||(typeof project.acceptableRisk!=='number'&&engine.scheme.acceptance?engine.scheme.acceptance.defaultLevel:null);
+  var acceptableRank=acceptableLevel&&engine.scheme.classification.levels.find(function(item){return item.id===acceptableLevel;});
+  var threshold=typeof project.acceptableRisk==='number'?project.acceptableRisk:12;
+  return level.rank>(acceptableRank?acceptableRank.rank:0) && (acceptableRank||level.score>threshold);
+}
 // ---- undo / redo history: snapshots of the editable project state (toolbar buttons + Ctrl+Z / Ctrl+Y) ----
 function snapshot(){return JSON.stringify({project:project,threats:threats,cms:cms,defects:defects,assumptions:assumptions,system:system,requirements:requirements});}
 function updUndoBtns(){var u=$('#undoBtn'),r=$('#redoBtn');if(u)u.disabled=!undoStack.length;if(r)r.disabled=!redoStack.length;}
@@ -1302,13 +1313,16 @@ function renderThreats(){
       '<div class="field"><label>Impact rationale</label><textarea class="inp" rows=2 data-i='+i+' data-k="impactRationale">'+esc(t.impactRationale||'')+'</textarea></div>'+
     '</div>'+
     '<div class="field" style="margin-top:6px"><label>Supporting assumptions</label><div class="chips">'+asms+'</div>'+asmNote+'</div>';
-    var acceptedFields=t.status==='accepted'?
-      '<div class="grid3" style="margin-top:8px;padding-top:8px;border-top:1px solid var(--border)">'+
-        '<div class="field"><label>Accepted by</label><input class="inp" data-i='+i+' data-k="acceptedBy" value="'+esc(t.acceptedBy||'')+'" placeholder="name / role"></div>'+
-        '<div class="field"><label>Acceptance rationale</label><input class="inp" data-i='+i+' data-k="acceptanceRationale" value="'+esc(t.acceptanceRationale||'')+'" placeholder="compensating controls..."></div>'+
-        '<div class="field"><label>Next review date</label><input class="inp" type="date" data-i='+i+' data-k="reviewDate" value="'+esc(t.reviewDate||'')+'"></div>'+
-      '</div>':
-      '';
+    var acceptedFields='';
+    if(t.status==='avoided')acceptedFields='<div class="field"><label for="avoidance-rationale-'+i+'">Avoidance rationale</label><textarea class="inp" id="avoidance-rationale-'+i+'" rows="2" maxlength="200" data-i='+i+' data-k="avoidanceRationale" aria-describedby="avoidance-rationale-hint-'+i+'">'+esc(t.avoidanceRationale||'')+'</textarea><span class="hint" id="avoidance-rationale-hint-'+i+'">Describe the design or context change that removes this risk.</span></div>';
+    if(t.status==='transferred')acceptedFields='<div class="field"><label for="transfer-rationale-'+i+'">Transfer rationale</label><textarea class="inp" id="transfer-rationale-'+i+'" rows="2" maxlength="200" data-i='+i+' data-k="transferRationale" aria-describedby="transfer-rationale-hint-'+i+'">'+esc(t.transferRationale||'')+'</textarea><span class="hint" id="transfer-rationale-hint-'+i+'">Who receives the risk, how they are informed, and why avoiding or reducing it was not chosen.</span></div>';
+    if(t.status==='accepted'){
+      acceptedFields='<div class="grid3" style="margin-top:8px;padding-top:8px;border-top:1px solid var(--border)">'+
+        '<div class="field"><label for="accepted-by-'+i+'">Accepted by</label><input class="inp" id="accepted-by-'+i+'" data-i='+i+' data-k="acceptedBy" value="'+esc(t.acceptedBy||'')+'" placeholder="name / role"></div>'+
+          '<div class="field"><label for="acceptance-rationale-'+i+'">Acceptance rationale</label><textarea class="inp" id="acceptance-rationale-'+i+'" rows="2" maxlength="200" data-i='+i+' data-k="acceptanceRationale" aria-describedby="acceptance-rationale-hint-'+i+'">'+esc(t.acceptanceRationale||'')+'</textarea><span class="hint" id="acceptance-rationale-hint-'+i+'">Why the residual risk is acceptable. Explain why avoiding or reducing it was not chosen.</span></div>'+
+        '<div class="field"><label for="review-date-'+i+'">Next review date</label><input class="inp" id="review-date-'+i+'" type="date" data-i='+i+' data-k="reviewDate" value="'+esc(t.reviewDate||'')+'"></div></div>';
+      if(aboveAcceptable(t))acceptedFields+='<div class="grid2" style="margin-top:8px"><div class="field"><label for="acceptance-deviation-circumstance-'+i+'">Acceptance deviation circumstance</label><textarea class="inp" id="acceptance-deviation-circumstance-'+i+'" rows="2" maxlength="200" data-i='+i+' data-deviation="circumstance" aria-describedby="acceptance-deviation-circumstance-hint-'+i+'">'+esc((t.acceptanceDeviation||{}).circumstance||'')+'</textarea><span class="hint" id="acceptance-deviation-circumstance-hint-'+i+'">Why the acceptance criteria are overridden.</span></div><div class="field"><label for="acceptance-deviation-communicated-'+i+'">Communicated to</label><input class="inp" id="acceptance-deviation-communicated-'+i+'" maxlength="200" data-i='+i+' data-deviation="communicatedTo" aria-describedby="acceptance-deviation-communicated-hint-'+i+'" value="'+esc((t.acceptanceDeviation||{}).communicatedTo||'')+'"><span class="hint" id="acceptance-deviation-communicated-hint-'+i+'">Who was told about the effect on residual risk.</span></div></div>';
+    }
     var mainRow='<tr id="threat-row-'+i+'" data-threat-row="'+esc(t.id)+'" tabindex="-1">'+
       '<td><input type="checkbox" data-export-kind="threat" data-export-id="'+esc(t.id)+'" checked aria-label="Export threat '+esc(t.id)+'"></td>'+
       '<td class="narrow"><input class="inp" data-i='+i+' data-k="id" value="'+esc(t.id)+'"></td>'+
@@ -1750,9 +1764,10 @@ document.addEventListener('input',function(e){
     status.value=threats[i].status||'open';badge.className='badge st-'+status.value;badge.textContent=statusLabel(status.value);
     updatePills();return;
   }
+  if(t.dataset.i!==undefined&&t.dataset.deviation){var deviationIndex=+t.dataset.i,deviationField=t.dataset.deviation,deviation=Object.assign({},threats[deviationIndex].acceptanceDeviation||{});deviation[deviationField]=t.value||undefined;threats[deviationIndex].acceptanceDeviation=deviation;return;}
   if(t.dataset.i!==undefined&&t.dataset.k){var i=+t.dataset.i,k=t.dataset.k;
     if(k==='likelihood'||k==='impact'){var axisDef=riskScheme&&riskScheme[k],min=k==='likelihood'?0:(axisDef?axisDef.levels[0].value:1),max=axisDef?axisDef.levels[axisDef.levels.length-1].value:5;threats[i][k]=Math.max(min,Math.min(max,+t.value||min));var el=document.getElementById('tp-'+i);if(el)el.innerHTML=riskCell(threats[i]);var warning=$('#cost-summary-'+i+' [data-cost-warning]');if(warning)warning.textContent=costWarning(threats[i],+warning.dataset.proposal);}
-    else if(k==='status'){threats[i].status=t.value;var cell=t.closest('td');var bd=cell&&cell.querySelector('.badge');if(bd){bd.className='badge st-'+t.value;bd.textContent=statusLabel(t.value);}}
+    else if(k==='status'){threats[i].status=t.value;var cell=t.closest('td');var bd=cell&&cell.querySelector('.badge');if(bd){bd.className='badge st-'+t.value;bd.textContent=statusLabel(t.value);}renderThreats();var statusControl=document.querySelector('[data-i="'+i+'"][data-k="status"]');if(statusControl)statusControl.focus();}
     else threats[i][k]=t.value;renderMatrices();return;}
   if(t.dataset.ci!==undefined&&t.dataset.k){
     if(t.dataset.k==='ticketUrls'&&t.dataset.ti!==undefined){

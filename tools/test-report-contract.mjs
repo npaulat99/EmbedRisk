@@ -8,7 +8,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const fixtureDir = join(root, "tools/fixtures/en40000-project");
-const expectedMarkers = ["EN40000 contract fixture", "Asset marker", "Threat marker", "Deployment marker", "Residual risks and expectations on users and integrators", "R-1"];
+const expectedMarkers = ["EN40000 contract fixture", "Asset marker", "Threat marker", "Deployment marker", "Residual risks and expectations on users and integrators", "Within acceptance criteria", "Avoided", "Avoidance rationale", "Accepted deviations from the acceptance criteria", "Contract exception marker", "R-1"];
 const failures = new Set();
 const reports = [];
 
@@ -135,6 +135,8 @@ try {
         check(matrixTextContrastIsComputed(report.html), `${report.name}: matrix text color is not selected by relative luminance`);
         check(report.html.includes("shared-responsibility") && report.html.includes("integrator-operator"),
             `${report.name}: classification/responsibility fields are missing from the report`);
+        check((report.html.match(/Within acceptance criteria \(scheme/g) || []).length === 2,
+            `${report.name}: only threats at or below the acceptable threshold should receive the EN-405 statement`);
         check(/Content-Security-Policy/i.test(report.html)
             && /default-src 'none'; img-src data:; style-src 'unsafe-inline'/.test(report.html),
             `${report.name}: report CSP is missing or incomplete`);

@@ -186,6 +186,23 @@ def classify(likelihood, impact):
     level = next((item for item in classification["levels"] if item["id"] == level_id), None)
     return {**level, "score": score} if level else None
 
+def within_acceptance(threat, likelihood, impact):
+    level = classify(likelihood, impact)
+    if not level:
+        return False
+    if level.get("treatment") == "auto-accept":
+        return True
+    if level.get("acceptanceBy") == "management":
+        return threat.get("status") == "accepted" and bool(str(threat.get("acceptedBy") or "").strip())
+    acceptable_level = project.get("acceptableLevel") or (scheme or {}).get("acceptance", {}).get("defaultLevel")
+    if acceptable_level:
+        threshold = next((item for item in (scheme or {}).get("classification", {}).get("levels", []) if item["id"] == acceptable_level), None)
+        return threshold is not None and level["rank"] <= threshold["rank"]
+    acceptable_risk = project.get("acceptableRisk", 12)
+    if not isinstance(acceptable_risk, (int, float)) or isinstance(acceptable_risk, bool):
+        acceptable_risk = 12
+    return level["score"] <= acceptable_risk
+
 def _esc(value):
     return html_lib.escape(str(value), quote=True)
 
@@ -312,6 +329,24 @@ def cell(l, i, v):
     return f"{l}x{i}=<b style='color:{b['color']}'>{v} {b['name']}</b>"
 
 rows = ""
+def within_acceptance(threat, likelihood, impact):
+    if scheme is None:
+        return False
+    level = classify(likelihood, impact)
+    if not level or level.get("id") == "none":
+        return False
+    if level.get("treatment") == "auto-accept":
+        return True
+    acceptable_level = project.get("acceptableLevel") or scheme.get("acceptance", {}).get("defaultLevel")
+    if acceptable_level:
+        threshold = next((item for item in scheme["classification"]["levels"] if item["id"] == acceptable_level), None)
+        return threshold is not None and level["rank"] <= threshold["rank"]
+    threshold = project.get("acceptableRisk", 12)
+    if not isinstance(threshold, (int, float)) or isinstance(threshold, bool):
+        threshold = 12
+    return level["score"] <= threshold
+
+rows = ""
 for t in threats:
     unf = t.get("status") == "unfeasible"; na = "<b>n/a (unfeasible)</b>"
     rl, ri = residual(t)
@@ -323,7 +358,12 @@ for t in threats:
         classification.append(f"<b>Deployment constraints:</b> {html_lib.escape(str(t['deploymentConstraints']), quote=True)}")
     initial = na if unf else risk_cell(t.get("likelihood"), t.get("impact"))
     remaining = na if unf else risk_cell(rl, ri)
-    rows += f"<tr><td>{html_lib.escape(str(t['id']), quote=True)}</td><td>{html_lib.escape(str(t['title']), quote=True)}</td><td>{html_lib.escape(''.join(t['stride']), quote=True)}</td><td>{'<br>'.join(classification)}</td><td>{initial}</td><td>{remaining}</td><td>{html_lib.escape(str(t['status']), quote=True)}</td></tr>"
+    level = classify(rl, ri)
+    acceptance_statement = ""
+    if scheme is not None and within_acceptance(t, rl, ri) and level:
+        acceptable = project.get("acceptableLevel") or scheme.get("acceptance", {}).get("defaultLevel") or project.get("acceptableRisk", 12)
+        acceptance_statement = f"<br><span>Within acceptance criteria (scheme {_esc(scheme['id'])} v{_esc(scheme['version'])}, level {_esc(level['label'])}, acceptable {_esc(acceptable)}).</span>"
+    rows += f"<tr><td>{html_lib.escape(str(t['id']), quote=True)}</td><td>{html_lib.escape(str(t['title']), quote=True)}</td><td>{html_lib.escape(''.join(t['stride']), quote=True)}</td><td>{'<br>'.join(classification)}</td><td>{initial}</td><td>{remaining}</td><td>{html_lib.escape(str(t['status']), quote=True)}{acceptance_statement}</td></tr>"
 
 assets = "".join(f"<li>{_esc(a['name'])} (C{_esc(a['objectives']['confidentiality'])}/I{_esc(a['objectives']['integrity'])}/A{_esc(a['objectives']['availability'])}/S{_esc(a['objectives']['safety'])})</li>" for a in sys_def["assets"])
 def cap_label(v):

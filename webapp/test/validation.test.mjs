@@ -31,6 +31,47 @@ function issueMessages(issues, severity) {
     return issues.filter((issue) => !severity || issue.severity === severity).map((issue) => issue.message);
 }
 
+function testAvoidedThreatRequiresRationaleAndChangedContextLink() {
+    const project = baseProject();
+    project.requirements.requirements = [];
+    project.threats.threats.push({ id: 'T-AVOID', title: 'Avoided', stride: ['D'], components: ['C-1'], assets: ['AS-1'], likelihood: 5, impact: 5, status: 'avoided' });
+    const issues = validate(project);
+    const rationaleWarning = 'T-AVOID: an avoided risk requires avoidanceRationale describing the design or context change.';
+    const contextNotice = 'T-AVOID: avoided risk is not linked to a requirement or assumption; the changed context should be re-assessed.';
+    assert.equal(issueMessages(issues, 'warning').filter((message) => message === rationaleWarning).length, 1);
+    assert.ok(issues.some((issue) => issue.severity === 'notice' && issue.key === 'avoided-link:T-AVOID' && issue.message === contextNotice));
+    assert.ok(!issueMessages(issues, 'warning').some((message) => message.includes('residual risk')));
+
+    project.threats.threats[0].avoidanceRationale = 'The interface was removed from the product.';
+    project.threats.threats[0].assumptionRefs = ['ATK-1'];
+    const resolved = validate(project);
+    assert.ok(!issueMessages(resolved, 'warning').includes(rationaleWarning));
+    assert.ok(!resolved.some((issue) => issue.key === 'avoided-link:T-AVOID'));
+}
+
+function testTransferredThreatRequiresTransferRationale() {
+    const project = baseProject();
+    project.threats.threats.push({ id: 'T-TRANSFER', title: 'Transferred', stride: ['D'], components: ['C-1'], assets: ['AS-1'], likelihood: 2, impact: 2, status: 'transferred' });
+    project.requirements.requirements.push({ id: 'R-TRANSFER', derivedFromThreat: ['T-TRANSFER'] });
+    const expected = 'T-TRANSFER: a transferred risk requires transferRationale (who receives the risk and how they are informed).';
+    assert.equal(issueMessages(validate(project), 'warning').filter((message) => message === expected).length, 1);
+    project.threats.threats[0].transferRationale = 'The plant operator owns this risk and is notified in the deployment guide.';
+    assert.ok(!issueMessages(validate(project), 'warning').includes(expected));
+}
+
+function testAcceptanceAboveThresholdRequiresDeviationCircumstance() {
+    const project = baseProject();
+    project.threats.threats.push({
+        id: 'T-ACCEPT', title: 'Above threshold', stride: ['D'], components: ['C-1'], assets: ['AS-1'],
+        likelihood: 5, impact: 5, status: 'accepted', acceptedBy: 'Risk owner', acceptanceRationale: 'Operational need', reviewDate: '2099-01-01',
+    });
+    project.requirements.requirements.push({ id: 'R-ACCEPT', derivedFromThreat: ['T-ACCEPT'] });
+    const expected = 'T-ACCEPT: acceptance above the acceptable level requires acceptanceDeviation.circumstance.';
+    assert.equal(issueMessages(validate(project), 'warning').filter((message) => message === expected).length, 1);
+    project.threats.threats[0].acceptanceDeviation = { circumstance: 'Contractual requirement', communicatedTo: 'Plant operator' };
+    assert.ok(!issueMessages(validate(project), 'warning').includes(expected));
+}
+
 function testAssetWithoutThreatRequiresRationale() {
     const project = baseProject();
     const expected = 'AS-1: no threat is linked to this asset. Add a threat or state why none applies (noThreatRationale).';
@@ -258,6 +299,10 @@ function testActorScaleValidation() {
     assert.deepEqual(validate(project).filter((i) => i.key.startsWith('legacy-actor-level:')).map((i) => i.key), ['legacy-actor-level:AT-1:N-2']);
 }
 
+testActorScaleValidation();
+testAvoidedThreatRequiresRationaleAndChangedContextLink();
+testTransferredThreatRequiresTransferRationale();
+testAcceptanceAboveThresholdRequiresDeviationCircumstance();
 testActorScaleValidation();
 testActorScaleValidation();
 testAssetWithoutThreatRequiresRationale();

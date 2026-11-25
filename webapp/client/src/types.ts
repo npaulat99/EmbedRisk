@@ -319,7 +319,10 @@ export interface Threat {
     countermeasures?: string[];
     residualLikelihood?: number | null;
     residualImpact?: number | null;
-    status?: 'open' | 'mitigated' | 'accepted' | 'transferred' | 'unfeasible';
+    status?: 'open' | 'mitigated' | 'accepted' | 'transferred' | 'unfeasible' | 'avoided';
+    avoidanceRationale?: string;
+    transferRationale?: string;
+    acceptanceDeviation?: { circumstance: string; communicatedTo?: string };
     ratedBy?: string; // inter-rater provenance: who rated this threat
     ratedAt?: string; // ISO timestamp of the last rating
     acceptedBy?: string; // residual-risk sign-off owner (required when status = accepted)

@@ -703,6 +703,19 @@ export async function buildReport(id) {
     const strideCov = buildStrideCoverage(system, threats);
     const strideTbSection = project.reportOptions?.includeStrideBoundaryAnalysis ? strideBoundaryTablesHtml(system, dfd) : '';
     const acceptedNotices = new Set(project.acceptedNotices || []);
+        const withinAcceptanceCriteria = (threat) => {
+            if (!reportRiskEngine) return false;
+            const [likelihood, impact] = residual(threat, cms);
+            const level = reportRiskEngine.classify(likelihood, impact);
+            if (level.id === 'none') return false;
+            if (level.treatment === 'auto-accept') return true;
+            const acceptableLevel = project.acceptableLevel || scheme.acceptance?.defaultLevel;
+            const acceptableRank = acceptableLevel ? scheme.classification.levels.find((item) => item.id === acceptableLevel)?.rank : null;
+            return Number.isInteger(acceptableRank)
+                ? level.rank <= acceptableRank
+                : level.score <= (Number.isFinite(project.acceptableRisk) ? project.acceptableRisk : 12);
+        };
+
     const openIssueList = issues.filter((i) => !(i.severity === 'notice' && acceptedNotices.has(i.key)));
     const acceptedIssueList = issues.filter((i) => i.severity === 'notice' && acceptedNotices.has(i.key));
     const kbv = await kbVersion().catch(() => null);
@@ -741,11 +754,17 @@ export async function buildReport(id) {
             ]
                 .filter(Boolean)
                 .join('');
+            const threat = threats.find((item) => item.id === r.threat);
+            const acceptanceSetting = project.acceptableLevel || scheme?.acceptance?.defaultLevel || (Number.isFinite(project.acceptableRisk) ? project.acceptableRisk : 12);
+            const acceptanceStatement = threat && withinAcceptanceCriteria(threat)
+                ? `<br><span class='mono'>Within acceptance criteria (scheme ${esc(scheme.id)} v${esc(scheme.version)}, level ${esc(r.residualBand)}, acceptable ${esc(acceptanceSetting)}).</span>`
+                : '';
             return (
                 `<tr id='threat-${esc(r.threat)}'><td>${esc(r.asset)}</td><td>${esc(r.cias)}</td><td><b>${esc(r.threat)}</b> ${esc(r.title)} <span class=mono>${esc(r.stride)}</span></td>` +
                 `<td${r.initialColor ? ` style='color:${esc(r.initialColor)}'` : ''}>${r.initial === null ? `L${esc(r.likelihood ?? '—')} / I${esc(r.impact ?? '—')} (${esc(r.initialBand)})` : lookupScheme ? esc(r.initialBand) : `${r.initial} ${esc(r.initialBand)}`}</td><td>${esc(r.requirement) || '—'}</td>` +
                 `<td>${esc(r.control) || '—'}</td><td${r.residualColor ? ` style='color:${esc(r.residualColor)}'` : ''}>${r.residual === null ? `L${esc(r.residualLikelihood ?? '—')} / I${esc(r.residualImpact ?? '—')} (${esc(r.residualBand)})` : lookupScheme ? esc(r.residualBand) : `${r.residual} ${esc(r.residualBand)}`}</td>` +
                 `<td>${r.evidence ? r.evidence.split(' ').map((u) => renderLink(u, 'link')).join(' ') : '—'}${support}</td><td>${esc(r.status)}${r.signoff ? `<br><span class=mono style='font-size:11px'>${esc(r.signoff)}</span>` : ''}${r.ratedBy ? `<br><span class=mono style='font-size:11px'>rated: ${esc(r.ratedBy)}</span>` : ''}</td>` +
+                `<td>${r.evidence ? r.evidence.split(' ').map((u) => renderLink(u, 'link')).join(' ') : '—'}${support}</td><td>${esc(r.status)}${r.signoff ? `<br><span class=mono style='font-size:11px'>${esc(r.signoff)}</span>` : ''}${r.ratedBy ? `<br><span class=mono style='font-size:11px'>rated: ${esc(r.ratedBy)}</span>` : ''}${acceptanceStatement}</td>` +
                 `<td>${esc(r.classification) || '—'}</td><td>${esc(r.responsibility) || '—'}</td><td>${esc(r.deploymentConstraints) || '—'}</td></tr>`
             );
         })

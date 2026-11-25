@@ -139,6 +139,16 @@ const residual = (t) => {
   return { l, i };
 };
 const riskOf = (threat) => riskEngine ? riskEngine.riskOf(threat, cms) : null;
+const withinAcceptanceCriteria = (threat, risk = riskOf(threat)) => {
+  if (!riskEngine || !risk || risk.residual <= 0) return false;
+  const level = riskEngine.classify(risk.residualLikelihood, risk.residualImpact);
+  if (level.treatment === 'auto-accept') return true;
+  const acceptableLevel = project.acceptableLevel || scheme.acceptance?.defaultLevel;
+  const acceptableRank = acceptableLevel ? scheme.classification.levels.find((item) => item.id === acceptableLevel)?.rank : null;
+  return Number.isInteger(acceptableRank)
+    ? level.rank <= acceptableRank
+    : level.score <= (Number.isFinite(project.acceptableRisk) ? project.acceptableRisk : 12);
+};
 const axisRisk = (risk, axes, stored) => {
   if (!risk) return `L${stored.likelihood ?? '—'} / I${stored.impact ?? '—'} (unavailable)`;
   if (risk.initial <= 0 && axes === 'initial') return 'n/a (unfeasible)';
@@ -207,7 +217,11 @@ const rows = threats.map((t) => {
   ].filter(Boolean).join('<br>');
   const initial = unfeasible ? UNFEASIBLE_CELL : risk ? axisRisk(risk, 'initial', t) : `L${esc(t.likelihood ?? '—')} / I${esc(t.impact ?? '—')} (unavailable)`;
   const residualCell = unfeasible ? UNFEASIBLE_CELL : risk ? axisRisk(risk, 'residual', t) : `L${esc(rr.l ?? '—')} / I${esc(rr.i ?? '—')} (unavailable)`;
-  return `<tr id="threat-${esc(t.id)}"><td>${esc(t.id)}</td><td>${esc(t.title)}</td><td>${esc((t.stride || []).join(""))}</td><td>${refs || '—'}</td><td>${rationale || '—'}</td><td>${classification}</td><td>${initial}</td><td>${residualCell}</td><td>${esc(t.status || '')}</td></tr>`;
+  const acceptanceSetting = project.acceptableLevel || scheme?.acceptance?.defaultLevel || (Number.isFinite(project.acceptableRisk) ? project.acceptableRisk : 12);
+  const acceptanceText = withinAcceptanceCriteria(t, risk)
+    ? `<br><span>Within acceptance criteria (scheme ${esc(scheme.id)} v${esc(scheme.version)}, level ${esc(risk.residualBand.label || risk.residualBand.name)}, acceptable ${esc(acceptanceSetting)}).</span>`
+    : '';
+  return `<tr id="threat-${esc(t.id)}"><td>${esc(t.id)}</td><td>${esc(t.title)}</td><td>${esc((t.stride || []).join(""))}</td><td>${refs || '—'}</td><td>${rationale || '—'}</td><td>${classification}</td><td>${initial}</td><td>${residualCell}</td><td>${esc(t.status || '')}${acceptanceText}</td></tr>`;
 }).join("");
 
 const ucRows = (useCases.diagrams || []).map((d) =>

@@ -58,7 +58,7 @@
     });
     var highNoReq = threats.filter(function (threat) {
       return !schemeWarning && RiskModel.isHighOrAbove(threat.likelihood, threat.impact, scheme)
-        && threat.status !== "accepted"
+        && threat.status !== "accepted" && threat.status !== "avoided"
         && !requirements.some(function (requirement) {
           return Array.isArray(requirement.derivedFromThreat) && requirement.derivedFromThreat.includes(threat.id);
         });

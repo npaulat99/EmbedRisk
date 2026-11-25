@@ -189,6 +189,7 @@ table.grid td .idcell { font-family: ui-monospace, monospace; font-size: 12px; }
 .badge.st-mitigated { color: #fff; background: var(--ok); border-color: var(--ok); }
 .badge.st-accepted { color: #3a2c00; background: var(--band-medium); border-color: var(--band-medium); }
 .badge.st-transferred { color: #fff; background: var(--accent); border-color: var(--accent); }
+.badge.st-avoided { color: var(--text-dim); background: var(--surface-2); border-color: var(--border-strong); }
 
 /* ---- wider number / status cells so 1-5 values and status stay readable ---- */
 table.grid td.num, table.grid th.num { width: 74px; }

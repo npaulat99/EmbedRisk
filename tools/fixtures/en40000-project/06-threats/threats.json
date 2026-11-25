@@ -41,6 +41,46 @@
             "likelihood": 1,
             "impact": 1,
             "status": "open"
+        },
+        {
+            "id": "T-3",
+            "title": "Avoided threat marker",
+            "components": [
+                "C-1"
+            ],
+            "assets": [
+                "A-1"
+            ],
+            "stride": [
+                "D"
+            ],
+            "likelihood": 5,
+            "impact": 5,
+            "status": "avoided",
+            "avoidanceRationale": "The remote interface was removed from the design."
+        },
+        {
+            "id": "T-4",
+            "title": "Accepted deviation marker",
+            "components": [
+                "C-1"
+            ],
+            "assets": [
+                "A-1"
+            ],
+            "stride": [
+                "D"
+            ],
+            "likelihood": 5,
+            "impact": 5,
+            "status": "accepted",
+            "acceptedBy": "Risk owner",
+            "acceptanceRationale": "Operational need",
+            "reviewDate": "2099-01-01",
+            "acceptanceDeviation": {
+                "circumstance": "Contract exception marker",
+                "communicatedTo": "Plant operator"
+            }
         }
     ]
 }

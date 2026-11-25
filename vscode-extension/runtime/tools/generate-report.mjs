@@ -165,6 +165,16 @@ const residual = (t) => {
   return { l, i };
 };
 const riskOf = (threat) => riskEngine ? riskEngine.riskOf(threat, cms) : null;
+const withinAcceptanceCriteria = (threat, risk = riskOf(threat)) => {
+  if (!riskEngine || !risk || risk.residual <= 0) return false;
+  const level = riskEngine.classify(risk.residualLikelihood, risk.residualImpact);
+  if (level.treatment === 'auto-accept') return true;
+  const acceptableLevel = project.acceptableLevel || scheme.acceptance?.defaultLevel;
+  const acceptableRank = acceptableLevel ? scheme.classification.levels.find((item) => item.id === acceptableLevel)?.rank : null;
+  return Number.isInteger(acceptableRank)
+    ? level.rank <= acceptableRank
+    : level.score <= (Number.isFinite(project.acceptableRisk) ? project.acceptableRisk : 12);
+};
 const riskCell = (risk, axes, threat, residualAxes) => {
   if (!risk) return `L${threat.likelihood ?? '—'} / I${threat.impact ?? '—'} (unavailable)`;
   if (axes === 'initial' && threat.status === 'unfeasible') return UNFEASIBLE_CELL;
@@ -272,11 +282,15 @@ const rows = threats.map((t) => {
     `<b>Responsibility:</b> ${esc(t.responsibility || '—')}`,
     t.deploymentConstraints ? `<b>Deployment constraints:</b> ${esc(t.deploymentConstraints)}` : '',
   ].filter(Boolean).join('<br>');
+  const acceptanceSetting = project.acceptableLevel || scheme?.acceptance?.defaultLevel || (Number.isFinite(project.acceptableRisk) ? project.acceptableRisk : 12);
+  const acceptanceText = withinAcceptanceCriteria(t, risk)
+    ? `<br><span>Within acceptance criteria (scheme ${esc(scheme.id)} v${esc(scheme.version)}, level ${esc(risk.residualBand.label || risk.residualBand.name)}, acceptable ${esc(acceptanceSetting)}).</span>`
+    : '';
   return `<tr id="threat-${esc(t.id)}"><td>${esc(t.id)}</td><td>${esc(t.title)}</td><td>${esc((t.stride || []).join(''))}</td>` +
     `<td>${refs || '—'}</td><td>${rationale || '—'}</td><td>${classification}</td>` +
     `<td>${riskCell(risk, 'initial', t, rr)}</td>` +
     `<td>${unfeasible ? UNFEASIBLE_CELL : riskCell(risk, 'residual', t, rr)}</td>` +
-    `<td>${esc(t.status || 'open')}${t.status === 'accepted' && t.acceptedBy ? ` · <i>${esc(t.acceptedBy)}</i>` : ''}</td></tr>`;
+    `<td>${esc(t.status || 'open')}${t.status === 'accepted' && t.acceptedBy ? ` · <i>${esc(t.acceptedBy)}</i>` : ''}${acceptanceText}</td></tr>`;
 }).join('');
 
 const cmRows = cms.map((c) => {

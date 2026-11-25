@@ -1474,9 +1474,9 @@ async function runValidationCoreTests() {
     server: { middlewareMode: true },
     appType: "custom",
   });
-  let validateClient;
+  let validateClient, openClientIssues;
   try {
-    ({ validate: validateClient } = await vite.ssrLoadModule("/src/lib/validate.ts"));
+    ({ validate: validateClient, openIssues: openClientIssues } = await vite.ssrLoadModule("/src/lib/validate.ts"));
   } finally {
     await vite.close();
   }
@@ -1514,6 +1514,52 @@ async function runValidationCoreTests() {
   assetWithoutThreat.threats.threats[0].assets = ["AS1", "AS2"];
   assert.equal(matchingAssetWarnings(validateExtension(assetWithoutThreat)).length, 0);
   assert.equal(matchingAssetWarnings(validateClient(assetWithoutThreat)).length, 0);
+  passed++;
+
+  const treatmentMessages = [
+    "T-TREAT: an avoided risk requires avoidanceRationale describing the design or context change.",
+    "T-TREAT: avoided risk is not linked to a requirement or assumption; the changed context should be re-assessed.",
+    "T-TREAT: a transferred risk requires transferRationale (who receives the risk and how they are informed).",
+    "T-TREAT: acceptance above the acceptable level requires acceptanceDeviation.circumstance.",
+  ];
+  const treatmentIssues = (validateFn, input) => validateFn(input)
+    .filter((issue) => treatmentMessages.includes(issue.message))
+    .map(({ severity, key, message }) => [severity, key, message])
+    .sort((left, right) => left[1].localeCompare(right[1]));
+  const treatmentBase = (threat) => ({
+    ...structuredClone(clean),
+    project: { acceptableRisk: 12 },
+    requirements: { requirements: [] },
+    threats: { threats: [{ id: "T-TREAT", title: "Treatment scenario", stride: ["D"], components: ["C1"], assets: ["AS1"], likelihood: 5, impact: 5, ...threat }] },
+  });
+  const treatmentCases = [
+    { status: "avoided" },
+    { status: "avoided", avoidanceRationale: "The attack surface was removed.", assumptionRefs: ["A-DEV-1"] },
+    { status: "transferred", transferRationale: undefined },
+    { status: "transferred", transferRationale: "The operator is notified." },
+    { status: "accepted", acceptedBy: "Owner", acceptanceRationale: "Business need", reviewDate: "2099-01-01" },
+    { status: "accepted", acceptedBy: "Owner", acceptanceRationale: "Business need", reviewDate: "2099-01-01", acceptanceDeviation: { circumstance: "Contract obligation" } },
+  ];
+  for (const threat of treatmentCases) {
+    const input = treatmentBase(threat);
+    const serverIssues = treatmentIssues(validate, input);
+    assert.deepStrictEqual(treatmentIssues(validateClient, input), serverIssues, "client treatment checks match the server");
+    assert.deepStrictEqual(treatmentIssues(validateExtension, input), serverIssues, "extension treatment checks match the server");
+  }
+  const avoidedWithoutLinks = treatmentBase({ status: "avoided" });
+  const avoidedIssues = treatmentIssues(validate, avoidedWithoutLinks);
+  assert.equal(avoidedIssues.filter(([, , message]) => message === treatmentMessages[0]).length, 1);
+  assert.equal(avoidedIssues.filter(([, key]) => key === "avoided-link:T-TREAT").length, 1);
+    const dismissedAvoidance = treatmentBase({ status: "avoided" });
+    dismissedAvoidance.project.acceptedNotices = ["avoided-link:T-TREAT"];
+    assert.ok(!validate(dismissedAvoidance).some((issue) => issue.key === "avoided-link:T-TREAT"));
+    assert.ok(!openClientIssues(validateClient(dismissedAvoidance), dismissedAvoidance.project.acceptedNotices).some((issue) => issue.key === "avoided-link:T-TREAT"));
+    assert.ok(!validateExtension(dismissedAvoidance).some((issue) => issue.key === "avoided-link:T-TREAT"));
+  assert.ok(!validate(avoidedWithoutLinks).some((issue) => issue.message.includes("residual risk 25 exceeds")));
+  const transferredWithoutReason = treatmentIssues(validate, treatmentBase({ status: "transferred" }));
+  assert.equal(transferredWithoutReason.filter(([, , message]) => message === treatmentMessages[2]).length, 1);
+  const acceptedWithoutDeviation = treatmentIssues(validate, treatmentBase({ status: "accepted", acceptedBy: "Owner", acceptanceRationale: "Business need", reviewDate: "2099-01-01" }));
+  assert.equal(acceptedWithoutDeviation.filter(([, , message]) => message === treatmentMessages[3]).length, 1);
   passed++;
 
   const bad = {
