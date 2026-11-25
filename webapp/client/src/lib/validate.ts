@@ -196,7 +196,7 @@ export function validate(data: ProjectData, scheme: RiskScheme | null = null, sc
                         : level.score <= acceptableRisk;
                     if (t.status === 'accepted' && !withinThreshold && !hasText(t.acceptanceDeviation?.circumstance))
                         add('warning', `${t.id}: acceptance above the acceptable level requires acceptanceDeviation.circumstance.`);
-                    if (level.acceptanceBy === 'management' && !acceptedWithOwner) {
+                    if (level.acceptanceBy === 'management' && t.status !== 'avoided' && !acceptedWithOwner) {
                         add('warning', `${t.id}: residual risk level '${level.label}' requires acceptance by management (status 'accepted' and acceptedBy).`, `risk-acceptance:${t.id}`);
                     } else if (level.acceptanceBy !== 'management' && !withinThreshold && t.status !== 'accepted' && t.status !== 'avoided') {
                         add('warning', `${t.id}: residual risk level '${level.label}' exceeds the acceptable level — reduce it or accept the residual.`, `risk-over-acceptable:${t.id}`);

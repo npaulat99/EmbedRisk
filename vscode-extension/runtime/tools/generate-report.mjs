@@ -154,6 +154,7 @@ try { reqs = read(project.steps["05-requirements"]).requirements || []; } catch 
 // residual risk. (webapp/server/src/risk.js computeRisk only zeroes residual risk for unfeasible threats.)
 const NONE_BAND = { name: 'None', min: 0, max: 0, color: '#6b7280' };
 const UNFEASIBLE_CELL = `<b style="color:${NONE_BAND.color}">n/a (unfeasible)</b>`;
+const AVOIDED_CELL = `<b style="color:${NONE_BAND.color}">n/a (avoided)</b>`;
 const residual = (t) => {
   if (t.status === 'unfeasible') return { l: 0, i: 0 };
   const links = cms.filter((c) => c.selected !== false).flatMap((c) => (c.addresses || []).filter((a) => a.threat === t.id));
@@ -180,9 +181,10 @@ const riskCell = (risk, axes, threat, residualAxes) => {
   if (axes === 'initial' && threat.status === 'unfeasible') return UNFEASIBLE_CELL;
   const band = risk[axes === 'initial' ? 'initialBand' : 'residualBand'];
   if (risk[axes] <= 0) return 'None';
+  const factors = axes === 'residual' && residualAxes ? residualAxes : { l: threat.likelihood, i: threat.impact };
   return scheme.classification.kind === 'lookup'
     ? esc(band.label || band.name)
-    : `${residualAxes ? `${residualAxes.l}×${residualAxes.i}=` : `${threat.likelihood}×${threat.impact}=`}<b style="color:${esc(band.color)}">${risk[axes]} ${esc(band.label || band.name)}</b>`;
+    : `${factors.l}×${factors.i}=<b style="color:${esc(band.color)}">${risk[axes]} ${esc(band.label || band.name)}</b>`;
 };
 const strideOrder = ['S', 'T', 'R', 'I', 'D', 'E'];
 const traceability = threats.map((t) => {
@@ -291,7 +293,7 @@ const rows = threats.map((t) => {
   return `<tr id="threat-${esc(t.id)}"><td>${esc(t.id)}</td><td>${esc(t.title)}</td><td>${esc((t.stride || []).join(''))}</td>` +
     `<td>${refs || '—'}</td><td>${rationale || '—'}</td><td>${classification}</td>` +
     `<td>${riskCell(risk, 'initial', t, rr)}</td>` +
-    `<td>${unfeasible ? UNFEASIBLE_CELL : riskCell(risk, 'residual', t, rr)}</td>` +
+    `<td>${unfeasible ? UNFEASIBLE_CELL : t.status === 'avoided' ? AVOIDED_CELL : riskCell(risk, 'residual', t, rr)}</td>` +
     `<td>${esc(t.status || 'open')}${t.status === 'accepted' && t.acceptedBy ? ` · <i>${esc(t.acceptedBy)}</i>` : ''}${acceptanceText}</td>` +
     `<td>${esc((t.compromisedObjectives || []).join('; ')) || '—'}</td><td>${esc(t.cause || '') || '—'}</td></tr>`;
 }).join('');
@@ -409,12 +411,20 @@ if (sbomMode !== 'in-tool') {
     : `<h2>Software bill of materials (SBOM)</h2><p>No components defined (add in step 03).</p>`;
 }
 
-const requirementIdsFor = (threatId) => reqs.filter((requirement) => (requirement.derivedFromThreat || []).includes(threatId)).map((requirement) => requirement.id);
-const disclosureItem = (threat, extra = '') => {
-  const requirementIds = requirementIdsFor(threat.id);
-  return `<li><b>${esc(threat.id)}</b> ${esc(threat.title)}${threat.responsibility ? ` · ${esc(threat.responsibility)}` : ''}${extra}${threat.deploymentConstraints ? `<br><b>Deployment constraints:</b> ${esc(threat.deploymentConstraints)}` : ''}<br><b>Requirements:</b> ${esc(requirementIds.join(', ') || '—')}</li>`;
+const disclosureRequirements = (threatId) => {
+  const items = reqs.filter((requirement) => (requirement.derivedFromThreat || []).includes(threatId))
+    .map((requirement) => `<li><b>${esc(requirement.id)}</b>${requirement.text ? ` — ${esc(requirement.text)}` : ''}</li>`);
+  return items.length ? `<ul>${items.join('')}</ul>` : '—';
 };
+const disclosureStakeholderControls = (threatId) => {
+  const items = cms.filter((cm) => cm.selected !== false && ['deployment', 'shared'].includes(cm.responsibility) && (cm.addresses || []).some((address) => address.threat === threatId))
+    .map((cm) => `<li><b>${esc(cm.id)}</b> — ${esc(cm.title)}</li>`);
+  return items.length ? `<br><b>Expected from integrators and operators:</b><ul>${items.join('')}</ul>` : '';
+};
+const disclosureItem = (threat, extra = '') =>
+  `<li><b>${esc(threat.id)}</b> ${esc(threat.title)}${threat.responsibility ? ` · ${esc(threat.responsibility)}` : ''}${extra}${threat.deploymentConstraints ? `<br><b>Deployment constraints:</b> ${esc(threat.deploymentConstraints)}` : ''}${disclosureStakeholderControls(threat.id)}<br><b>Requirements:</b> ${disclosureRequirements(threat.id)}</li>`;
 const byResponsibility = threats.filter((threat) => {
+  if (threat.status === 'avoided') return false;
   const risk = riskOf(threat);
   const aboveAcceptable = risk?.residual > 0 && (riskEngine
     ? !riskEngine.isAcceptable(threat, cms, project)

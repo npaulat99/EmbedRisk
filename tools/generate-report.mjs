@@ -128,6 +128,7 @@ try { useCases = read(project.steps["04b-use-cases"] || "04b-use-cases/use-cases
 // residual risk. (webapp/server/src/risk.js computeRisk only zeroes residual risk for unfeasible threats.)
 const NONE_BAND = { name: 'None', min: 0, max: 0, color: '#6b7280' };
 const UNFEASIBLE_CELL = `<b style="color:${NONE_BAND.color}">n/a (unfeasible)</b>`;
+const AVOIDED_CELL = `<b style="color:${NONE_BAND.color}">n/a (avoided)</b>`;
 const residual = (t) => {
   if (t.status === 'unfeasible') return { l: 0, i: 0 };
   const links = cms.filter((c) => c.selected !== false).flatMap((c) => (c.addresses || []).filter((a) => a.threat === t.id));
@@ -237,7 +238,7 @@ const rows = threats.map((t) => {
     t.deploymentConstraints ? `<b>Deployment constraints:</b> ${esc(t.deploymentConstraints)}` : '',
   ].filter(Boolean).join('<br>');
   const initial = unfeasible ? UNFEASIBLE_CELL : risk ? axisRisk(risk, 'initial', t) : `L${esc(t.likelihood ?? '—')} / I${esc(t.impact ?? '—')} (unavailable)`;
-  const residualCell = unfeasible ? UNFEASIBLE_CELL : risk ? axisRisk(risk, 'residual', t) : `L${esc(rr.l ?? '—')} / I${esc(rr.i ?? '—')} (unavailable)`;
+  const residualCell = unfeasible ? UNFEASIBLE_CELL : t.status === 'avoided' ? AVOIDED_CELL : risk ? axisRisk(risk, 'residual', t) : `L${esc(rr.l ?? '—')} / I${esc(rr.i ?? '—')} (unavailable)`;
   const acceptanceSetting = project.acceptableLevel || scheme?.acceptance?.defaultLevel || (Number.isFinite(project.acceptableRisk) ? project.acceptableRisk : 12);
   const acceptanceText = withinAcceptanceCriteria(t, risk)
     ? `<br><span>Within acceptance criteria (scheme ${esc(scheme.id)} v${esc(scheme.version)}, level ${esc(risk.residualBand.label || risk.residualBand.name)}, acceptable ${esc(acceptanceSetting)}).</span>`
@@ -261,12 +262,20 @@ const atkRows = (ass.attacker || []).map((a) => {
   return `<li id="${esc(assumptionAnchor(a.id))}"><b>${esc(a.id)}</b> · <b>${esc(a.name)}</b> ${esc(capLabel(a.capability))}, ${esc(a.access)}: ${esc(a.text || '')}${cited ? `<br><span style="font-size:11px;color:#555">cited by: ${cited}</span>` : ''}</li>`;
 }).join('');
 
-const requirementIdsFor = (threatId) => reqs.filter((requirement) => (requirement.derivedFromThreat || []).includes(threatId)).map((requirement) => requirement.id);
-const disclosureItem = (threat, extra = '') => {
-  const requirementIds = requirementIdsFor(threat.id);
-  return `<li><b>${esc(threat.id)}</b> ${esc(threat.title)}${threat.responsibility ? ` · ${esc(threat.responsibility)}` : ''}${extra}${threat.deploymentConstraints ? `<br><b>Deployment constraints:</b> ${esc(threat.deploymentConstraints)}` : ''}<br><b>Requirements:</b> ${esc(requirementIds.join(', ') || '—')}</li>`;
+const disclosureRequirements = (threatId) => {
+  const items = reqs.filter((requirement) => (requirement.derivedFromThreat || []).includes(threatId))
+    .map((requirement) => `<li><b>${esc(requirement.id)}</b>${requirement.text ? ` — ${esc(requirement.text)}` : ''}</li>`);
+  return items.length ? `<ul>${items.join('')}</ul>` : '—';
 };
+const disclosureStakeholderControls = (threatId) => {
+  const items = cms.filter((cm) => cm.selected !== false && ['deployment', 'shared'].includes(cm.responsibility) && (cm.addresses || []).some((address) => address.threat === threatId))
+    .map((cm) => `<li><b>${esc(cm.id)}</b> — ${esc(cm.title)}</li>`);
+  return items.length ? `<br><b>Expected from integrators and operators:</b><ul>${items.join('')}</ul>` : '';
+};
+const disclosureItem = (threat, extra = '') =>
+  `<li><b>${esc(threat.id)}</b> ${esc(threat.title)}${threat.responsibility ? ` · ${esc(threat.responsibility)}` : ''}${extra}${threat.deploymentConstraints ? `<br><b>Deployment constraints:</b> ${esc(threat.deploymentConstraints)}` : ''}${disclosureStakeholderControls(threat.id)}<br><b>Requirements:</b> ${disclosureRequirements(threat.id)}</li>`;
 const byResponsibility = threats.filter((threat) => {
+  if (threat.status === 'avoided') return false;
   const risk = riskOf(threat);
   const aboveAcceptable = risk?.residual > 0 && (riskEngine
     ? !riskEngine.isAcceptable(threat, cms, project)

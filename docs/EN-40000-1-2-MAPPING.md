@@ -27,15 +27,25 @@ Coverage ratings describe tool support, not the adequacy of a particular assessm
 | 6.4 Risk assessment | Assets and objectives; STRIDE threats; optional `compromisedObjectives` and `cause`; scheme-driven likelihood/impact; residual-risk traceability | Tool |
 | 6.5 Risk treatment | Mitigation, acceptance, transfer, avoidance, and feasibility statuses; rationale checks; countermeasure residual ratings | Tool plus convention |
 | 6.6 Risk communication | Report disclosure of residual risks, responsibilities, deployment constraints, avoidance rationales, and accepted deviations | Tool plus convention |
-| 6.7 Review | Version history, change reasons, per-threat `reviewDate`, defects, and risk-scheme fingerprint checks | Tool plus convention |
+| 6.7 Review | Version history, change reasons, per-threat `reviewDate`, defects, and risk-scheme fingerprint checks | Organisational, supported by records |
 
 Project records and reports are structured by the tool. Judging whether the recorded functions, threats, ratings, controls, evidence, and disclosures are complete or technically adequate remains an assessor and organization responsibility. In particular, stakeholder-specific wording and the justified review frequency are outside the tool.
 
 ## 6.7 Review
 
-EmbedRisk supports review with versioned baselines, assessors, summaries, and change reasons (`initial`, `functional changes`, `new vulnerabilities`, and `regular reassessment`). Threats can carry a next `reviewDate`; overdue dates and open defects linked to threats are surfaced by validation. A changed or unavailable risk-scheme fingerprint also prevents silent reclassification.
+Clause 6.7 requires the organisation to review its risk management at a justified frequency, and again when the product's exposure changes or cybersecurity issues arise (for example serious incidents, actively exploited vulnerabilities, or component obsolescence). The review must cover at least the relevant parts of clause 6, and its result must state the review frequency and the reason for it. Deciding the frequency and noticing the triggers are organisational tasks that the tool cannot perform.
 
-The justified reassessment frequency required by the organization is not calculated by EmbedRisk. The organization defines it. As a convention, record the frequency and its owner as an `operational` assumption so it travels with the project; this is not a dedicated project field. The source text available in this repository does not include the full requirements of clause 6.7, so this mapping describes only the support evidenced by the current tool and clause 6.1's review trigger.
+EmbedRisk provides the records that a review works from:
+
+| 6.7 element | Support in EmbedRisk |
+|---|---|
+| 6.7.2 Inputs: product context, acceptance criteria, assessed risks, treatment decisions, stakeholder information | All are stored in the project files and shown in the report (clauses 6.2 to 6.6 above) |
+| Review at the chosen frequency | Per-threat `reviewDate`; validation reports overdue dates as warnings. Version tags with the change reason `regular reassessment` record that a review took place |
+| Review after exposure changes | Version tags with the change reason `functional changes`; the risk-scheme fingerprint check prevents silent reclassification |
+| Review after cybersecurity issues | Open defects linked to a threat (step 09) cause a warning to re-assess that threat; version tags with the change reason `new vulnerabilities` |
+| 6.7.4 Output: frequency and its justification | Convention: record both and the owner as an `operational` assumption so they travel with the project. This is not a dedicated project field and is not checked |
+
+EmbedRisk does not monitor external sources such as threat intelligence or vulnerability feeds, and it does not calculate the review frequency.
 
 ## RDPS Convention
 
@@ -62,14 +72,14 @@ Model a composite scenario as one threat, or as an attack-tree goal linked to th
 | Mitigate | Link requirements and countermeasures; record residual likelihood and impact and re-evaluate against the active scheme. |
 | Accept | Record `acceptedBy`, `acceptanceRationale`, and `reviewDate`. If the residual exceeds the acceptance criteria, add `acceptanceDeviation.circumstance` and, where applicable, `communicatedTo`. |
 | Transfer | Record `transferRationale` (recipient and how they are informed) and link a requirement documenting the user-guide communication. The residual risk remains visible. |
-| Avoid | Set `status: "avoided"` only when a design or context change removes the risk; record that change in `avoidanceRationale`. A missing rationale warns, and a dismissible notice asks for a requirement or assumption that records the changed context. Ratings remain visible; the risk engine is unchanged. |
+| Avoid | Set `status: "avoided"` only when a design or context change removes the risk; record that change in `avoidanceRationale`. A missing rationale warns, and a dismissible notice asks for a requirement or assumption that records the changed context. Ratings stay stored and the risk engine is unchanged; the report shows the residual of an avoided threat as n/a, lists it only under Avoided, and the above-acceptable and management-acceptance warnings do not apply. |
 | Unfeasible | The feasibility model can derive this status when the required attacker capability exceeds the selected attacker profile. It is not a substitute for documenting the threat assessment. |
 
 The standard's treatment priority order is not enforced by the tool. The assessor should record and justify why a lower-priority option was selected when a higher-priority option was not suitable. `cause` and `compromisedObjectives` are optional for backward compatibility; one dismissible notice identifies threats with neither field, and does not invent their contents.
 
 ## Risk Communication
 
-The generated report includes a traceability matrix and a residual-risk disclosure section. The disclosure groups risks by responsibility, lists avoided risks and accepted deviations, and shows deployment constraints and linked requirement IDs. Within-criteria statements are derived from the active scheme and project acceptance level; they are not stored as a separate user decision. Evidence references are linked only when they pass the safe HTTP(S)/project-relative path policy; unsafe references remain escaped text with a visible “not linked” hint.
+The generated report includes a traceability matrix and a residual-risk disclosure section. The disclosure groups risks by responsibility, lists avoided risks and accepted deviations, and shows deployment constraints, the text of the linked requirements, and the countermeasures owned by integrators and operators (responsibility `deployment` or `shared`). Within-criteria statements are derived from the active scheme and project acceptance level; they are not stored as a separate user decision. Evidence references are linked only when they pass the safe HTTP(S)/project-relative path policy; unsafe references remain escaped text with a visible “not linked” hint.
 
 These outputs support communication under 6.6. The organization remains responsible for choosing recipients, tailoring wording and accessibility to stakeholders, and ensuring users and integrators understand the assumptions and measures that apply to them.
 
@@ -80,4 +90,4 @@ These outputs support communication under 6.6. The organization remains responsi
 - `compromisedObjectives` and `cause` remain optional; V-09 is a single dismissible notice, not a completeness gate.
 - Product context is structured, but RDPS details use the convention above and are not independently validated.
 - Aggregated-risk support is a modeling convention; no combined score is calculated.
-- The justified review frequency is organizational, and full clause 6.7 requirements are not present in the source text currently available in the repository.
+- The review frequency, its justification, and noticing review triggers (clause 6.7) are organisational; the tool only records and flags them as described above.

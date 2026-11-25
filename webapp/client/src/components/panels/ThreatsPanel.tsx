@@ -314,12 +314,12 @@ export default function ThreatsPanel() {
                 </Field>
                 {t.status === 'avoided' && (
                     <Field label="Avoidance rationale" hint="Describe the design or context change that removes this risk.">
-                        <textarea rows={2} maxLength={200} value={t.avoidanceRationale || ''} onChange={(e) => upd({ avoidanceRationale: e.target.value || undefined })} />
+                        <textarea rows={2} maxLength={2000} value={t.avoidanceRationale || ''} onChange={(e) => upd({ avoidanceRationale: e.target.value || undefined })} />
                     </Field>
                 )}
                 {t.status === 'transferred' && (
                     <Field label="Transfer rationale" hint="Who receives the risk, how they are informed, and why avoiding or reducing it was not chosen.">
-                        <textarea rows={2} maxLength={200} value={t.transferRationale || ''} onChange={(e) => upd({ transferRationale: e.target.value || undefined })} />
+                        <textarea rows={2} maxLength={2000} value={t.transferRationale || ''} onChange={(e) => upd({ transferRationale: e.target.value || undefined })} />
                     </Field>
                 )}
                 {t.status === 'accepted' && (
@@ -328,7 +328,7 @@ export default function ThreatsPanel() {
                             <input value={t.acceptedBy || ''} onChange={(e) => upd({ acceptedBy: e.target.value })} placeholder="name / role" />
                         </Field>
                         <Field label="Acceptance rationale" hint="Why the residual risk is acceptable. Explain why avoiding or reducing the risk was not chosen.">
-                            <textarea rows={2} maxLength={200} value={t.acceptanceRationale || ''} onChange={(e) => upd({ acceptanceRationale: e.target.value })} />
+                            <textarea rows={2} value={t.acceptanceRationale || ''} onChange={(e) => upd({ acceptanceRationale: e.target.value })} />
                         </Field>
                         <Field label="Next review date" hint="Next reassessment date.">
                             <input type="date" value={t.reviewDate || ''} onChange={(e) => upd({ reviewDate: e.target.value })} />
@@ -338,7 +338,7 @@ export default function ThreatsPanel() {
                 {t.status === 'accepted' && aboveAcceptable && (
                     <div className="grid2" style={{ marginTop: 8 }}>
                         <Field label="Acceptance deviation circumstance" hint="Why the acceptance criteria are overridden.">
-                            <textarea rows={2} maxLength={200} value={t.acceptanceDeviation?.circumstance || ''} onChange={(e) => updateAcceptanceDeviation('circumstance', e.target.value)} />
+                            <textarea rows={2} maxLength={2000} value={t.acceptanceDeviation?.circumstance || ''} onChange={(e) => updateAcceptanceDeviation('circumstance', e.target.value)} />
                         </Field>
                         <Field label="Communicated to" hint="Who was told about the effect on residual risk.">
                             <input maxLength={200} value={t.acceptanceDeviation?.communicatedTo || ''} onChange={(e) => updateAcceptanceDeviation('communicatedTo', e.target.value)} />

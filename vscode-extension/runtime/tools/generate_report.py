@@ -428,7 +428,7 @@ for t in threats:
     if t.get("deploymentConstraints"):
         classification.append(f"<b>Deployment constraints:</b> {html_lib.escape(str(t['deploymentConstraints']), quote=True)}")
     initial = na if unf else risk_cell(t.get("likelihood"), t.get("impact"))
-    remaining = na if unf else risk_cell(rl, ri)
+    remaining = na if unf else ("<b>n/a (avoided)</b>" if t.get("status") == "avoided" else risk_cell(rl, ri))
     level = classify(rl, ri)
     acceptance_statement = ""
     if scheme is not None and within_acceptance(t, rl, ri) and level:
@@ -448,17 +448,22 @@ atk = "".join(f"<li><b>{html_lib.escape(str(a.get('name','')), quote=True)}</b> 
 cmrows = "".join(f"<li><b>{_esc(c['id'])}</b> {_esc(c['title'])} → {_esc(', '.join(a['threat'] for a in c['addresses']))} ({_esc(c.get('status',''))})</li>" for c in cms)
 
 def disclosure_item(threat, extra=""):
-    requirement_ids = [item.get("id", "") for item in reqs if threat.get("id") in item.get("derivedFromThreat", [])]
+    requirement_items = [item for item in reqs if threat.get("id") in item.get("derivedFromThreat", [])]
+    requirements_html = "<ul>" + "".join(f"<li><b>{_esc(item.get('id'))}</b>{' — ' + _esc(item['text']) if item.get('text') else ''}</li>" for item in requirement_items) + "</ul>" if requirement_items else "—"
+    stakeholder_controls = [cm for cm in cms if cm.get("selected") is not False and cm.get("responsibility") in ("deployment", "shared") and any(a.get("threat") == threat.get("id") for a in cm.get("addresses", []))]
+    controls_html = "<br><b>Expected from integrators and operators:</b><ul>" + "".join(f"<li><b>{_esc(cm.get('id'))}</b> — {_esc(cm.get('title'))}</li>" for cm in stakeholder_controls) + "</ul>" if stakeholder_controls else ""
     responsibility = f" · {_esc(threat.get('responsibility'))}" if threat.get("responsibility") else ""
     constraints = f"<br><b>Deployment constraints:</b> {_esc(threat.get('deploymentConstraints'))}" if threat.get("deploymentConstraints") else ""
-    return (f"<li><b>{_esc(threat.get('id'))}</b> {_esc(threat.get('title'))}{responsibility}{extra}{constraints}"
-            f"<br><b>Requirements:</b> {_esc(', '.join(requirement_ids) or '—')}</li>")
+    return (f"<li><b>{_esc(threat.get('id'))}</b> {_esc(threat.get('title'))}{responsibility}{extra}{constraints}{controls_html}"
+            f"<br><b>Requirements:</b> {requirements_html}</li>")
 
 acceptable_risk = project.get("acceptableRisk", 12)
 if not isinstance(acceptable_risk, (int, float)) or isinstance(acceptable_risk, bool):
     acceptable_risk = 12
 by_responsibility = []
 for threat in threats:
+    if threat.get("status") == "avoided":
+        continue
     residual_likelihood, residual_impact = residual(threat)
     residual_score = residual_likelihood * residual_impact
     level = classify(residual_likelihood, residual_impact)

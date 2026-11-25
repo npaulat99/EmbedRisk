@@ -4,6 +4,7 @@
             "id": "CM-1",
             "title": "Countermeasure marker",
             "type": "technical",
+            "responsibility": "deployment",
             "status": "implemented",
             "addresses": [
                 {

@@ -104,18 +104,18 @@
           },
           "avoidanceRationale": {
             "type": "string",
-            "maxLength": 200
+            "maxLength": 2000
           },
           "transferRationale": {
             "type": "string",
-            "maxLength": 200
+            "maxLength": 2000
           },
           "acceptanceDeviation": {
             "type": "object",
             "properties": {
               "circumstance": {
                 "type": "string",
-                "maxLength": 200
+                "maxLength": 2000
               },
               "communicatedTo": {
                 "type": "string",

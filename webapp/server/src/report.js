@@ -800,8 +800,7 @@ export async function buildReport(id) {
             return (
                 `<tr id='threat-${esc(r.threat)}'><td>${esc(r.asset)}</td><td>${esc(r.cias)}</td><td><b>${esc(r.threat)}</b> ${esc(r.title)} <span class=mono>${esc(r.stride)}</span></td>` +
                 `<td${r.initialColor ? ` style='color:${esc(r.initialColor)}'` : ''}>${r.initial === null ? `L${esc(r.likelihood ?? '—')} / I${esc(r.impact ?? '—')} (${esc(r.initialBand)})` : lookupScheme ? esc(r.initialBand) : `${r.initial} ${esc(r.initialBand)}`}</td><td>${esc(r.requirement) || '—'}</td>` +
-                `<td>${esc(r.control) || '—'}</td><td${r.residualColor ? ` style='color:${esc(r.residualColor)}'` : ''}>${r.residual === null ? `L${esc(r.residualLikelihood ?? '—')} / I${esc(r.residualImpact ?? '—')} (${esc(r.residualBand)})` : lookupScheme ? esc(r.residualBand) : `${r.residual} ${esc(r.residualBand)}`}</td>` +
-                `<td>${r.evidence ? r.evidence.split(' ').map((u) => renderLink(u, 'link')).join(' ') : '—'}${support}</td><td>${esc(r.status)}${r.signoff ? `<br><span class=mono style='font-size:11px'>${esc(r.signoff)}</span>` : ''}${r.ratedBy ? `<br><span class=mono style='font-size:11px'>rated: ${esc(r.ratedBy)}</span>` : ''}</td>` +
+                `<td>${esc(r.control) || '—'}</td><td${r.residualColor ? ` style='color:${esc(r.residualColor)}'` : ''}>${r.status === 'avoided' ? 'n/a (avoided)' : r.residual === null ? `L${esc(r.residualLikelihood ?? '—')} / I${esc(r.residualImpact ?? '—')} (${esc(r.residualBand)})` : lookupScheme ? esc(r.residualBand) : `${r.residual} ${esc(r.residualBand)}`}</td>` +
                 `<td>${r.evidence ? r.evidence.split(' ').map((u) => renderLink(u, 'link')).join(' ') : '—'}${support}</td><td>${esc(r.status)}${r.signoff ? `<br><span class=mono style='font-size:11px'>${esc(r.signoff)}</span>` : ''}${r.ratedBy ? `<br><span class=mono style='font-size:11px'>rated: ${esc(r.ratedBy)}</span>` : ''}${acceptanceStatement}</td>` +
                 `<td>${esc(r.classification) || '—'}</td><td>${esc(r.responsibility) || '—'}</td><td>${esc(r.deploymentConstraints) || '—'}</td><td>${esc(r.compromisedObjectives.join('; ')) || '—'}</td><td>${esc(r.cause) || '—'}</td></tr>`
             );
@@ -904,12 +903,21 @@ export async function buildReport(id) {
                 ? `<h2>Software bill of materials (SBOM)</h2><p>${sbomFormat === 'spdx' ? 'SPDX 2.3' : 'CycloneDX'} — <code>${esc(sbomFile)}</code></p><table><caption>Software bill of materials</caption><thead><tr><th scope='col'>Component</th><th scope='col'>Version</th><th scope='col'>Supplier</th><th scope='col'>License</th><th scope='col'>CPE / purl</th><th scope='col'>Provenance</th></tr></thead><tbody>${sbomRows}</tbody></table>`
                 : '';
 
-    const requirementIdsFor = (threatId) => reqs.filter((requirement) => (requirement.derivedFromThreat || []).includes(threatId)).map((requirement) => requirement.id);
+    const disclosureRequirements = (threatId) => {
+        const items = reqs.filter((requirement) => (requirement.derivedFromThreat || []).includes(threatId))
+            .map((requirement) => `<li><b>${esc(requirement.id)}</b>${requirement.text ? ` — ${esc(requirement.text)}` : ''}</li>`);
+        return items.length ? `<ul>${items.join('')}</ul>` : '—';
+    };
+    const disclosureStakeholderControls = (threatId) => {
+        const items = cms.filter((cm) => cm.selected !== false && ['deployment', 'shared'].includes(cm.responsibility) && (cm.addresses || []).some((address) => address.threat === threatId))
+            .map((cm) => `<li><b>${esc(cm.id)}</b> — ${esc(cm.title)}</li>`);
+        return items.length ? `<br><b>Expected from integrators and operators:</b><ul>${items.join('')}</ul>` : '';
+    };
     const disclosureItem = (threat, extra = '') => {
-        const requirementIds = requirementIdsFor(threat.id);
-        return `<li><b>${esc(threat.id)}</b> ${esc(threat.title)}${threat.responsibility ? ` · ${esc(threat.responsibility)}` : ''}${extra}${threat.deploymentConstraints ? `<br><b>Deployment constraints:</b> ${esc(threat.deploymentConstraints)}` : ''}<br><b>Requirements:</b> ${esc(requirementIds.join(', ') || '—')}</li>`;
+        return `<li><b>${esc(threat.id)}</b> ${esc(threat.title)}${threat.responsibility ? ` · ${esc(threat.responsibility)}` : ''}${extra}${threat.deploymentConstraints ? `<br><b>Deployment constraints:</b> ${esc(threat.deploymentConstraints)}` : ''}${disclosureStakeholderControls(threat.id)}<br><b>Requirements:</b> ${disclosureRequirements(threat.id)}</li>`;
     };
     const byResponsibility = threats.filter((threat) => {
+        if (threat.status === 'avoided') return false;
         const risk = trace.find((row) => row.threat === threat.id);
         const aboveAcceptable = risk?.residual > 0 && (reportRiskEngine
             ? !reportRiskEngine.isAcceptable(threat, cms, project)

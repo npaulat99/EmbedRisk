@@ -131,6 +131,22 @@ try {
                 .map(([, cell]) => cell.replace(/<[^>]+>/g, "").trim());
             check(traceCells.slice(-5).join("|") === "shared-responsibility|integrator-operator|Deployment marker &lt;img src=x onerror=alert(1)&gt;|integrity; availability|Cause marker &lt;img src=x onerror=alert(1)&gt;",
                 `${report.name}: traceability matrix values do not match the appended column headers`);
+            const headerCount = (traceTable.match(/<th\b/gi) || []).length;
+            check(traceCells.length === headerCount,
+                `${report.name}: traceability row has ${traceCells.length} cells for ${headerCount} headers`);
+        }
+        const byResponsibilityList = report.html.match(/<h3>By responsibility<\/h3>([\s\S]*?)(?=<h[23]>|<\/main>)/i)?.[1] || "";
+        check(byResponsibilityList.length > 0 && !byResponsibilityList.includes("Avoided threat marker"),
+            `${report.name}: avoided threats must be listed under Avoided only, not By responsibility`);
+        check(byResponsibilityList.includes("Requirement marker")
+            && byResponsibilityList.includes("Expected from integrators and operators")
+            && byResponsibilityList.includes("Countermeasure marker"),
+            `${report.name}: disclosure must state requirement text and stakeholder-owned controls, not only IDs`);
+        check(report.html.includes("n/a (avoided)"),
+            `${report.name}: avoided threats must show no residual rating`);
+        if (report.name === "extension/generate-report.mjs") {
+            check(/2×3=<b[^>]*>6 /.test(report.html) && /1×2=<b[^>]*>2 /.test(report.html),
+                `${report.name}: initial and residual cells must show their own likelihood and impact`);
         }
         check(matrixTextContrastIsComputed(report.html), `${report.name}: matrix text color is not selected by relative luminance`);
         check(report.html.includes("shared-responsibility") && report.html.includes("integrator-operator"),

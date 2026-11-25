@@ -1,5 +1,7 @@
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { validate } from '../server/src/validate.js';
+import { builtinRiskSchemePaths } from '../server/src/paths.js';
 
 function baseProject() {
     return {
@@ -47,6 +49,18 @@ function testAvoidedThreatRequiresRationaleAndChangedContextLink() {
     const resolved = validate(project);
     assert.ok(!issueMessages(resolved, 'warning').includes(rationaleWarning));
     assert.ok(!resolved.some((issue) => issue.key === 'avoided-link:T-AVOID'));
+}
+
+function testAvoidedThreatSkipsManagementAcceptance() {
+    const riskScheme = JSON.parse(readFileSync(builtinRiskSchemePaths['builtin:5x5-exposure'], 'utf8'));
+    riskScheme.classification.levels.find((level) => level.id === 'critical').acceptanceBy = 'management';
+    const project = baseProject();
+    project.riskScheme = riskScheme;
+    project.threats.threats.push({ id: 'T-AVOID', title: 'Avoided', stride: ['D'], components: ['C-1'], assets: ['AS-1'], likelihood: 5, impact: 5, status: 'avoided', avoidanceRationale: 'The interface was removed.' });
+    const warnings = issueMessages(validate(project), 'warning');
+    assert.ok(!warnings.some((message) => message.includes('requires acceptance by management')));
+    project.threats.threats[0].status = 'mitigated';
+    assert.ok(issueMessages(validate(project), 'warning').some((message) => message.includes('requires acceptance by management')));
 }
 
 function testTransferredThreatRequiresTransferRationale() {
@@ -390,6 +404,7 @@ function testActorScaleValidation() {
 
 testActorScaleValidation();
 testAvoidedThreatRequiresRationaleAndChangedContextLink();
+testAvoidedThreatSkipsManagementAcceptance();
 testTransferredThreatRequiresTransferRationale();
 testAcceptanceAboveThresholdRequiresDeviationCircumstance();
 testThreatStructureNoticeIsAggregatedAndDismissible();
