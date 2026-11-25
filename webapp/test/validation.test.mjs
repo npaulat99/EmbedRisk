@@ -107,6 +107,73 @@ function testThreatStructureNoticeIsAggregatedAndDismissible() {
     assert.ok(!validate(project).some((issue) => issue.key === 'threat-structure-empty'));
 }
 
+function testEvidenceReferencesMustBeSafeUrlsOrProjectPaths() {
+    const project = baseProject();
+    const evidenceIssues = () => validate(project).filter((issue) => issue.message.startsWith('Evidence reference '));
+    project.project.productContext = {
+        evidence: [
+            { title: 'External evidence', ref: 'https://example.invalid/evidence' },
+            { title: 'Project evidence', ref: 'docs/evidence.pdf' },
+        ]
+    };
+    assert.deepEqual(evidenceIssues(), []);
+
+    for (const ref of [
+        'ftp://example.invalid/evidence',
+        'javascript:alert(1)',
+        'data:text/plain,unsafe',
+        '../outside.pdf',
+        '..\\outside.pdf',
+        'C:\\outside.pdf',
+        '//host/outside.pdf',
+        '/absolute.pdf',
+        '%2e%2e%2foutside.pdf',
+    ]) {
+        project.project.productContext.evidence = [{ title: 'Invalid evidence', ref }];
+        const message = "Evidence reference 1: only http(s) URLs and project-relative paths without '..' are allowed.";
+        assert.deepEqual(evidenceIssues(), [{ severity: 'error', message, key: message }], `expected V-06 for ${ref}`);
+    }
+}
+
+function testProductContextAndRiskCriteriaNotices() {
+    const project = baseProject();
+    const noticeKeys = () => validate(project).filter((issue) => ['product-context-empty', 'risk-criteria-empty'].includes(issue.key));
+    project.project.status = 'draft';
+    assert.deepEqual(noticeKeys(), []);
+
+    project.project.status = 'review';
+    assert.deepEqual(noticeKeys().map(({ key, message, severity }) => ({ severity, message, key })), [
+        { severity: 'notice', message: 'Product context is incomplete: functions and users are not described (EN 40000-1-2, 6.2).', key: 'product-context-empty' },
+        { severity: 'notice', message: 'The choice of the risk scheme and acceptance criteria is not justified (EN 40000-1-2, 6.3.3).', key: 'risk-criteria-empty' },
+    ]);
+    project.project.status = 'released';
+    assert.equal(noticeKeys().length, 2);
+
+    project.project.productContext = { functions: [{ name: 'Measure level' }], users: { description: 'Plant operators.' } };
+    project.project.riskCriteria = { schemeJustification: 'Chosen for process-safety consequences.' };
+    assert.deepEqual(noticeKeys(), []);
+
+    project.project.productContext = {};
+    project.project.riskCriteria = {};
+    project.project.acceptedNotices = ['product-context-empty', 'risk-criteria-empty'];
+    assert.deepEqual(noticeKeys(), []);
+}
+
+function testProductContextListsWarnAboveFiftyItems() {
+    const project = baseProject();
+    project.project.productContext = {
+        functions: Array.from({ length: 51 }, (_, index) => ({ name: `Function ${index + 1}` })),
+        evidence: Array.from({ length: 51 }, (_, index) => ({ title: `Evidence ${index + 1}`, ref: 'docs/evidence.pdf' })),
+        users: { vulnerableGroups: Array.from({ length: 51 }, (_, index) => `Group ${index + 1}`) },
+    };
+    const limits = validate(project).filter((issue) => issue.key.startsWith('product-context-limit:'));
+    assert.deepEqual(limits.map(({ severity, key, message }) => ({ severity, message, key })), [
+        { severity: 'warning', message: 'Product context functions has 51 entries; the limit is 50.', key: 'product-context-limit:functions' },
+        { severity: 'warning', message: 'Product context evidence has 51 entries; the limit is 50.', key: 'product-context-limit:evidence' },
+        { severity: 'warning', message: 'Product context vulnerable groups has 51 entries; the limit is 50.', key: 'product-context-limit:vulnerable groups' },
+    ]);
+}
+
 function testClassificationNoticeAndTransferRequirementWarning() {
     const project = baseProject();
     project.threats.threats.push({
@@ -326,6 +393,9 @@ testAvoidedThreatRequiresRationaleAndChangedContextLink();
 testTransferredThreatRequiresTransferRationale();
 testAcceptanceAboveThresholdRequiresDeviationCircumstance();
 testThreatStructureNoticeIsAggregatedAndDismissible();
+testEvidenceReferencesMustBeSafeUrlsOrProjectPaths();
+testProductContextAndRiskCriteriaNotices();
+testProductContextListsWarnAboveFiftyItems();
 testActorScaleValidation();
 testActorScaleValidation();
 testAssetWithoutThreatRequiresRationale();

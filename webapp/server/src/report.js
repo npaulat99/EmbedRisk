@@ -684,6 +684,40 @@ export async function buildReport(id) {
     const sbomMode = project.sbom?.mode || 'in-tool';
     const sbomFormat = project.sbom?.format || 'cyclonedx';
     const sbomFile = sbomMode !== 'in-tool' ? project.sbom?.url || '(external, no URL)' : sbomFormat === 'spdx' ? 'report/sbom.spdx.json' : 'report/sbom.cdx.json';
+    const riskCriteriaHtml = (criteria) => {
+        if (!criteria) return '';
+        const inputs = [
+            ['Regulation', criteria.inputs?.regulation], ['Contracts', criteria.inputs?.contracts],
+            ['Nature of risk', criteria.inputs?.riskNature], ['Users', criteria.inputs?.users],
+            ['Product type', criteria.inputs?.productType], ['State of the art', criteria.inputs?.stateOfTheArt],
+        ].filter(([, value]) => value);
+        if (!criteria.schemeJustification && !criteria.schemeSource && !inputs.length) return '';
+        return `<h3>Scheme selection and criteria</h3>${criteria.schemeJustification ? `<p><b>Justification:</b> ${esc(criteria.schemeJustification)}</p>` : ''}${criteria.schemeSource ? `<p><b>Source:</b> ${esc(criteria.schemeSource)}</p>` : ''}${inputs.length ? `<ul>${inputs.map(([label, value]) => `<li><b>${esc(label)}:</b> ${esc(value)}</li>`).join('')}</ul>` : ''}`;
+    };
+    const productContext = project.productContext || {};
+    const productFunctions = productContext.functions || [];
+    const productUsers = productContext.users || {};
+    const productEvidence = productContext.evidence || [];
+    const environmentAssumptions = assumptions.environment || [];
+    const hasProductContext = productFunctions.length || productUsers.description || productUsers.vulnerableGroups?.length || productEvidence.length || environmentAssumptions.length;
+    const productContextSection = hasProductContext ? (() => {
+        const functionsHtml = productFunctions.length
+            ? `<ul>${productFunctions.map((item) => `<li><b>${esc(item.name)}</b>${item.description ? ` — ${esc(item.description)}` : ''}</li>`).join('')}</ul>`
+            : '<p>—</p>';
+        const environmentHtml = environmentAssumptions.length
+            ? `<ul>${environmentAssumptions.map((item) => `<li>${renderLink(`#${assumptionAnchor(item.id)}`, item.id)} — ${esc(item.text || '')}</li>`).join('')}</ul>`
+            : '<p>—</p>';
+        const usersHtml = [productUsers.description ? `<p>${esc(productUsers.description)}</p>` : '', productUsers.vulnerableGroups?.length ? `<ul>${productUsers.vulnerableGroups.map((group) => `<li>${esc(group)}</li>`).join('')}</ul>` : ''].join('') || '<p>—</p>';
+        const evidenceHtml = productEvidence.length ? `<ul>${productEvidence.map((item) => {
+            const href = safeHref(item.ref);
+            const external = href && /^https?:\/\//i.test(href);
+            const reference = href
+                ? `<a href='${esc(href)}'${external ? " target='_blank'" : ''} rel='noopener noreferrer'>${esc(item.ref)}</a>`
+                : `${esc(item.ref)} <span>(not linked)</span>`;
+            return `<li><b>${esc(item.title)}</b>${item.clause ? ` · ${esc(item.clause)}` : ''}<br>${reference}</li>`;
+        }).join('')}</ul>` : '<p>—</p>';
+        return `<h2>Product context</h2><h3>Functions</h3>${functionsHtml}<h3>Operating environment</h3>${environmentHtml}<h3>Users</h3>${usersHtml}<h3>Evidence</h3>${evidenceHtml}`;
+    })() : '';
     const riskSchemeSection = reportRiskEngine
         ? (() => {
             const likelihoods = reportRiskEngine.likelihoodLevels();
@@ -701,9 +735,9 @@ export async function buildReport(id) {
                 `<span style='display:inline-flex;align-items:center;gap:4px;margin-right:10px'><i style='display:inline-block;width:10px;height:10px;background:${esc(level.color)}'></i>${esc(level.label)}</span>`
             ).join('');
             const headers = likelihoods.map((level) => `<th>${esc(level.code)}</th>`).join('');
-            return `<h2>Risk scheme</h2><p><b>${esc(scheme.title)}</b> · v${esc(scheme.version)} · fingerprint <code>${schemeResolution.fingerprint}</code></p><div>${legend}</div><table><caption>Active risk matrix</caption><thead><tr><th scope='col'>Impact / Likelihood</th>${headers.replace(/<th>/g, "<th scope='col'>")}</tr></thead><tbody>${matrixRows}</tbody></table>`;
+            return `<h2>Risk scheme</h2><p><b>${esc(scheme.title)}</b> · v${esc(scheme.version)} · fingerprint <code>${schemeResolution.fingerprint}</code></p><div>${legend}</div><table><caption>Active risk matrix</caption><thead><tr><th scope='col'>Impact / Likelihood</th>${headers.replace(/<th>/g, "<th scope='col'>")}</tr></thead><tbody>${matrixRows}</tbody></table>${riskCriteriaHtml(project.riskCriteria)}`;
         })()
-        : '';
+        : project.riskCriteria ? `<h2>Risk scheme</h2><div class='warn'>Risk classification unavailable: ${esc(schemeResolution.warning || 'the active scheme could not be resolved.')}</div>${riskCriteriaHtml(project.riskCriteria)}` : '';
     const strideCov = buildStrideCoverage(system, threats);
     const strideTbSection = project.reportOptions?.includeStrideBoundaryAnalysis ? strideBoundaryTablesHtml(system, dfd) : '';
     const acceptedNotices = new Set(project.acceptedNotices || []);
@@ -901,6 +935,7 @@ export async function buildReport(id) {
         `<p><b>Scope:</b> ${esc(project.scope?.boundary || '')}</p>` +
         (project.intendedUse ? `<p><b>Intended purpose:</b> ${esc(project.intendedUse)}</p>` : '') +
         (project.foreseeableUse?.length ? `<p><b>Reasonably foreseeable use:</b></p><ul>${project.foreseeableUse.map((m) => `<li>${esc(m)}</li>`).join('')}</ul>` : '') +
+        productContextSection +
         (schemeResolution.warning ? `<div class='warn' role='alert'>${esc(schemeResolution.warning)} Risk-axis values are shown without classification.</div>` : '') +
         `<h2>Traceability matrix</h2><div class='trace-note'>This matrix shows the full chain from protected asset to assessed threat, required security response, implemented countermeasure, residual risk and linked evidence. Machine-readable exports are written alongside the report as <code>report/traceability.csv</code>, <code>report/traceability.json</code> and <code>${esc(sbomFile)}</code>.</div>` +
         `<h2>Traceability matrix</h2><div class='trace-note'>This matrix shows the full chain from protected asset to assessed threat, required security response, implemented countermeasure, residual risk and linked evidence. Machine-readable exports are written alongside the report as <code>report/traceability.csv</code>, <code>report/traceability.json</code> and <code>${esc(sbomFile)}</code>.</div>` +

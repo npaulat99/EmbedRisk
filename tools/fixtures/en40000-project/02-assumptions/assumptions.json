@@ -1,7 +1,12 @@
 {
     "device": [],
     "system": [],
-    "environment": [],
+    "environment": [
+        {
+            "id": "AE-1",
+            "text": "Environment marker <img src=x onerror=alert(1)>"
+        }
+    ],
     "operational": [],
     "attacker": [
         {

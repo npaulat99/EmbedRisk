@@ -1565,12 +1565,14 @@ async function runValidationCoreTests() {
 
   const threatStructureInput = {
     ...structuredClone(clean),
-    threats: { threats: [
-      { id: "T-STRUCT-1", title: "Missing structure", stride: ["S"], components: ["C1"], likelihood: 2, impact: 2 },
-      { id: "T-STRUCT-2", title: "Also incomplete", stride: ["T"], components: ["C1"], likelihood: 2, impact: 2 },
-      { id: "T-STRUCT-3", title: "Cause present", stride: ["R"], components: ["C1"], likelihood: 2, impact: 2, cause: "Weak input validation." },
-      { id: "T-STRUCT-4", title: "Objectives present", stride: ["I"], components: ["C1"], likelihood: 2, impact: 2, compromisedObjectives: ["confidentiality"] },
-    ] },
+    threats: {
+      threats: [
+        { id: "T-STRUCT-1", title: "Missing structure", stride: ["S"], components: ["C1"], likelihood: 2, impact: 2 },
+        { id: "T-STRUCT-2", title: "Also incomplete", stride: ["T"], components: ["C1"], likelihood: 2, impact: 2 },
+        { id: "T-STRUCT-3", title: "Cause present", stride: ["R"], components: ["C1"], likelihood: 2, impact: 2, cause: "Weak input validation." },
+        { id: "T-STRUCT-4", title: "Objectives present", stride: ["I"], components: ["C1"], likelihood: 2, impact: 2, compromisedObjectives: ["confidentiality"] },
+      ]
+    },
   };
   const structureNotice = (validateFn, input) => validateFn(input).filter((issue) => issue.key === "threat-structure-empty");
   const expectedStructureNotice = [{
@@ -1592,6 +1594,64 @@ async function runValidationCoreTests() {
   assert.ok(!structureNotice(validate, resolvedStructure).length);
   assert.ok(!structureNotice(validateClient, resolvedStructure).length);
   assert.ok(!structureNotice(validateExtension, resolvedStructure).length);
+  passed++;
+
+  const productContextInput = {
+    ...structuredClone(clean),
+    project: { status: "review", acceptableRisk: 12, productContext: { evidence: [{ title: "Unsafe ref", ref: "javascript:alert(1)" }] } },
+  };
+  const productValidationIssues = (validateFn, input) => validateFn(input).filter((issue) =>
+    ["product-context-empty", "risk-criteria-empty"].includes(issue.key) || issue.message.startsWith("Evidence reference "));
+  const expectedProductIssues = [
+    { severity: "error", message: "Evidence reference 1: only http(s) URLs and project-relative paths without '..' are allowed.", key: "Evidence reference 1: only http(s) URLs and project-relative paths without '..' are allowed." },
+    { severity: "notice", message: "Product context is incomplete: functions and users are not described (EN 40000-1-2, 6.2).", key: "product-context-empty" },
+    { severity: "notice", message: "The choice of the risk scheme and acceptance criteria is not justified (EN 40000-1-2, 6.3.3).", key: "risk-criteria-empty" },
+  ];
+  assert.deepStrictEqual(productValidationIssues(validate, productContextInput), expectedProductIssues);
+  assert.deepStrictEqual(productValidationIssues(validateClient, productContextInput), expectedProductIssues);
+  assert.deepStrictEqual(productValidationIssues(validateExtension, productContextInput), expectedProductIssues);
+  const invalidEvidenceRefs = ["ftp://example.invalid/evidence", "javascript:alert(1)", "data:text/plain,unsafe", "../outside.pdf", "..\\outside.pdf", "C:\\outside.pdf", "//host/outside.pdf", "/absolute.pdf", "%2e%2e%2foutside.pdf"];
+  for (const ref of invalidEvidenceRefs) {
+    const input = { ...structuredClone(clean), project: { status: "draft", productContext: { evidence: [{ title: "Invalid", ref }] } } };
+    const expected = [{ severity: "error", message: "Evidence reference 1: only http(s) URLs and project-relative paths without '..' are allowed.", key: "Evidence reference 1: only http(s) URLs and project-relative paths without '..' are allowed." }];
+    assert.deepStrictEqual(productValidationIssues(validate, input), expected, `server validator must reject ${ref}`);
+    assert.deepStrictEqual(productValidationIssues(validateClient, input), expected, `client validator must reject ${ref}`);
+    assert.deepStrictEqual(productValidationIssues(validateExtension, input), expected, `extension validator must reject ${ref}`);
+  }
+  for (const ref of ["https://example.invalid/evidence", "http://example.invalid/evidence", "docs/evidence.pdf"]) {
+    const input = { ...structuredClone(clean), project: { status: "draft", productContext: { evidence: [{ title: "Valid", ref }] } } };
+    assert.deepStrictEqual(productValidationIssues(validate, input), []);
+    assert.deepStrictEqual(productValidationIssues(validateClient, input), []);
+    assert.deepStrictEqual(productValidationIssues(validateExtension, input), []);
+  }
+  const overLimitProductContext = {
+    ...structuredClone(clean),
+    project: { status: "draft", productContext: {
+      functions: Array.from({ length: 51 }, (_, index) => ({ name: `Function ${index + 1}` })),
+      evidence: Array.from({ length: 51 }, (_, index) => ({ title: `Evidence ${index + 1}`, ref: "docs/evidence.pdf" })),
+      users: { vulnerableGroups: Array.from({ length: 51 }, (_, index) => `Group ${index + 1}`) },
+    } },
+  };
+  const productLimitIssues = (validateFn) => validateFn(overLimitProductContext).filter((issue) => issue.key.startsWith("product-context-limit:"));
+  const expectedProductLimits = [
+    { severity: "warning", message: "Product context functions has 51 entries; the limit is 50.", key: "product-context-limit:functions" },
+    { severity: "warning", message: "Product context evidence has 51 entries; the limit is 50.", key: "product-context-limit:evidence" },
+    { severity: "warning", message: "Product context vulnerable groups has 51 entries; the limit is 50.", key: "product-context-limit:vulnerable groups" },
+  ];
+  assert.deepStrictEqual(productLimitIssues(validate), expectedProductLimits);
+  assert.deepStrictEqual(productLimitIssues(validateClient), expectedProductLimits);
+  assert.deepStrictEqual(productLimitIssues(validateExtension), expectedProductLimits);
+  const dismissedProductIssues = structuredClone(productContextInput);
+  dismissedProductIssues.project.acceptedNotices = ["product-context-empty", "risk-criteria-empty"];
+  assert.deepStrictEqual(productValidationIssues(validate, dismissedProductIssues), expectedProductIssues.slice(0, 1));
+  assert.deepStrictEqual(productValidationIssues(validateClient, dismissedProductIssues).filter((issue) => issue.severity !== "notice" || !dismissedProductIssues.project.acceptedNotices.includes(issue.key)), expectedProductIssues.slice(0, 1));
+  assert.deepStrictEqual(productValidationIssues(validateExtension, dismissedProductIssues), expectedProductIssues.slice(0, 1));
+  const completeProductContext = structuredClone(dismissedProductIssues);
+  completeProductContext.project.status = "draft";
+  completeProductContext.project.productContext.evidence[0].ref = "docs/evidence.pdf";
+  assert.deepStrictEqual(productValidationIssues(validate, completeProductContext), []);
+  assert.deepStrictEqual(productValidationIssues(validateClient, completeProductContext), []);
+  assert.deepStrictEqual(productValidationIssues(validateExtension, completeProductContext), []);
   passed++;
 
   const bad = {

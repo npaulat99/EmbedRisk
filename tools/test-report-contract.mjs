@@ -8,7 +8,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const fixtureDir = join(root, "tools/fixtures/en40000-project");
-const expectedMarkers = ["EN40000 contract fixture", "Asset marker", "Threat marker", "Deployment marker", "integrity; availability", "Cause marker &lt;img src=x onerror=alert(1)&gt;", "Residual risks and expectations on users and integrators", "Within acceptance criteria", "Avoided", "Avoidance rationale", "Accepted deviations from the acceptance criteria", "Contract exception marker", "R-1"];
+const expectedMarkers = ["EN40000 contract fixture", "Asset marker", "Threat marker", "Deployment marker", "integrity; availability", "Cause marker &lt;img src=x onerror=alert(1)&gt;", "Product context", "Functions", "Function marker &lt;img src=x onerror=alert(1)&gt;", "Operating environment", "Environment marker &lt;img src=x onerror=alert(1)&gt;", "Users marker &lt;img src=x onerror=alert(1)&gt;", "Vulnerable group marker", "Safety evidence marker", "Unsafe evidence marker", "not linked", "Scheme selection and criteria", "Justification marker &lt;img src=x onerror=alert(1)&gt;", "Regulation marker", "Residual risks and expectations on users and integrators", "Within acceptance criteria", "Avoided", "Avoidance rationale", "Accepted deviations from the acceptance criteria", "Contract exception marker", "R-1"];
 const failures = new Set();
 const reports = [];
 
@@ -162,6 +162,14 @@ try {
         "A safe HTTPS URL containing an apostrophe must remain linked and escaped");
     check(reports.some((report) => findLinks(report.html).includes("docs/evidence.pdf")),
         "A safe project-relative URL must remain linked");
+    check(reports.every((report) => findLinks(report.html).includes("https://example.invalid/safety-manual.pdf")),
+        "Safe external product-context evidence must remain linked in all reports");
+    check(reports.every((report) => !findLinks(report.html).includes("../unsafe-evidence.pdf") && report.html.includes("Unsafe evidence marker") && report.html.includes("not linked")),
+        "Unsafe product-context evidence must be shown as text with a not-linked hint");
+    check(reports.every((report) => report.html.includes("#assumption-AE-1")),
+        "Operating environment assumptions must link to their report anchors");
+    check(reports.every((report) => /id=["']assumption-AE-1["']/.test(report.html)),
+        "Operating environment assumption links must target a rendered assumption anchor");
     check(reports.some((report) => findLinks(report.html).includes("#assumption-AT-1")),
         "In-report anchor links must remain usable");
     for (const unsafePath of ["../outside.pdf", "..\\outside.pdf", "%2e%2e%2foutside.pdf", "/absolute.pdf", "//host/outside.pdf", "C:\\outside.pdf"]) {

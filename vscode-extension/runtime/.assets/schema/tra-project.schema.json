@@ -83,6 +83,115 @@
         }
       }
     },
+    "productContext": {
+      "type": "object",
+      "properties": {
+        "functions": {
+          "type": "array",
+          "maxItems": 50,
+          "items": {
+            "type": "object",
+            "required": [
+              "name"
+            ],
+            "properties": {
+              "name": {
+                "type": "string",
+                "maxLength": 200
+              },
+              "description": {
+                "type": "string",
+                "maxLength": 2000
+              }
+            }
+          }
+        },
+        "users": {
+          "type": "object",
+          "properties": {
+            "description": {
+              "type": "string",
+              "maxLength": 2000
+            },
+            "vulnerableGroups": {
+              "type": "array",
+              "maxItems": 50,
+              "items": {
+                "type": "string",
+                "maxLength": 200
+              }
+            }
+          }
+        },
+        "evidence": {
+          "type": "array",
+          "maxItems": 50,
+          "items": {
+            "type": "object",
+            "required": [
+              "title",
+              "ref"
+            ],
+            "properties": {
+              "title": {
+                "type": "string",
+                "maxLength": 200
+              },
+              "ref": {
+                "type": "string",
+                "maxLength": 2000
+              },
+              "clause": {
+                "type": "string",
+                "maxLength": 200
+              }
+            }
+          }
+        }
+      }
+    },
+    "riskCriteria": {
+      "type": "object",
+      "properties": {
+        "schemeJustification": {
+          "type": "string",
+          "maxLength": 2000
+        },
+        "schemeSource": {
+          "type": "string",
+          "maxLength": 200
+        },
+        "inputs": {
+          "type": "object",
+          "properties": {
+            "regulation": {
+              "type": "string",
+              "maxLength": 200
+            },
+            "contracts": {
+              "type": "string",
+              "maxLength": 200
+            },
+            "riskNature": {
+              "type": "string",
+              "maxLength": 200
+            },
+            "users": {
+              "type": "string",
+              "maxLength": 200
+            },
+            "productType": {
+              "type": "string",
+              "maxLength": 200
+            },
+            "stateOfTheArt": {
+              "type": "string",
+              "maxLength": 200
+            }
+          }
+        }
+      }
+    },
     "slTarget": {
       "type": "string",
       "description": "Target IEC 62443-4-2 Security Level (SL-C), e.g. SL2."

@@ -493,6 +493,28 @@ textarea {
     cursor: pointer;
 }
 
+.product-context-item,
+.risk-criteria-group {
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    padding: 10px 12px;
+    margin: 8px 0;
+    min-width: 0;
+}
+
+.product-context-item legend,
+.risk-criteria-group legend {
+    padding: 0 6px;
+    color: var(--text-dim);
+    font-weight: 600;
+}
+
+.product-context-list {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
 .objective-group {
     border: 0;
     padding: 0;
@@ -508,7 +530,9 @@ textarea {
     font-weight: 600;
 }
 
-.objective-hint { margin-bottom: 4px; }
+.objective-hint {
+    margin-bottom: 4px;
+}
 
 .objective-options {
     display: grid;

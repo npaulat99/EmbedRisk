@@ -51,6 +51,15 @@ const DEPTH_HELP: Record<string, string> = {
     whitebox:
         'Model the full internals, including firmware and debug access.',
 };
+const RISK_CRITERIA_INPUTS = [
+    ['regulation', 'Regulation'],
+    ['contracts', 'Contracts'],
+    ['riskNature', 'Nature of risk'],
+    ['users', 'Users'],
+    ['productType', 'Product type'],
+    ['stateOfTheArt', 'State of the art'],
+] as const;
+const MAX_PRODUCT_CONTEXT_ITEMS = 50;
 
 /** Add/remove list of short free-text items shown as removable chips (type + Enter to add). */
 function ScopeList({ items, onChange, placeholder }: { items: string[]; onChange: (v: string[]) => void; placeholder: string }) {
@@ -110,6 +119,12 @@ export default function ProjectPanel() {
     const setScope = (patch: any) => set({ scope: { ...(p.scope || {}), ...patch } });
     const setRepo = (patch: any) => set({ repo: { ...(p.repo || {}), ...patch } });
     const setSbom = (patch: any) => set({ sbom: { ...(p.sbom || {}), ...patch } });
+    const setProductContext = (patch: any) => set({ productContext: { ...(p.productContext || {}), ...patch } });
+    const setRiskCriteria = (patch: any) => set({ riskCriteria: { ...(p.riskCriteria || {}), ...patch } });
+    const setRiskCriteriaInput = (key: string, value: string) => setRiskCriteria({ inputs: { ...(p.riskCriteria?.inputs || {}), [key]: value || undefined } });
+    const productFunctions = p.productContext?.functions || [];
+    const productEvidence = p.productContext?.evidence || [];
+    const vulnerableGroups = p.productContext?.users?.vulnerableGroups || [];
     const setSlc = (level: number) => {
         const attacker = attackerForSlc(`SL-C ${level}`)!;
         save('project', { ...p, slTarget: `SL-C ${level}` });
@@ -492,6 +507,69 @@ export default function ProjectPanel() {
                         + Add scenario
                     </button>
                 </div>
+            </div>
+
+            <div className="card">
+                <h3>Product context</h3>
+                {productFunctions.map((item, index) => (
+                    <fieldset className="product-context-item" key={`function-${index}`}>
+                        <legend>Function {index + 1}</legend>
+                        <Field label="Name">
+                            <input maxLength={200} value={item.name || ''} onChange={(e) => setProductContext({ functions: productFunctions.map((current, i) => i === index ? { ...current, name: e.target.value } : current) })} />
+                        </Field>
+                        <Field label="Description">
+                            <textarea rows={2} maxLength={2000} value={item.description || ''} onChange={(e) => setProductContext({ functions: productFunctions.map((current, i) => i === index ? { ...current, description: e.target.value || undefined } : current) })} />
+                        </Field>
+                        <button type="button" className="btn sm danger" aria-label={`Remove product function ${index + 1}`} onClick={() => setProductContext({ functions: productFunctions.filter((_, i) => i !== index) })}>
+                            Remove function
+                        </button>
+                    </fieldset>
+                ))}
+                <button type="button" className="btn sm" disabled={productFunctions.length >= MAX_PRODUCT_CONTEXT_ITEMS} aria-label={`Add product function ${productFunctions.length + 1}`} onClick={() => setProductContext({ functions: [...productFunctions, { name: '' }] })}>
+                    Add function
+                </button>
+
+                <Field label="Users">
+                    <textarea rows={3} maxLength={2000} value={p.productContext?.users?.description || ''} onChange={(e) => setProductContext({ users: { ...(p.productContext?.users || {}), description: e.target.value || undefined } })} />
+                </Field>
+                <Field label="Vulnerable groups">
+                    <div className="product-context-list">
+                        {vulnerableGroups.map((group, index) => (
+                            <div className="inline" key={`group-${index}`}>
+                                <input className="inp grow" maxLength={200} aria-label={`Vulnerable group ${index + 1}`} value={group} onChange={(e) => setProductContext({ users: { ...(p.productContext?.users || {}), vulnerableGroups: vulnerableGroups.map((current, i) => i === index ? e.target.value : current) } })} />
+                                <button type="button" className="btn sm danger" aria-label={`Remove vulnerable group ${index + 1}`} onClick={() => setProductContext({ users: { ...(p.productContext?.users || {}), vulnerableGroups: vulnerableGroups.filter((_, i) => i !== index) } })}>
+                                    Remove
+                                </button>
+                            </div>
+                        ))}
+                    </div>
+                    <button type="button" className="btn sm" style={{ marginTop: 6 }} disabled={vulnerableGroups.length >= MAX_PRODUCT_CONTEXT_ITEMS} aria-label={`Add vulnerable group ${vulnerableGroups.length + 1}`} onClick={() => setProductContext({ users: { ...(p.productContext?.users || {}), vulnerableGroups: [...vulnerableGroups, ''] } })}>
+                        Add vulnerable group
+                    </button>
+                </Field>
+
+                {productEvidence.map((item, index) => (
+                    <fieldset className="product-context-item" key={`evidence-${index}`}>
+                        <legend>Evidence {index + 1}</legend>
+                        <div className="grid2">
+                            <Field label="Title">
+                                <input maxLength={200} value={item.title || ''} onChange={(e) => setProductContext({ evidence: productEvidence.map((current, i) => i === index ? { ...current, title: e.target.value } : current) })} />
+                            </Field>
+                            <Field label="Reference" hint="HTTP(S) URL or project-relative path.">
+                                <input maxLength={2000} value={item.ref || ''} onChange={(e) => setProductContext({ evidence: productEvidence.map((current, i) => i === index ? { ...current, ref: e.target.value } : current) })} />
+                            </Field>
+                        </div>
+                        <Field label="Clause">
+                            <input maxLength={200} value={item.clause || ''} onChange={(e) => setProductContext({ evidence: productEvidence.map((current, i) => i === index ? { ...current, clause: e.target.value || undefined } : current) })} />
+                        </Field>
+                        <button type="button" className="btn sm danger" aria-label={`Remove evidence ${index + 1}`} onClick={() => setProductContext({ evidence: productEvidence.filter((_, i) => i !== index) })}>
+                            Remove evidence
+                        </button>
+                    </fieldset>
+                ))}
+                <button type="button" className="btn sm" style={{ marginTop: 8 }} disabled={productEvidence.length >= MAX_PRODUCT_CONTEXT_ITEMS} aria-label={`Add evidence ${productEvidence.length + 1}`} onClick={() => setProductContext({ evidence: [...productEvidence, { title: '', ref: '' }] })}>
+                    Add evidence
+                </button>
             </div>
 
             <div className="card">

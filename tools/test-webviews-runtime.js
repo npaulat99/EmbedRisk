@@ -1283,6 +1283,54 @@ async function checkTreatmentRationalePersistence(h, mod) {
   h.close();
 }
 
+async function checkProductContextPersistence(h, mod) {
+  const projectPath = path.join(projectDir, "01-project-description/project.json");
+  const project = JSON.parse(h.readText(projectPath));
+  const functionName = "Overfill protection";
+  const functionDescription = "Stops filling when the high-level switch activates.";
+  const usersDescription = "Plant operators and commissioning engineers.";
+  const vulnerableGroup = "Workers with limited access to the HMI.";
+  const evidenceTitle = "Safety manual";
+  const evidenceRef = "docs/safety-manual.pdf";
+  const schemeJustification = "The scheme emphasizes availability and safety consequences.";
+  h.overlay.set(projectPath, JSON.stringify(project));
+  h.close(); await mod.openWizard(ctx); h.openDom(); await h.settle();
+
+  h.click('[data-act="addProductFunction"]');
+  h.setValue('[data-product-function-index="0"][data-product-function-field="name"]', functionName);
+  h.setValue('[data-product-function-index="0"][data-product-function-field="description"]', functionDescription);
+  h.setValue('[data-product-users-description]', usersDescription);
+  h.click('[data-act="addVulnerableGroup"]');
+  h.setValue('[data-product-user-group-index="0"]', vulnerableGroup);
+  h.click('[data-act="addProductEvidence"]');
+  h.setValue('[data-product-evidence-index="0"][data-product-evidence-field="title"]', evidenceTitle);
+  h.setValue('[data-product-evidence-index="0"][data-product-evidence-field="ref"]', evidenceRef);
+  h.setValue('[data-product-evidence-index="0"][data-product-evidence-field="clause"]', "6.2.1");
+  h.click('.risk-criteria-group summary');
+  h.setValue('[data-risk-criteria="schemeJustification"]', schemeJustification);
+  h.setValue('[data-risk-criteria="schemeSource"]', "IEC 61508 hazard review");
+  h.setValue('[data-risk-criteria-input="regulation"]', "CRA");
+
+  await h.settle(1700);
+  const saved = JSON.parse(h.readText(projectPath));
+  assert.deepStrictEqual(saved.productContext.functions, [{ name: functionName, description: functionDescription }]);
+  assert.deepStrictEqual(saved.productContext.users, { description: usersDescription, vulnerableGroups: [vulnerableGroup] });
+  assert.deepStrictEqual(saved.productContext.evidence, [{ title: evidenceTitle, ref: evidenceRef, clause: "6.2.1" }]);
+  assert.strictEqual(saved.riskCriteria.schemeJustification, schemeJustification);
+  assert.strictEqual(saved.riskCriteria.schemeSource, "IEC 61508 hazard review");
+  assert.strictEqual(saved.riskCriteria.inputs.regulation, "CRA");
+
+  h.close(); await mod.openWizard(ctx); h.openDom(); await h.settle();
+  h.click('.risk-criteria-group summary');
+  assert.strictEqual(h.must('[data-product-function-index="0"][data-product-function-field="name"]').value, functionName);
+  assert.strictEqual(h.must('[data-product-users-description]').value, usersDescription);
+  assert.strictEqual(h.must('[data-product-user-group-index="0"]').value, vulnerableGroup);
+  assert.strictEqual(h.must('[data-product-evidence-index="0"][data-product-evidence-field="ref"]').value, evidenceRef);
+  assert.strictEqual(h.must('[data-risk-criteria="schemeJustification"]').value, schemeJustification);
+  assert.strictEqual(h.must('[data-risk-criteria-input="regulation"]').value, "CRA");
+  h.close();
+}
+
 async function checkBugBar(h, mod) {
   const threatPath = "06-threats/threats.json", cmPath = "08-countermeasures/countermeasures.json";
   const kbPath = path.join(extDir, "runtime/.assets/knowledge-base/bug-bar.json");
@@ -1962,6 +2010,7 @@ async function wizard(h) {
   await checkThreatCostControls(h, mod);
   await checkThreatCostControls(h, mod);
   await checkTreatmentRationalePersistence(h, mod);
+  await checkProductContextPersistence(h, mod);
   await checkBugBar(h, mod);
   await checkRiskMatrices(h, mod);
   await checkThreatCmImportExport(h, mod);

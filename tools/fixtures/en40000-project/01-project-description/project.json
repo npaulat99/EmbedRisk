@@ -12,6 +12,43 @@
         "outOfScope": []
     },
     "intendedUse": "Intended use marker",
+    "productContext": {
+        "functions": [
+            {
+                "name": "Function marker <img src=x onerror=alert(1)>",
+                "description": "Function description marker"
+            }
+        ],
+        "users": {
+            "description": "Users marker <img src=x onerror=alert(1)>",
+            "vulnerableGroups": [
+                "Vulnerable group marker"
+            ]
+        },
+        "evidence": [
+            {
+                "title": "Safety evidence marker",
+                "ref": "https://example.invalid/safety-manual.pdf",
+                "clause": "6.2.1"
+            },
+            {
+                "title": "Unsafe evidence marker",
+                "ref": "../unsafe-evidence.pdf"
+            }
+        ]
+    },
+    "riskCriteria": {
+        "schemeJustification": "Justification marker <img src=x onerror=alert(1)>",
+        "schemeSource": "Risk source marker",
+        "inputs": {
+            "regulation": "Regulation marker",
+            "contracts": "Contract basis marker",
+            "riskNature": "Risk nature marker",
+            "users": "User needs marker",
+            "productType": "Product type marker",
+            "stateOfTheArt": "State of the art marker"
+        }
+    },
     "status": "draft",
     "traVersion": "v1.0",
     "riskSchemeId": "builtin:5x5-cost",

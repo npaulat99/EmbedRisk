@@ -10,6 +10,15 @@ import { normalizeActorLevel } from '@shared/attackerScale.js';
 import AppDialog from './AppDialog';
 import { useDialogs } from '../lib/useDialogs';
 
+const RISK_CRITERIA_INPUTS = [
+    ['regulation', 'Regulation'],
+    ['contracts', 'Contracts'],
+    ['riskNature', 'Nature of risk'],
+    ['users', 'Users'],
+    ['productType', 'Product type'],
+    ['stateOfTheArt', 'State of the art'],
+] as const;
+
 export default function SettingsModal() {
     const data = useStore((s) => s.data);
     const save = useStore((s) => s.save);
@@ -27,6 +36,8 @@ export default function SettingsModal() {
     const p = data.project;
     const set = (patch: any) => save('project', { ...p, ...patch });
     const setReport = (patch: any) => set({ reportOptions: { ...(p.reportOptions || {}), ...patch } });
+    const setRiskCriteria = (patch: any) => set({ riskCriteria: { ...(p.riskCriteria || {}), ...patch } });
+    const setRiskCriteriaInput = (key: string, value: string) => setRiskCriteria({ inputs: { ...(p.riskCriteria?.inputs || {}), [key]: value || undefined } });
     const acceptable = typeof p.acceptableRisk === 'number' ? p.acceptableRisk : DEFAULT_ACCEPTABLE_RISK;
     const activeScheme = scheme && 'schemaVersion' in scheme ? scheme : null;
     const activeSchemeId = p.riskSchemeId || (p.riskScoringMethod === 'exposure-exploitability-impact' ? 'builtin:5x5-exposure' : 'builtin:5x5-cost');
@@ -252,6 +263,22 @@ export default function SettingsModal() {
                         }}
                     />
                 </Field>}
+                <fieldset className="risk-criteria-group">
+                    <legend>Risk scheme justification</legend>
+                    <Field label="Why this scheme and acceptance criteria?">
+                        <textarea rows={3} maxLength={2000} value={p.riskCriteria?.schemeJustification || ''} onChange={(e) => setRiskCriteria({ schemeJustification: e.target.value || undefined })} />
+                    </Field>
+                    <Field label="Source or reference">
+                        <input maxLength={200} value={p.riskCriteria?.schemeSource || ''} onChange={(e) => setRiskCriteria({ schemeSource: e.target.value || undefined })} />
+                    </Field>
+                    <div className="grid2">
+                        {RISK_CRITERIA_INPUTS.map(([key, label]) => (
+                            <Field key={key} label={label}>
+                                <input maxLength={200} value={p.riskCriteria?.inputs?.[key] || ''} onChange={(e) => setRiskCriteriaInput(key, e.target.value)} />
+                            </Field>
+                        ))}
+                    </div>
+                </fieldset>
             </div>
 
             <div className="card" style={{ marginBottom: 12 }}>

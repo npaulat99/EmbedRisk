@@ -6,6 +6,7 @@ import html as html_lib
 import json, os, sys
 import textwrap
 from pathlib import Path
+from urllib.parse import unquote, urlsplit
 
 root = Path(__file__).resolve().parents[1]
 
@@ -206,6 +207,38 @@ def within_acceptance(threat, likelihood, impact):
 def _esc(value):
     return html_lib.escape(str(value), quote=True)
 
+def _safe_href(value):
+    ref = str(value or "").strip()
+    if not ref or ref.startswith("/") or "\\" in ref or any(ord(char) <= 32 or ord(char) == 127 for char in ref):
+        return None
+    try:
+        parsed = urlsplit(ref)
+    except ValueError:
+        return None
+    if parsed.scheme:
+        return ref if parsed.scheme.lower() in ("http", "https") and ref.lower().startswith(("http://", "https://")) else None
+    if parsed.netloc:
+        return None
+    path = unquote(parsed.path)
+    if path.startswith("/") or "\\" in path or ".." in path.split("/"):
+        return None
+    return ref
+
+def _risk_criteria_html(criteria):
+    if not criteria:
+        return ""
+    inputs = [(label, criteria.get("inputs", {}).get(key)) for key, label in (
+        ("regulation", "Regulation"), ("contracts", "Contracts"), ("riskNature", "Nature of risk"),
+        ("users", "Users"), ("productType", "Product type"), ("stateOfTheArt", "State of the art"),
+    ) if criteria.get("inputs", {}).get(key)]
+    if not criteria.get("schemeJustification") and not criteria.get("schemeSource") and not inputs:
+        return ""
+    items = "".join(f"<li><b>{_esc(label)}:</b> {_esc(value)}</li>" for label, value in inputs)
+    return ("<h3>Scheme selection and criteria</h3>"
+            + (f"<p><b>Justification:</b> {_esc(criteria['schemeJustification'])}</p>" if criteria.get("schemeJustification") else "")
+            + (f"<p><b>Source:</b> {_esc(criteria['schemeSource'])}</p>" if criteria.get("schemeSource") else "")
+            + (f"<ul>{items}</ul>" if items else ""))
+
 def _contrast_text_color(color):
     value = str(color or "").removeprefix("#")
     if len(value) != 6:
@@ -231,7 +264,7 @@ def risk_cell(likelihood, impact):
 
 def risk_scheme_html():
     if scheme is None:
-        return f"<div class='warn'><b>Risk classification unavailable:</b> {_esc(scheme_warning)} Raw stored L/I values are shown.</div>"
+        return f"<h2>Risk scheme</h2><div class='warn'><b>Risk classification unavailable:</b> {_esc(scheme_warning)} Raw stored L/I values are shown.</div>{_risk_criteria_html(project.get('riskCriteria'))}"
     likelihoods = scheme["likelihood"]["levels"]
     impacts = list(reversed(scheme["impact"]["levels"]))
     matrix_rows = []
@@ -246,7 +279,45 @@ def risk_scheme_html():
     headers = "".join(f"<th scope='col'>{_esc(level['code'])}</th>" for level in likelihoods)
     return (f"<h2>Risk scheme</h2><p><b>{_esc(scheme['title'])}</b> · v{_esc(scheme['version'])} · fingerprint "
             f"<code>{scheme_fingerprints[scheme_id]}</code></p><div>{legend}</div>"
-            f"<table><caption>Active risk matrix</caption><thead><tr><th scope='col'>Impact / Likelihood</th>{headers}</tr></thead><tbody>{''.join(matrix_rows)}</tbody></table>")
+            f"<table><caption>Active risk matrix</caption><thead><tr><th scope='col'>Impact / Likelihood</th>{headers}</tr></thead><tbody>{''.join(matrix_rows)}</tbody></table>{_risk_criteria_html(project.get('riskCriteria'))}")
+
+def product_context_html():
+    context = project.get("productContext") or {}
+    functions = context.get("functions") or []
+    users = context.get("users") or {}
+    evidence = context.get("evidence") or []
+    environment = ass.get("environment") or []
+    if not functions and not users.get("description") and not users.get("vulnerableGroups") and not evidence and not environment:
+        return ""
+    function_items = []
+    for item in functions:
+        description = f" — {_esc(item['description'])}" if item.get("description") else ""
+        function_items.append(f"<li><b>{_esc(item.get('name', ''))}</b>{description}</li>")
+    function_rows = "<ul>" + "".join(function_items) + "</ul>" if function_items else "<p>—</p>"
+    environment_items = []
+    for item in environment:
+        anchor = "assumption-" + "".join(char if char.isalnum() or char in "_.:-" else "-" for char in str(item.get("id", "")))
+        environment_items.append(f"<li id='{_esc(anchor)}'><a href='#{_esc(anchor)}'>{_esc(item.get('id', ''))}</a> — {_esc(item.get('text', ''))}</li>")
+    environment_rows = "<ul>" + "".join(environment_items) + "</ul>" if environment_items else "<p>—</p>"
+    user_rows = f"<p>{_esc(users['description'])}</p>" if users.get("description") else ""
+    if users.get("vulnerableGroups"):
+        user_rows += "<ul>" + "".join(f"<li>{_esc(group)}</li>" for group in users["vulnerableGroups"]) + "</ul>"
+    evidence_items = []
+    for item in evidence:
+        ref = str(item.get("ref", ""))
+        href = _safe_href(ref)
+        if href:
+            external = href.lower().startswith(("http://", "https://"))
+            target = ' target="_blank"' if external else ""
+            reference = f'<a href="{_esc(href)}"{target} rel="noopener noreferrer">{_esc(ref)}</a>'
+        else:
+            reference = f"{_esc(ref)} <span>(not linked)</span>"
+        clause = f" · {_esc(item['clause'])}" if item.get("clause") else ""
+        evidence_items.append(f"<li><b>{_esc(item.get('title', ''))}</b>{clause}<br>{reference}</li>")
+    evidence_rows = "<ul>" + "".join(evidence_items) + "</ul>" if evidence_items else "<p>—</p>"
+    return (f"<h2>Product context</h2><h3>Functions</h3>{function_rows}"
+            f"<h3>Operating environment</h3>{environment_rows}<h3>Users</h3>{user_rows or '<p>—</p>'}"
+            f"<h3>Evidence</h3>{evidence_rows}")
 
 def residual(t):
     # Mirrors webapp/server/src/risk.js: unfeasible -> 0/0; only selected countermeasures count;
@@ -450,6 +521,7 @@ html = (f"<!doctype html><html lang=\"en\"><head><meta charset=utf8><meta name=\
     "<style>body{font:14px system-ui;margin:2rem;max-width:60rem}table{border-collapse:collapse;width:100%}td,th{border:1px solid #ccc;padding:6px;text-align:left}h1{font-size:1.4rem}.warn{color:#c62828}@media print{body{margin:0;max-width:none}table{page-break-inside:auto}tr{break-inside:avoid;page-break-inside:avoid}}</style></head><body><main>"
         f"<h1>{_esc(project['title'])}</h1><p>Device: {_esc(project['device']['name'])} | SL-C {_esc(project['slTarget'])} | mode {_esc(project['scope']['mode'])} | status {_esc(project['status'])}</p>"
         f"<p><b>Scope:</b> {_esc(project['scope'].get('boundary',''))}</p>"
+        f"{product_context_html()}"
         f"<h2>Data flow diagram (layer 1)</h2>{dfd_svg(dfd)}"
         f"<h2>Attacker profiles</h2><ul>{atk}</ul><h2>Assets</h2><ul>{assets}</ul>"
         f"{risk_scheme_html()}"

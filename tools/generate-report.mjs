@@ -157,7 +157,7 @@ const axisRisk = (risk, axes, stored) => {
   return scheme.classification.kind === 'lookup' ? band.label || band.name : `${risk[axes]} ${band.label || band.name}`;
 };
 const riskSchemeSection = (() => {
-  if (!riskEngine) return `<div class="warn"><b>Risk classification unavailable:</b> ${esc(schemeResolution.warning)} Raw stored L/I values are shown.</div>`;
+  if (!riskEngine) return `<h2>Risk scheme</h2><div class="warn"><b>Risk classification unavailable:</b> ${esc(schemeResolution.warning)} Raw stored L/I values are shown.</div>${riskCriteriaHtml(project.riskCriteria)}`;
   const likelihoods = riskEngine.likelihoodLevels();
   const impacts = riskEngine.impactLevels().slice().reverse();
   const cells = riskEngine.matrixCells();
@@ -168,7 +168,28 @@ const riskSchemeSection = (() => {
     return `<td style="background:${esc(level.color)};color:${contrastTextColor(level.color)}" title="${esc(likelihood.code)} × ${esc(impact.code)} · ${esc(level.label)}">${esc(label)}</td>`;
   }).join('')}</tr>`).join('');
   const legend = scheme.classification.levels.map((level) => `<span style="display:inline-flex;align-items:center;gap:4px;margin-right:10px"><i style="display:inline-block;width:10px;height:10px;background:${esc(level.color)}"></i>${esc(level.label)}</span>`).join('');
-  return `<h2>Risk scheme</h2><p><b>${esc(scheme.title)}</b> · v${esc(scheme.version)} · fingerprint <code>${schemeResolution.fingerprint}</code></p><div>${legend}</div><table><caption>Active risk matrix</caption><thead><tr><th scope="col">Impact / Likelihood</th>${likelihoods.map((level) => `<th scope="col">${esc(level.code)}</th>`).join('')}</tr></thead><tbody>${rows}</tbody></table>`;
+  return `<h2>Risk scheme</h2><p><b>${esc(scheme.title)}</b> · v${esc(scheme.version)} · fingerprint <code>${schemeResolution.fingerprint}</code></p><div>${legend}</div><table><caption>Active risk matrix</caption><thead><tr><th scope="col">Impact / Likelihood</th>${likelihoods.map((level) => `<th scope="col">${esc(level.code)}</th>`).join('')}</tr></thead><tbody>${rows}</tbody></table>${riskCriteriaHtml(project.riskCriteria)}`;
+})();
+
+function riskCriteriaHtml(criteria) {
+  if (!criteria) return '';
+  const inputs = [['Regulation', criteria.inputs?.regulation], ['Contracts', criteria.inputs?.contracts], ['Nature of risk', criteria.inputs?.riskNature], ['Users', criteria.inputs?.users], ['Product type', criteria.inputs?.productType], ['State of the art', criteria.inputs?.stateOfTheArt]].filter(([, value]) => value);
+  if (!criteria.schemeJustification && !criteria.schemeSource && !inputs.length) return '';
+  return `<h3>Scheme selection and criteria</h3>${criteria.schemeJustification ? `<p><b>Justification:</b> ${esc(criteria.schemeJustification)}</p>` : ''}${criteria.schemeSource ? `<p><b>Source:</b> ${esc(criteria.schemeSource)}</p>` : ''}${inputs.length ? `<ul>${inputs.map(([label, value]) => `<li><b>${esc(label)}:</b> ${esc(value)}</li>`).join('')}</ul>` : ''}`;
+}
+
+const productContextSection = (() => {
+  const context = project.productContext || {}, functions = context.functions || [], users = context.users || {}, evidence = context.evidence || [], environment = ass.environment || [];
+  if (!functions.length && !users.description && !users.vulnerableGroups?.length && !evidence.length && !environment.length) return '';
+  const functionRows = functions.length ? `<ul>${functions.map((item) => `<li><b>${esc(item.name)}</b>${item.description ? ` — ${esc(item.description)}` : ''}</li>`).join('')}</ul>` : '<p>—</p>';
+  const environmentRows = environment.length ? `<ul>${environment.map((item) => `<li>${renderLink(`#${assumptionAnchor(item.id)}`, item.id)} — ${esc(item.text || '')}</li>`).join('')}</ul>` : '<p>—</p>';
+  const userRows = [users.description ? `<p>${esc(users.description)}</p>` : '', users.vulnerableGroups?.length ? `<ul>${users.vulnerableGroups.map((group) => `<li>${esc(group)}</li>`).join('')}</ul>` : ''].join('') || '<p>—</p>';
+  const evidenceRows = evidence.length ? `<ul>${evidence.map((item) => {
+    const href = safeHref(item.ref), external = href && /^https?:\/\//i.test(href);
+    const reference = href ? `<a href="${esc(href)}"${external ? ' target="_blank"' : ''} rel="noopener noreferrer">${esc(item.ref)}</a>` : `${esc(item.ref)} <span>(not linked)</span>`;
+    return `<li><b>${esc(item.title)}</b>${item.clause ? ` · ${esc(item.clause)}` : ''}<br>${reference}</li>`;
+  }).join('')}</ul>` : '<p>—</p>';
+  return `<h2>Product context</h2><h3>Functions</h3>${functionRows}<h3>Operating environment</h3>${environmentRows}<h3>Users</h3>${userRows}<h3>Evidence</h3>${evidenceRows}`;
 })();
 
 // Plausibility checker (PR/NFR review step)
@@ -265,6 +286,7 @@ const riskDisclosureSection = byResponsibility.length || avoidedThreats.length |
 const html = `<!doctype html><html lang="en"><head><meta charset=utf8><meta name="viewport" content="width=device-width, initial-scale=1"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src data:; style-src 'unsafe-inline'"><title>TRA ${esc(project.title)}</title>
 <style>body{font:14px system-ui;margin:2rem;max-width:60rem}table{border-collapse:collapse;width:100%}td,th{border:1px solid #ccc;padding:6px;text-align:left}h1{font-size:1.4rem}.warn{color:#c62828}@media print{body{margin:0;max-width:none}table{page-break-inside:auto}tr{break-inside:avoid;page-break-inside:avoid}}</style></head><body><main>
 <h1>${esc(project.title)}</h1><p>Device: ${esc(project.device.name)} (${esc(project.device.type)}) | SL-C ${esc(project.slTarget)} | mode ${esc(project.scope.mode)} | status ${esc(project.status)}</p>
+${productContextSection}
 <h2>Attacker profiles</h2><ul>${atkRows}</ul>
 ${assRows ? `<h2>Assumptions</h2>${assRows}` : ''}
 <h2>Assets</h2><ul>${sys.assets.map((a) => `<li>${esc(a.name)} (C${esc(a.objectives.confidentiality)}/I${esc(a.objectives.integrity)}/A${esc(a.objectives.availability)}/S${esc(a.objectives.safety)})</li>`).join("")}</ul>

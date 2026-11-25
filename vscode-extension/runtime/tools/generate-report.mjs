@@ -320,6 +320,20 @@ const atkRows = (ass.attacker || []).map((a) => {
   return `<li id="${esc(assumptionAnchor(a.id))}"><b>${esc(a.id)}</b> · <b>${esc(a.name)}</b> ${esc(capLabel(a.capability))}, ${esc(a.access)}: ${esc(a.text || '')}${cited ? `<br><span style="font-size:11px;color:#555">cited by: ${cited}</span>` : ''}</li>`;
 }).join('');
 
+const productContextSection = (() => {
+  const context = project.productContext || {}, functions = context.functions || [], users = context.users || {}, evidence = context.evidence || [], environment = ass.environment || [];
+  if (!functions.length && !users.description && !users.vulnerableGroups?.length && !evidence.length && !environment.length) return '';
+  const functionRows = functions.length ? `<ul>${functions.map((item) => `<li><b>${esc(item.name)}</b>${item.description ? ` — ${esc(item.description)}` : ''}</li>`).join('')}</ul>` : '<p>—</p>';
+  const environmentRows = environment.length ? `<ul>${environment.map((item) => `<li>${renderLink(`#${assumptionAnchor(item.id)}`, item.id)} — ${esc(item.text || '')}</li>`).join('')}</ul>` : '<p>—</p>';
+  const userRows = [users.description ? `<p>${esc(users.description)}</p>` : '', users.vulnerableGroups?.length ? `<ul>${users.vulnerableGroups.map((group) => `<li>${esc(group)}</li>`).join('')}</ul>` : ''].join('') || '<p>—</p>';
+  const evidenceRows = evidence.length ? `<ul>${evidence.map((item) => {
+    const href = safeHref(item.ref), external = href && /^https?:\/\//i.test(href);
+    const reference = href ? `<a href="${esc(href)}"${external ? ' target="_blank"' : ''} rel="noopener noreferrer">${esc(item.ref)}</a>` : `${esc(item.ref)} <span>(not linked)</span>`;
+    return `<li><b>${esc(item.title)}</b>${item.clause ? ` · ${esc(item.clause)}` : ''}<br>${reference}</li>`;
+  }).join('')}</ul>` : '<p>—</p>';
+  return `<h2>Product context</h2><h3>Functions</h3>${functionRows}<h3>Operating environment</h3>${environmentRows}<h3>Users</h3>${userRows}<h3>Evidence</h3>${evidenceRows}`;
+})();
+
 // SBOM (CycloneDX) from component list
 const sbomMode = project.sbom?.mode || 'in-tool';
 const sbomFormat = project.sbom?.format || 'cyclonedx';
@@ -340,7 +354,7 @@ const buildCdx = () => ({
 });
 
 const riskSchemeSection = (() => {
-  if (!riskEngine) return `<div class="warn" role="alert"><b>Risk classification unavailable:</b> ${esc(schemeResolution.warning)} Raw stored L/I values are shown.</div>`;
+  if (!riskEngine) return `<h2>Risk scheme</h2><div class="warn" role="alert"><b>Risk classification unavailable:</b> ${esc(schemeResolution.warning)} Raw stored L/I values are shown.</div>${riskCriteriaHtml(project.riskCriteria)}`;
   const likelihoods = riskEngine.likelihoodLevels();
   const impacts = riskEngine.impactLevels().slice().reverse();
   const cells = riskEngine.matrixCells();
@@ -351,8 +365,15 @@ const riskSchemeSection = (() => {
     return `<td style="background:${esc(level.color)};color:${contrastTextColor(level.color)}" title="${esc(likelihood.code)} × ${esc(impact.code)} · ${esc(level.label)}">${esc(label)}</td>`;
   }).join('')}</tr>`).join('');
   const legend = scheme.classification.levels.map((level) => `<span style="display:inline-flex;align-items:center;gap:4px;margin-right:10px"><i style="display:inline-block;width:10px;height:10px;background:${esc(level.color)}"></i>${esc(level.label)}</span>`).join('');
-  return `<h2>Risk scheme</h2><p><b>${esc(scheme.title)}</b> · v${esc(scheme.version)} · fingerprint <code>${schemeResolution.fingerprint}</code></p><div>${legend}</div><table><caption>Active risk matrix</caption><thead><tr><th scope="col">Impact / Likelihood</th>${likelihoods.map((level) => `<th scope="col">${esc(level.code)}</th>`).join('')}</tr></thead><tbody>${rows}</tbody></table>`;
+  return `<h2>Risk scheme</h2><p><b>${esc(scheme.title)}</b> · v${esc(scheme.version)} · fingerprint <code>${schemeResolution.fingerprint}</code></p><div>${legend}</div><table><caption>Active risk matrix</caption><thead><tr><th scope="col">Impact / Likelihood</th>${likelihoods.map((level) => `<th scope="col">${esc(level.code)}</th>`).join('')}</tr></thead><tbody>${rows}</tbody></table>${riskCriteriaHtml(project.riskCriteria)}`;
 })();
+
+function riskCriteriaHtml(criteria) {
+  if (!criteria) return '';
+  const inputs = [['Regulation', criteria.inputs?.regulation], ['Contracts', criteria.inputs?.contracts], ['Nature of risk', criteria.inputs?.riskNature], ['Users', criteria.inputs?.users], ['Product type', criteria.inputs?.productType], ['State of the art', criteria.inputs?.stateOfTheArt]].filter(([, value]) => value);
+  if (!criteria.schemeJustification && !criteria.schemeSource && !inputs.length) return '';
+  return `<h3>Scheme selection and criteria</h3>${criteria.schemeJustification ? `<p><b>Justification:</b> ${esc(criteria.schemeJustification)}</p>` : ''}${criteria.schemeSource ? `<p><b>Source:</b> ${esc(criteria.schemeSource)}</p>` : ''}${inputs.length ? `<ul>${inputs.map(([label, value]) => `<li><b>${esc(label)}:</b> ${esc(value)}</li>`).join('')}</ul>` : ''}`;
+}
 const buildSpdx = () => {
   const sid = id => 'SPDXRef-Package-' + String(id).replace(/[^A-Za-z0-9.\-]/g, '-');
   const created = new Date().toISOString();
@@ -414,6 +435,7 @@ const html = `<!doctype html><html lang="en"><head><meta charset=utf8><meta name
 <style>body{font:14px system-ui;margin:2rem;max-width:72rem}table{border-collapse:collapse;width:100%}td,th{border:1px solid #ccc;padding:6px;text-align:left}th{background:#f5f5f5;font-size:12px;text-transform:uppercase;letter-spacing:.04em}h1{font-size:1.4rem}h2{font-size:1.1rem;margin-top:2rem}.warn{color:#c62828}code{font-size:12px}ul{padding-left:1.4rem}@media print{body{margin:0;max-width:none}table{page-break-inside:auto}tr{break-inside:avoid;page-break-inside:avoid}}</style></head><body><main>
 <h1>${esc(project.title || project.device?.name || 'TRA Report')}</h1>
 <p>Device: <b>${esc(project.device?.name || '—')}</b> | SL-C ${esc(project.slTarget || '—')} | scope ${esc(project.scope?.mode || '—')} | boundary: ${esc(project.scope?.boundary || '—')}</p>
+${productContextSection}
 <h2>Attacker profiles</h2><ul>${atkRows}</ul>
 ${assRows ? `<h2>Assumptions</h2>${assRows}` : ''}
 <h2>Assets</h2><ul>${(sys.assets || []).map(a => `<li>${esc(a.name)} (C${a.objectives?.confidentiality}/I${a.objectives?.integrity}/A${a.objectives?.availability}/S${a.objectives?.safety})</li>`).join('')}</ul>

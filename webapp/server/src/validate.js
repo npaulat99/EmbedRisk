@@ -13,6 +13,18 @@ const ID_PATTERN = /^[A-Za-z0-9 _\-:.]+$/;
 const DEFAULT_ACCEPTABLE_RISK = 12;
 const COST_WEIGHT_KEYS = ['time', 'exploitability', 'window', 'detection', 'notoriety', 'prep', 'abort'];
 const DEFAULT_COST_WEIGHTS = { time: 0.25, exploitability: 0.2, window: 0.15, detection: 0.15, notoriety: 0.1, prep: 0.1, abort: 0.05 };
+const safeEvidenceRef = (value) => {
+    const ref = String(value ?? '').trim();
+    if (!ref || ref.startsWith('/') || ref.includes('\\') || /[\u0000-\u0020\u007f]/.test(ref)) return false;
+    let parsed;
+    try { parsed = new URL(ref, 'https://embedrisk.invalid/'); } catch { return false; }
+    if (/^[A-Za-z][A-Za-z\d+.-]*:/.test(ref)) return (parsed.protocol === 'http:' || parsed.protocol === 'https:') && /^https?:\/\//i.test(ref);
+    if (parsed.origin !== 'https://embedrisk.invalid') return false;
+    try {
+        const path = decodeURIComponent(ref.split(/[?#]/, 1)[0]);
+        return !path.startsWith('/') && !path.includes('\\') && !path.split('/').some((part) => part === '..');
+    } catch { return false; }
+};
 
 function costWeightTotal(weights = {}) {
     return COST_WEIGHT_KEYS.reduce((sum, key) => sum + Math.max(0, Number(weights[key] ?? DEFAULT_COST_WEIGHTS[key]) || 0), 0);
@@ -59,6 +71,24 @@ export function validate({ project = {}, assumptions = {}, system = {}, threats 
         : project.riskScoringMethod === 'cost-based';
 
     if (riskSchemeWarning) add('warning', riskSchemeWarning, 'risk-scheme-unavailable');
+
+    const productContext = project.productContext || {};
+    const productFunctions = arr(productContext.functions);
+    const productEvidence = arr(productContext.evidence);
+    const vulnerableGroups = arr(productContext.users?.vulnerableGroups);
+    productEvidence.forEach((evidence, index) => {
+        if (!safeEvidenceRef(evidence?.ref))
+            add('error', `Evidence reference ${index + 1}: only http(s) URLs and project-relative paths without '..' are allowed.`);
+    });
+    const productLists = [['functions', productFunctions], ['evidence', productEvidence], ['vulnerable groups', vulnerableGroups]];
+    for (const [label, items] of productLists)
+        if (items.length > 50) add('warning', `Product context ${label} has ${items.length} entries; the limit is 50.`, `product-context-limit:${label}`);
+    if (project.status === 'review' || project.status === 'released') {
+        if (!productFunctions.length || !hasText(productContext.users?.description))
+            add('notice', 'Product context is incomplete: functions and users are not described (EN 40000-1-2, 6.2).', 'product-context-empty');
+        if (!hasText(project.riskCriteria?.schemeJustification))
+            add('notice', 'The choice of the risk scheme and acceptance criteria is not justified (EN 40000-1-2, 6.3.3).', 'risk-criteria-empty');
+    }
 
     if (costBased && Math.abs(costWeightTotal(project.costFactorWeights) - 1) > 1e-6)
         add('warning', `Cost-factor weights total ${costWeightTotal(project.costFactorWeights).toFixed(2)}; they must combine to 1.00.`, 'cost-factor-weights');
