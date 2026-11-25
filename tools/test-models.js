@@ -195,8 +195,9 @@ async function runImportedKbTests() {
     const reportDir = path.join(projectDir, "report");
     const trace = JSON.parse(fs.readFileSync(path.join(reportDir, "traceability.json"), "utf8"));
     ok("traceability JSON matches webapp field order and derived values",
-      Object.keys(trace[0]).join(",") === "asset,cias,threat,title,stride,assumptionRefs,likelihoodRationale,impactRationale,initial,initialBand,requirement,control,residual,residualBand,evidence,status,ratedBy,signoff,classification,responsibility,deploymentConstraints"
+      Object.keys(trace[0]).join(",") === "asset,cias,threat,title,stride,assumptionRefs,likelihoodRationale,impactRationale,initial,initialBand,requirement,control,residual,residualBand,evidence,status,ratedBy,signoff,classification,responsibility,deploymentConstraints,compromisedObjectives,cause"
       && trace[0].stride === "SE" && trace[0].initial === 6 && trace[0].residual === 2
+      && Array.isArray(trace[0].compromisedObjectives) && trace[0].compromisedObjectives.length === 0 && trace[0].cause === ""
       && trace[0].requirement === "R-1 [IEC 1] → CM-1" && trace[0].signoff === "by Approver · accepted");
     const csv = fs.readFileSync(path.join(reportDir, "traceability.csv"), "utf8");
     ok("traceability CSV preserves schema and quotes embedded quotes/newlines",
@@ -1550,16 +1551,47 @@ async function runValidationCoreTests() {
   const avoidedIssues = treatmentIssues(validate, avoidedWithoutLinks);
   assert.equal(avoidedIssues.filter(([, , message]) => message === treatmentMessages[0]).length, 1);
   assert.equal(avoidedIssues.filter(([, key]) => key === "avoided-link:T-TREAT").length, 1);
-    const dismissedAvoidance = treatmentBase({ status: "avoided" });
-    dismissedAvoidance.project.acceptedNotices = ["avoided-link:T-TREAT"];
-    assert.ok(!validate(dismissedAvoidance).some((issue) => issue.key === "avoided-link:T-TREAT"));
-    assert.ok(!openClientIssues(validateClient(dismissedAvoidance), dismissedAvoidance.project.acceptedNotices).some((issue) => issue.key === "avoided-link:T-TREAT"));
-    assert.ok(!validateExtension(dismissedAvoidance).some((issue) => issue.key === "avoided-link:T-TREAT"));
+  const dismissedAvoidance = treatmentBase({ status: "avoided" });
+  dismissedAvoidance.project.acceptedNotices = ["avoided-link:T-TREAT"];
+  assert.ok(!validate(dismissedAvoidance).some((issue) => issue.key === "avoided-link:T-TREAT"));
+  assert.ok(!openClientIssues(validateClient(dismissedAvoidance), dismissedAvoidance.project.acceptedNotices).some((issue) => issue.key === "avoided-link:T-TREAT"));
+  assert.ok(!validateExtension(dismissedAvoidance).some((issue) => issue.key === "avoided-link:T-TREAT"));
   assert.ok(!validate(avoidedWithoutLinks).some((issue) => issue.message.includes("residual risk 25 exceeds")));
   const transferredWithoutReason = treatmentIssues(validate, treatmentBase({ status: "transferred" }));
   assert.equal(transferredWithoutReason.filter(([, , message]) => message === treatmentMessages[2]).length, 1);
   const acceptedWithoutDeviation = treatmentIssues(validate, treatmentBase({ status: "accepted", acceptedBy: "Owner", acceptanceRationale: "Business need", reviewDate: "2099-01-01" }));
   assert.equal(acceptedWithoutDeviation.filter(([, , message]) => message === treatmentMessages[3]).length, 1);
+  passed++;
+
+  const threatStructureInput = {
+    ...structuredClone(clean),
+    threats: { threats: [
+      { id: "T-STRUCT-1", title: "Missing structure", stride: ["S"], components: ["C1"], likelihood: 2, impact: 2 },
+      { id: "T-STRUCT-2", title: "Also incomplete", stride: ["T"], components: ["C1"], likelihood: 2, impact: 2 },
+      { id: "T-STRUCT-3", title: "Cause present", stride: ["R"], components: ["C1"], likelihood: 2, impact: 2, cause: "Weak input validation." },
+      { id: "T-STRUCT-4", title: "Objectives present", stride: ["I"], components: ["C1"], likelihood: 2, impact: 2, compromisedObjectives: ["confidentiality"] },
+    ] },
+  };
+  const structureNotice = (validateFn, input) => validateFn(input).filter((issue) => issue.key === "threat-structure-empty");
+  const expectedStructureNotice = [{
+    severity: "notice",
+    message: "2 threats do not state a cause or the compromised objectives (EN 40000-1-2, 6.4.3.3).",
+    key: "threat-structure-empty",
+  }];
+  assert.deepStrictEqual(structureNotice(validate, threatStructureInput), expectedStructureNotice);
+  assert.deepStrictEqual(structureNotice(validateClient, threatStructureInput), expectedStructureNotice);
+  assert.deepStrictEqual(structureNotice(validateExtension, threatStructureInput), expectedStructureNotice);
+  const dismissedStructureNotice = structuredClone(threatStructureInput);
+  dismissedStructureNotice.project.acceptedNotices = ["threat-structure-empty"];
+  assert.ok(!validate(dismissedStructureNotice).some((issue) => issue.key === "threat-structure-empty"));
+  assert.ok(!openClientIssues(validateClient(dismissedStructureNotice), dismissedStructureNotice.project.acceptedNotices).some((issue) => issue.key === "threat-structure-empty"));
+  assert.ok(!validateExtension(dismissedStructureNotice).some((issue) => issue.key === "threat-structure-empty"));
+  const resolvedStructure = structuredClone(threatStructureInput);
+  resolvedStructure.threats.threats[0].cause = "Insufficient authorization checks.";
+  resolvedStructure.threats.threats[1].compromisedObjectives = ["integrity"];
+  assert.ok(!structureNotice(validate, resolvedStructure).length);
+  assert.ok(!structureNotice(validateClient, resolvedStructure).length);
+  assert.ok(!structureNotice(validateExtension, resolvedStructure).length);
   passed++;
 
   const bad = {

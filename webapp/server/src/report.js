@@ -435,6 +435,8 @@ export function buildTraceability({ system, threats, requirements, countermeasur
             classification: t.classification || '',
             responsibility: t.responsibility || '',
             deploymentConstraints: t.deploymentConstraints || '',
+            compromisedObjectives: t.compromisedObjectives || [],
+            cause: t.cause || '',
         };
     });
 }
@@ -616,7 +618,7 @@ const csvCell = (s) => {
     return `"${neutralized.replace(/"/g, '""')}"`;
 };
 function traceabilityCsv(rows) {
-    const head = ['Asset', 'C/I/A/S', 'Threat', 'Title', 'STRIDE', 'Assumptions', 'Rationale', 'Initial', 'InitialBand', 'Requirement', 'Control', 'Residual', 'ResidualBand', 'Evidence', 'Status', 'RatedBy', 'SignOff', 'Classification', 'Responsibility', 'DeploymentConstraints'];
+    const head = ['Asset', 'C/I/A/S', 'Threat', 'Title', 'STRIDE', 'Assumptions', 'Rationale', 'Initial', 'InitialBand', 'Requirement', 'Control', 'Residual', 'ResidualBand', 'Evidence', 'Status', 'RatedBy', 'SignOff', 'Classification', 'Responsibility', 'DeploymentConstraints', 'CompromisedObjectives', 'Cause'];
     const body = rows.map((r) =>
         [
             r.asset,
@@ -639,6 +641,8 @@ function traceabilityCsv(rows) {
             r.classification,
             r.responsibility,
             r.deploymentConstraints,
+            r.compromisedObjectives.join('; '),
+            r.cause,
         ]
             .map(csvCell)
             .join(','),
@@ -703,18 +707,18 @@ export async function buildReport(id) {
     const strideCov = buildStrideCoverage(system, threats);
     const strideTbSection = project.reportOptions?.includeStrideBoundaryAnalysis ? strideBoundaryTablesHtml(system, dfd) : '';
     const acceptedNotices = new Set(project.acceptedNotices || []);
-        const withinAcceptanceCriteria = (threat) => {
-            if (!reportRiskEngine) return false;
-            const [likelihood, impact] = residual(threat, cms);
-            const level = reportRiskEngine.classify(likelihood, impact);
-            if (level.id === 'none') return false;
-            if (level.treatment === 'auto-accept') return true;
-            const acceptableLevel = project.acceptableLevel || scheme.acceptance?.defaultLevel;
-            const acceptableRank = acceptableLevel ? scheme.classification.levels.find((item) => item.id === acceptableLevel)?.rank : null;
-            return Number.isInteger(acceptableRank)
-                ? level.rank <= acceptableRank
-                : level.score <= (Number.isFinite(project.acceptableRisk) ? project.acceptableRisk : 12);
-        };
+    const withinAcceptanceCriteria = (threat) => {
+        if (!reportRiskEngine) return false;
+        const [likelihood, impact] = residual(threat, cms);
+        const level = reportRiskEngine.classify(likelihood, impact);
+        if (level.id === 'none') return false;
+        if (level.treatment === 'auto-accept') return true;
+        const acceptableLevel = project.acceptableLevel || scheme.acceptance?.defaultLevel;
+        const acceptableRank = acceptableLevel ? scheme.classification.levels.find((item) => item.id === acceptableLevel)?.rank : null;
+        return Number.isInteger(acceptableRank)
+            ? level.rank <= acceptableRank
+            : level.score <= (Number.isFinite(project.acceptableRisk) ? project.acceptableRisk : 12);
+    };
 
     const openIssueList = issues.filter((i) => !(i.severity === 'notice' && acceptedNotices.has(i.key)));
     const acceptedIssueList = issues.filter((i) => i.severity === 'notice' && acceptedNotices.has(i.key));
@@ -765,7 +769,7 @@ export async function buildReport(id) {
                 `<td>${esc(r.control) || '—'}</td><td${r.residualColor ? ` style='color:${esc(r.residualColor)}'` : ''}>${r.residual === null ? `L${esc(r.residualLikelihood ?? '—')} / I${esc(r.residualImpact ?? '—')} (${esc(r.residualBand)})` : lookupScheme ? esc(r.residualBand) : `${r.residual} ${esc(r.residualBand)}`}</td>` +
                 `<td>${r.evidence ? r.evidence.split(' ').map((u) => renderLink(u, 'link')).join(' ') : '—'}${support}</td><td>${esc(r.status)}${r.signoff ? `<br><span class=mono style='font-size:11px'>${esc(r.signoff)}</span>` : ''}${r.ratedBy ? `<br><span class=mono style='font-size:11px'>rated: ${esc(r.ratedBy)}</span>` : ''}</td>` +
                 `<td>${r.evidence ? r.evidence.split(' ').map((u) => renderLink(u, 'link')).join(' ') : '—'}${support}</td><td>${esc(r.status)}${r.signoff ? `<br><span class=mono style='font-size:11px'>${esc(r.signoff)}</span>` : ''}${r.ratedBy ? `<br><span class=mono style='font-size:11px'>rated: ${esc(r.ratedBy)}</span>` : ''}${acceptanceStatement}</td>` +
-                `<td>${esc(r.classification) || '—'}</td><td>${esc(r.responsibility) || '—'}</td><td>${esc(r.deploymentConstraints) || '—'}</td></tr>`
+                `<td>${esc(r.classification) || '—'}</td><td>${esc(r.responsibility) || '—'}</td><td>${esc(r.deploymentConstraints) || '—'}</td><td>${esc(r.compromisedObjectives.join('; ')) || '—'}</td><td>${esc(r.cause) || '—'}</td></tr>`
             );
         })
         .join('');
@@ -900,7 +904,7 @@ export async function buildReport(id) {
         (schemeResolution.warning ? `<div class='warn' role='alert'>${esc(schemeResolution.warning)} Risk-axis values are shown without classification.</div>` : '') +
         `<h2>Traceability matrix</h2><div class='trace-note'>This matrix shows the full chain from protected asset to assessed threat, required security response, implemented countermeasure, residual risk and linked evidence. Machine-readable exports are written alongside the report as <code>report/traceability.csv</code>, <code>report/traceability.json</code> and <code>${esc(sbomFile)}</code>.</div>` +
         `<h2>Traceability matrix</h2><div class='trace-note'>This matrix shows the full chain from protected asset to assessed threat, required security response, implemented countermeasure, residual risk and linked evidence. Machine-readable exports are written alongside the report as <code>report/traceability.csv</code>, <code>report/traceability.json</code> and <code>${esc(sbomFile)}</code>.</div>` +
-        `<table><caption>Traceability matrix</caption><thead><tr><th scope='col'>Asset</th><th scope='col'>C/I/A/S</th><th scope='col'>Threat</th><th scope='col'>Initial</th><th scope='col'>Requirement</th><th scope='col'>Control</th><th scope='col'>Residual</th><th scope='col'>Evidence</th><th scope='col'>Status</th><th scope='col'>Classification</th><th scope='col'>Responsibility</th><th scope='col'>Deployment constraints</th></tr></thead><tbody>${traceRows}</tbody></table>` +
+        `<table><caption>Traceability matrix</caption><thead><tr><th scope='col'>Asset</th><th scope='col'>C/I/A/S</th><th scope='col'>Threat</th><th scope='col'>Initial</th><th scope='col'>Requirement</th><th scope='col'>Control</th><th scope='col'>Residual</th><th scope='col'>Evidence</th><th scope='col'>Status</th><th scope='col'>Classification</th><th scope='col'>Responsibility</th><th scope='col'>Deployment constraints</th><th scope='col'>Compromised objectives</th><th scope='col'>Cause</th></tr></thead><tbody>${traceRows}</tbody></table>` +
         `<h2>Data flow diagram (all layers)</h2>${dfdHtml}` +
         useCaseSection +
         tbSection +

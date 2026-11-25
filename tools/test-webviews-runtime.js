@@ -1232,13 +1232,25 @@ async function checkTreatmentRationalePersistence(h, mod) {
     id: "T-WP3", title: "Treatment field round-trip", stride: ["D"], components: [components[0].id], assets: [],
     likelihood: 5, impact: 5, status: "open", futureThreatMetadata: { preserve: ["unknown fields"] },
   };
+  const cause = "Missing authorization checks allow command injection.";
+  const compromisedObjectives = ["confidentiality", "integrity"];
   const saved = () => JSON.parse(h.readText(file)).threats[0];
   const status = '[data-i="0"][data-k="status"]';
   const reopen = async () => { h.close(); await mod.openWizard(ctx); h.openDom(); await h.settle(); };
-  const persist = async () => { await h.settle(1700); assert.deepStrictEqual(saved().futureThreatMetadata, threat.futureThreatMetadata); };
+  const persist = async () => {
+    await h.settle(1700);
+    assert.deepStrictEqual(saved().futureThreatMetadata, threat.futureThreatMetadata);
+    assert.deepStrictEqual(saved().compromisedObjectives, compromisedObjectives);
+    assert.strictEqual(saved().cause, cause);
+  };
 
   h.overlay.set(file, JSON.stringify({ threats: [threat] }));
   await reopen();
+  h.click('#threat-row-0 + tr details > summary');
+  h.click('[data-i="0"][data-objective="integrity"]');
+  h.click('[data-i="0"][data-objective="confidentiality"]');
+  h.setValue('[data-i="0"][data-k="cause"]', cause);
+  await persist();
   h.setValue(status, "avoided");
   assert.ok(h.must('[data-i="0"][data-k="avoidanceRationale"]'));
   const avoidance = "The external interface was removed.";
@@ -1263,6 +1275,11 @@ async function checkTreatmentRationalePersistence(h, mod) {
   await persist();
   assert.strictEqual(saved().status, "accepted");
   assert.deepStrictEqual(saved().acceptanceDeviation, { circumstance: "Contract exception.", communicatedTo: "Plant operator" });
+  await reopen();
+  h.click('#threat-row-0 + tr details > summary');
+  assert.strictEqual(h.must('[data-i="0"][data-objective="integrity"]').checked, true);
+  assert.strictEqual(h.must('[data-i="0"][data-objective="confidentiality"]').checked, true);
+  assert.strictEqual(h.must('[data-i="0"][data-k="cause"]').value, cause);
   h.close();
 }
 

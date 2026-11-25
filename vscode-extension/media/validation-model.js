@@ -319,6 +319,9 @@
       if (t.status === "transferred" && !reqThreats.has(t.id))
         add("warning", `${t.id}: transferred risk requires a linked requirement documenting the risk transfer in the user guide.`);
     }
+    const incompleteThreatCount = threatList.filter((threat) => !hasText(threat.cause) && !arr(threat.compromisedObjectives).length).length;
+    if (incompleteThreatCount)
+      add("notice", `${incompleteThreatCount} threats do not state a cause or the compromised objectives (EN 40000-1-2, 6.4.3.3).`, "threat-structure-empty");
 
     const parents = new Set(components.map((c) => c.parent).filter(Boolean));
     const threatAssets = new Set(threatList.flatMap((t) => arr(t.assets)));

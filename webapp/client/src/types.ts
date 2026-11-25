@@ -328,6 +328,8 @@ export interface Threat {
     acceptedBy?: string; // residual-risk sign-off owner (required when status = accepted)
     acceptanceRationale?: string; // justification for accepting the residual risk
     reviewDate?: string; // next lifecycle re-assessment date (YYYY-MM-DD)
+    compromisedObjectives?: ('confidentiality' | 'integrity' | 'availability' | 'safety')[];
+    cause?: string;
     // Root-cause boundary (optional; unset = not yet classified, treat as an open question, not
     // as an implicit 'product-vulnerability'). See .ai/README.md for the full reasoning and the
     // "an inherent protocol limitation is not automatically a product vulnerability" principle.

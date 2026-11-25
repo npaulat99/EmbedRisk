@@ -235,6 +235,9 @@ export function validate(data: ProjectData, scheme: RiskScheme | null = null, sc
         if (t.status === 'transferred' && !reqThreats.has(t.id))
             add('warning', `${t.id}: transferred risk requires a linked requirement documenting the risk transfer in the user guide.`);
     }
+    const incompleteThreatCount = threats.filter((threat) => !hasText(threat.cause) && !(threat.compromisedObjectives || []).length).length;
+    if (incompleteThreatCount)
+        add('notice', `${incompleteThreatCount} threats do not state a cause or the compromised objectives (EN 40000-1-2, 6.4.3.3).`, 'threat-structure-empty');
 
     const parents = new Set(components.map((c) => c.parent).filter(Boolean) as string[]);
     const threatAssets = new Set(threats.flatMap((t) => t.assets || []));

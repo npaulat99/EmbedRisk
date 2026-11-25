@@ -218,6 +218,10 @@ export function validate({ project = {}, assumptions = {}, system = {}, threats 
         }
     }
 
+    const incompleteThreatCount = threatList.filter((threat) => !hasText(threat.cause) && !arr(threat.compromisedObjectives).length).length;
+    if (incompleteThreatCount)
+        add('notice', `${incompleteThreatCount} threats do not state a cause or the compromised objectives (EN 40000-1-2, 6.4.3.3).`, 'threat-structure-empty');
+
     for (const i of interfaces) {
         if (typeof i.hidden !== 'undefined' && typeof i.hidden !== 'boolean') {
             add('warning', `Interface '${i.id || i.name || 'unknown'}': hidden must be a boolean when set.`);

@@ -123,6 +123,21 @@
               }
             }
           },
+          "compromisedObjectives": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "confidentiality",
+                "integrity",
+                "availability",
+                "safety"
+              ]
+            }
+          },
+          "cause": {
+            "type": "string"
+          },
           "countermeasures": {
             "type": "array",
             "items": {

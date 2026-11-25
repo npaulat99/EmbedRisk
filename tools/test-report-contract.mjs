@@ -8,7 +8,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const fixtureDir = join(root, "tools/fixtures/en40000-project");
-const expectedMarkers = ["EN40000 contract fixture", "Asset marker", "Threat marker", "Deployment marker", "Residual risks and expectations on users and integrators", "Within acceptance criteria", "Avoided", "Avoidance rationale", "Accepted deviations from the acceptance criteria", "Contract exception marker", "R-1"];
+const expectedMarkers = ["EN40000 contract fixture", "Asset marker", "Threat marker", "Deployment marker", "integrity; availability", "Cause marker &lt;img src=x onerror=alert(1)&gt;", "Residual risks and expectations on users and integrators", "Within acceptance criteria", "Avoided", "Avoidance rationale", "Accepted deviations from the acceptance criteria", "Contract exception marker", "R-1"];
 const failures = new Set();
 const reports = [];
 
@@ -129,7 +129,7 @@ try {
             const traceRow = traceTable?.match(/<tr id=["']threat-T-1["']>([\s\S]*?)<\/tr>/i)?.[1] || "";
             const traceCells = [...traceRow.matchAll(/<td\b[^>]*>([\s\S]*?)<\/td>/gi)]
                 .map(([, cell]) => cell.replace(/<[^>]+>/g, "").trim());
-            check(traceCells.slice(-3).join("|") === "shared-responsibility|integrator-operator|Deployment marker &lt;img src=x onerror=alert(1)&gt;",
+            check(traceCells.slice(-5).join("|") === "shared-responsibility|integrator-operator|Deployment marker &lt;img src=x onerror=alert(1)&gt;|integrity; availability|Cause marker &lt;img src=x onerror=alert(1)&gt;",
                 `${report.name}: traceability matrix values do not match the appended column headers`);
         }
         check(matrixTextContrastIsComputed(report.html), `${report.name}: matrix text color is not selected by relative luminance`);
@@ -178,7 +178,9 @@ try {
         const row = JSON.parse(report.json)[0];
         check(row.classification === "shared-responsibility"
             && row.responsibility === "integrator-operator"
-            && row.deploymentConstraints.includes("Deployment marker"),
+            && row.deploymentConstraints.includes("Deployment marker")
+            && JSON.stringify(row.compromisedObjectives) === JSON.stringify(["integrity", "availability"])
+            && row.cause.includes("Cause marker"),
             `${report.name}: traceability JSON is missing WP2 fields`);
     }
 
@@ -189,10 +191,10 @@ try {
         const csvLines = report.csv.trimEnd().split("\r\n");
         const headers = extractCsvCells(csvLines[0]);
         const firstRow = extractCsvCells(csvLines[1]);
-        check(JSON.stringify(headers.slice(-3)) === JSON.stringify(["Classification", "Responsibility", "DeploymentConstraints"]),
-            `${report.name}: traceability CSV is missing the trailing WP2 columns`);
-        check(JSON.stringify(firstRow.slice(-3)) === JSON.stringify(["shared-responsibility", "integrator-operator", "Deployment marker <img src=x onerror=alert(1)>"]),
-            `${report.name}: traceability CSV is missing WP2 field values`);
+        check(JSON.stringify(headers.slice(-5)) === JSON.stringify(["Classification", "Responsibility", "DeploymentConstraints", "CompromisedObjectives", "Cause"]),
+            `${report.name}: traceability CSV is missing the trailing WP2/WP4 columns`);
+        check(JSON.stringify(firstRow.slice(-5)) === JSON.stringify(["shared-responsibility", "integrator-operator", "Deployment marker <img src=x onerror=alert(1)>", "integrity; availability", "Cause marker <img src=x onerror=alert(1)>"]),
+            `${report.name}: traceability CSV is missing WP2/WP4 field values`);
         const formula = cells.find((cell) => cell.includes("=HYPERLINK"));
         check(formula?.startsWith("'") === true, `F4: ${report.name} CSV contains a formula-prefixed cell`);
         const sumFormula = cells.find((cell) => cell.includes("@SUM(1)"));

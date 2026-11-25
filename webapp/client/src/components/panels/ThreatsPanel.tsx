@@ -8,6 +8,21 @@ import RiskCalculator from './RiskCalculator';
 import ThreatCmImportExport from '../ThreatCmImportExport';
 import type { Threat } from '../../types';
 
+const STRIDE_COMPROMISED_OBJECTIVES: Record<Threat['stride'][number], NonNullable<Threat['compromisedObjectives']>> = {
+    S: ['integrity', 'confidentiality'],
+    T: ['integrity'],
+    R: ['integrity'],
+    I: ['confidentiality'],
+    D: ['availability'],
+    E: ['confidentiality', 'integrity', 'availability', 'safety'],
+};
+const COMPROMISED_OBJECTIVE_OPTIONS = [
+    ['confidentiality', 'Confidentiality'],
+    ['integrity', 'Integrity'],
+    ['availability', 'Availability'],
+    ['safety', 'Safety'],
+] as const;
+
 export default function ThreatsPanel() {
     const data = useStore((s) => s.data)!;
     const scheme = useStore((s) => s.scheme);
@@ -114,6 +129,7 @@ export default function ThreatsPanel() {
                 : (residualLevel.score ?? residualRisk.residual) > acceptableRisk);
         const updateAcceptanceDeviation = (field: 'circumstance' | 'communicatedTo', value: string) =>
             upd({ acceptanceDeviation: { ...(t.acceptanceDeviation || {}), [field]: value || undefined } });
+        const suggestedObjectives = [...new Set((t.stride || []).flatMap((category) => STRIDE_COMPROMISED_OBJECTIVES[category]))];
         const ifaceOpts = (data.system.interfaces || []).map((itf) => ({ value: itf.id, label: `${itf.name}${itf.protocol ? ` (${itf.protocol})` : ''}` }));
         const linkedRequirementIds = requirements.filter((r) => (r.derivedFromThreat || []).includes(t.id)).map((r) => r.id);
         const interfaceRefs = t.interfaceRefs?.length ? t.interfaceRefs : t.interfaceRef && t.interfaceRef !== 'custom' ? [t.interfaceRef] : [];
@@ -245,6 +261,34 @@ export default function ThreatsPanel() {
                                     )}
                                 </Field>
                             </div>
+                            <fieldset className="objective-group">
+                                <legend>Compromised objectives</legend>
+                                <span className="chip static objective-hint">
+                                    Suggested by STRIDE: {suggestedObjectives.length ? suggestedObjectives.join(', ') : 'none'}
+                                </span>
+                                <div className="objective-options">
+                                    {COMPROMISED_OBJECTIVE_OPTIONS.map(([value, label]) => (
+                                        <label className="objective-check" key={value}>
+                                            <input
+                                                type="checkbox"
+                                                checked={(t.compromisedObjectives || []).includes(value)}
+                                                onChange={(event) => {
+                                                    const selected = new Set(t.compromisedObjectives || []);
+                                                    if (event.target.checked) selected.add(value);
+                                                    else selected.delete(value);
+                                                    upd({ compromisedObjectives: COMPROMISED_OBJECTIVE_OPTIONS
+                                                        .map(([objective]) => objective)
+                                                        .filter((objective) => selected.has(objective)) });
+                                                }}
+                                            />
+                                            {label}
+                                        </label>
+                                    ))}
+                                </div>
+                            </fieldset>
+                            <Field label="Cause">
+                                <textarea rows={2} value={t.cause || ''} onChange={(e) => upd({ cause: e.target.value || undefined })} />
+                            </Field>
                             <div className="grid2">
                                 <Field label="Likelihood rationale">
                                     <textarea value={t.likelihoodRationale || ''} onChange={(e) => upd({ likelihoodRationale: e.target.value })} />

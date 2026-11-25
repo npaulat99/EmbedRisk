@@ -220,6 +220,8 @@ const traceability = threats.map((t) => {
     classification: t.classification || '',
     responsibility: t.responsibility || '',
     deploymentConstraints: t.deploymentConstraints || '',
+    compromisedObjectives: t.compromisedObjectives || [],
+    cause: t.cause || '',
   };
 });
 const csvCell = (value) => {
@@ -228,12 +230,12 @@ const csvCell = (value) => {
   return `"${neutralized.replace(/"/g, '""')}"`;
 };
 const traceabilityCsv = (() => {
-  const headers = ['Asset', 'C/I/A/S', 'Threat', 'Title', 'STRIDE', 'Assumptions', 'Rationale', 'Initial', 'InitialBand', 'Requirement', 'Control', 'Residual', 'ResidualBand', 'Evidence', 'Status', 'RatedBy', 'SignOff', 'Classification', 'Responsibility', 'DeploymentConstraints'];
+  const headers = ['Asset', 'C/I/A/S', 'Threat', 'Title', 'STRIDE', 'Assumptions', 'Rationale', 'Initial', 'InitialBand', 'Requirement', 'Control', 'Residual', 'ResidualBand', 'Evidence', 'Status', 'RatedBy', 'SignOff', 'Classification', 'Responsibility', 'DeploymentConstraints', 'CompromisedObjectives', 'Cause'];
   const body = traceability.map((r) => [
     r.asset, r.cias, r.threat, r.title, r.stride, (r.assumptionRefs || []).join('; '),
     [r.likelihoodRationale && `L: ${r.likelihoodRationale}`, r.impactRationale && `I: ${r.impactRationale}`].filter(Boolean).join(' | '),
     r.initial, r.initialBand, r.requirement, r.control, r.residual, r.residualBand, r.evidence, r.status, r.ratedBy, r.signoff,
-    r.classification, r.responsibility, r.deploymentConstraints,
+    r.classification, r.responsibility, r.deploymentConstraints, (r.compromisedObjectives || []).join('; '), r.cause,
   ].map(csvCell).join(','));
   return [headers.map(csvCell).join(','), ...body].join('\r\n') + '\r\n';
 })();
@@ -290,7 +292,8 @@ const rows = threats.map((t) => {
     `<td>${refs || '—'}</td><td>${rationale || '—'}</td><td>${classification}</td>` +
     `<td>${riskCell(risk, 'initial', t, rr)}</td>` +
     `<td>${unfeasible ? UNFEASIBLE_CELL : riskCell(risk, 'residual', t, rr)}</td>` +
-    `<td>${esc(t.status || 'open')}${t.status === 'accepted' && t.acceptedBy ? ` · <i>${esc(t.acceptedBy)}</i>` : ''}${acceptanceText}</td></tr>`;
+    `<td>${esc(t.status || 'open')}${t.status === 'accepted' && t.acceptedBy ? ` · <i>${esc(t.acceptedBy)}</i>` : ''}${acceptanceText}</td>` +
+    `<td>${esc((t.compromisedObjectives || []).join('; ')) || '—'}</td><td>${esc(t.cause || '') || '—'}</td></tr>`;
 }).join('');
 
 const cmRows = cms.map((c) => {
@@ -415,7 +418,7 @@ const html = `<!doctype html><html lang="en"><head><meta charset=utf8><meta name
 ${assRows ? `<h2>Assumptions</h2>${assRows}` : ''}
 <h2>Assets</h2><ul>${(sys.assets || []).map(a => `<li>${esc(a.name)} (C${a.objectives?.confidentiality}/I${a.objectives?.integrity}/A${a.objectives?.availability}/S${a.objectives?.safety})</li>`).join('')}</ul>
 ${riskSchemeSection}
-<h2>Threats &amp; risk</h2><table><caption>Threats and risk</caption><thead><tr><th scope="col">ID</th><th scope="col">Threat</th><th scope="col">STRIDE</th><th scope="col">Assumptions</th><th scope="col">Rationale</th><th scope="col">Classification</th><th scope="col">Initial risk</th><th scope="col">Residual risk</th><th scope="col">Status</th></tr></thead><tbody>${rows}</tbody></table>
+<h2>Threats &amp; risk</h2><table><caption>Threats and risk</caption><thead><tr><th scope="col">ID</th><th scope="col">Threat</th><th scope="col">STRIDE</th><th scope="col">Assumptions</th><th scope="col">Rationale</th><th scope="col">Classification</th><th scope="col">Initial risk</th><th scope="col">Residual risk</th><th scope="col">Status</th><th scope="col">Compromised objectives</th><th scope="col">Cause</th></tr></thead><tbody>${rows}</tbody></table>
 ${riskDisclosureSection}
 <h2>Countermeasures</h2><ul>${cmRows || '<li>None defined.</li>'}</ul>
 ${reqRows ? `<h2>Security requirements</h2><table><caption>Security requirements</caption><thead><tr><th scope="col">ID</th><th scope="col">Requirement</th><th scope="col">Standard ref</th><th scope="col">From threats</th><th scope="col">Satisfied by</th></tr></thead><tbody>${reqRows}</tbody></table>` : ''}

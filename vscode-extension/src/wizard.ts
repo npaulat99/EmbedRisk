@@ -503,7 +503,7 @@ export async function openWizard(ctx: vscode.ExtensionContext, focusThreatId?: s
           'likelihoodRationale', 'impactRationale',
           'acceptedBy', 'acceptanceRationale', 'reviewDate',
           'avoidanceRationale', 'transferRationale', 'acceptanceDeviation',
-          'assumptionRefs'].forEach(pick);
+          'compromisedObjectives', 'cause', 'assumptionRefs'].forEach(pick);
         return threatCostFields(out);
       });
       await write(f.proj, "06-threats/threats.json", { ...threatDoc, threats: norm });
@@ -913,6 +913,8 @@ const vs=acquireVsCodeApi(), AS=window.EmbedRiskAttackerScale, R=window.RiskMode
 if(!R)throw new Error('EmbedRisk risk model failed to load.');
 const STRIDE=[['S','Spoofing'],['T','Tampering'],['R','Repudiation'],['I','Info disclosure'],['D','Denial of service'],['E','Elevation']];
 const T_STATUS=[['open','Open'],['mitigated','Mitigated'],['accepted','Accepted'],['transferred','Transferred'],['unfeasible','Unfeasible'],['avoided','Avoided']];
+var STRIDE_COMPROMISED_OBJECTIVES={S:['integrity','confidentiality'],T:['integrity'],R:['integrity'],I:['confidentiality'],D:['availability'],E:['confidentiality','integrity','availability','safety']};
+var COMPROMISED_OBJECTIVE_OPTIONS=[['confidentiality','Confidentiality'],['integrity','Integrity'],['availability','Availability'],['safety','Safety']];
 const SKILL_OPTS=AS.ACTOR_LEVELS.map(function(l){return [l.level,l.description];});
 const COST_ACCESS_OPTS=[[1,'Remote (unauth.)'],[2,'Remote (auth.)'],[3,'Adjacent / fieldbus'],[4,'Local (on site)'],[5,'Physical (open enclosure)']];
 const COST_FACTORS=[
@@ -1281,6 +1283,10 @@ function renderThreats(){
     );
     var asmById={}; asmOpts.forEach(function(a){asmById[a.id]=a;});
     var asms=asmOpts.length?asmOpts.map(function(a){return chip(a.id,(t.assumptionRefs||[]).indexOf(a.id)>=0,'data-i='+i+' data-role="asm" data-val="'+esc(a.id)+'"',a.src+(a.text?': '+a.text.slice(0,60):''));}).join(''):'<span class="hint">Define assumptions in step 02 first.</span>';
+    var suggestedObjectives=[];(t.stride||[]).forEach(function(category){(STRIDE_COMPROMISED_OBJECTIVES[category]||[]).forEach(function(objective){if(suggestedObjectives.indexOf(objective)<0)suggestedObjectives.push(objective);});});
+    var objectiveChecks=COMPROMISED_OBJECTIVE_OPTIONS.map(function(option){var id='threat-objective-'+i+'-'+option[0];return '<label class="objective-check" for="'+id+'"><input id="'+id+'" type="checkbox" data-i="'+i+'" data-k="compromisedObjectives" data-objective="'+option[0]+'"'+((t.compromisedObjectives||[]).indexOf(option[0])>=0?' checked':'')+'><span>'+option[1]+'</span></label>';}).join('');
+    var objectiveFields='<fieldset class="objective-group"><legend>Compromised objectives</legend><span class="chip static objective-hint">Suggested by STRIDE: '+(suggestedObjectives.length?suggestedObjectives.join(', '):'none')+'</span><div class="objective-options">'+objectiveChecks+'</div></fieldset>'+
+      '<div class="field"><label for="threat-cause-'+i+'">Cause</label><textarea class="inp" id="threat-cause-'+i+'" rows="2" data-i="'+i+'" data-k="cause">'+esc(t.cause||'')+'</textarea></div>';
     var asmNote=(t.assumptionRefs||[]).length?'<ul style="margin:6px 0 0 18px">'+(t.assumptionRefs||[]).map(function(aid){
       var valid=/^[A-Za-z0-9 _:.-]+$/.test(String(aid));
       if(!valid)return '<li><b>'+esc(aid)+'</b> · invalid ID format</li>';
@@ -1312,7 +1318,7 @@ function renderThreats(){
       '<div class="field"><label>Likelihood rationale</label><textarea class="inp" rows=2 data-i='+i+' data-k="likelihoodRationale">'+esc(t.likelihoodRationale||'')+'</textarea></div>'+
       '<div class="field"><label>Impact rationale</label><textarea class="inp" rows=2 data-i='+i+' data-k="impactRationale">'+esc(t.impactRationale||'')+'</textarea></div>'+
     '</div>'+
-    '<div class="field" style="margin-top:6px"><label>Supporting assumptions</label><div class="chips">'+asms+'</div>'+asmNote+'</div>';
+    '<div class="field" style="margin-top:6px"><label>Supporting assumptions</label><div class="chips">'+asms+'</div>'+asmNote+'</div>'+objectiveFields;
     var acceptedFields='';
     if(t.status==='avoided')acceptedFields='<div class="field"><label for="avoidance-rationale-'+i+'">Avoidance rationale</label><textarea class="inp" id="avoidance-rationale-'+i+'" rows="2" maxlength="200" data-i='+i+' data-k="avoidanceRationale" aria-describedby="avoidance-rationale-hint-'+i+'">'+esc(t.avoidanceRationale||'')+'</textarea><span class="hint" id="avoidance-rationale-hint-'+i+'">Describe the design or context change that removes this risk.</span></div>';
     if(t.status==='transferred')acceptedFields='<div class="field"><label for="transfer-rationale-'+i+'">Transfer rationale</label><textarea class="inp" id="transfer-rationale-'+i+'" rows="2" maxlength="200" data-i='+i+' data-k="transferRationale" aria-describedby="transfer-rationale-hint-'+i+'">'+esc(t.transferRationale||'')+'</textarea><span class="hint" id="transfer-rationale-hint-'+i+'">Who receives the risk, how they are informed, and why avoiding or reducing it was not chosen.</span></div>';
@@ -1734,6 +1740,7 @@ document.addEventListener('input',function(e){
   if(t.id==='p-bnd'){project.boundary=t.value;return;}
   if(t.id==='p-uc-inc'){project.includeUseCases=!!t.checked;return;}
   if(t.id==='p-sbom-mode'||t.id==='p-sbom-format'||t.id==='p-sbom-url-inp'){project.sbom=readSbom();showSbomFields(project.sbom.mode);return;}
+  if(t.dataset.i!==undefined&&t.dataset.objective){var objectiveIndex=+t.dataset.i,objective=t.dataset.objective,selectedObjectives=(threats[objectiveIndex].compromisedObjectives||[]).slice(),objectivePosition=selectedObjectives.indexOf(objective);if(t.checked&&objectivePosition<0)selectedObjectives.push(objective);else if(!t.checked&&objectivePosition>=0)selectedObjectives.splice(objectivePosition,1);threats[objectiveIndex].compromisedObjectives=COMPROMISED_OBJECTIVE_OPTIONS.map(function(option){return option[0];}).filter(function(value){return selectedObjectives.indexOf(value)>=0;});if(!threats[objectiveIndex].compromisedObjectives.length)delete threats[objectiveIndex].compromisedObjectives;return;}
   if(t.dataset.i!==undefined&&t.dataset.criterionAxis&&t.dataset.criterionId){
     var ci=+t.dataset.i,axis=t.dataset.criterionAxis,id=t.dataset.criterionId,field=axis+'Criteria',values=Object.assign({},threats[ci][field]||(axis==='likelihood'?threats[ci].likelihoodFactors:threats[ci].impactDimensions)||{});
     values[id]=t.value===''?null:+t.value;threats[ci][field]=values;

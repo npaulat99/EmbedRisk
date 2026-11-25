@@ -23,6 +23,11 @@
             "classification": "shared-responsibility",
             "responsibility": "integrator-operator",
             "deploymentConstraints": "Deployment marker <img src=x onerror=alert(1)>",
+            "compromisedObjectives": [
+                "integrity",
+                "availability"
+            ],
+            "cause": "Cause marker <img src=x onerror=alert(1)>",
             "status": "open",
             "ratedBy": "=HYPERLINK(\"http://x\",\"y\")"
         },

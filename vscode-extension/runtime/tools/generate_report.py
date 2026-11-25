@@ -363,7 +363,9 @@ for t in threats:
     if scheme is not None and within_acceptance(t, rl, ri) and level:
         acceptable = project.get("acceptableLevel") or scheme.get("acceptance", {}).get("defaultLevel") or project.get("acceptableRisk", 12)
         acceptance_statement = f"<br><span>Within acceptance criteria (scheme {_esc(scheme['id'])} v{_esc(scheme['version'])}, level {_esc(level['label'])}, acceptable {_esc(acceptable)}).</span>"
-    rows += f"<tr><td>{html_lib.escape(str(t['id']), quote=True)}</td><td>{html_lib.escape(str(t['title']), quote=True)}</td><td>{html_lib.escape(''.join(t['stride']), quote=True)}</td><td>{'<br>'.join(classification)}</td><td>{initial}</td><td>{remaining}</td><td>{html_lib.escape(str(t['status']), quote=True)}{acceptance_statement}</td></tr>"
+    compromised_objectives = "; ".join(t.get("compromisedObjectives") or [])
+    cause = t.get("cause") or "—"
+    rows += f"<tr><td>{html_lib.escape(str(t['id']), quote=True)}</td><td>{html_lib.escape(str(t['title']), quote=True)}</td><td>{html_lib.escape(''.join(t['stride']), quote=True)}</td><td>{'<br>'.join(classification)}</td><td>{initial}</td><td>{remaining}</td><td>{html_lib.escape(str(t['status']), quote=True)}{acceptance_statement}</td><td>{_esc(compromised_objectives or '—')}</td><td>{_esc(cause)}</td></tr>"
 
 assets = "".join(f"<li>{_esc(a['name'])} (C{_esc(a['objectives']['confidentiality'])}/I{_esc(a['objectives']['integrity'])}/A{_esc(a['objectives']['availability'])}/S{_esc(a['objectives']['safety'])})</li>" for a in sys_def["assets"])
 def cap_label(v):
@@ -451,7 +453,7 @@ html = (f"<!doctype html><html lang=\"en\"><head><meta charset=utf8><meta name=\
         f"<h2>Data flow diagram (layer 1)</h2>{dfd_svg(dfd)}"
         f"<h2>Attacker profiles</h2><ul>{atk}</ul><h2>Assets</h2><ul>{assets}</ul>"
         f"{risk_scheme_html()}"
-        f"<h2>Threats &amp; risk</h2><table><caption>Threats and risk</caption><thead><tr><th scope='col'>ID</th><th scope='col'>Threat</th><th scope='col'>STRIDE</th><th scope='col'>Classification</th><th scope='col'>Initial</th><th scope='col'>Residual</th><th scope='col'>Status</th></tr></thead><tbody>{rows}</tbody></table>{risk_disclosure_html}"
+        f"<h2>Threats &amp; risk</h2><table><caption>Threats and risk</caption><thead><tr><th scope='col'>ID</th><th scope='col'>Threat</th><th scope='col'>STRIDE</th><th scope='col'>Classification</th><th scope='col'>Initial</th><th scope='col'>Residual</th><th scope='col'>Status</th><th scope='col'>Compromised objectives</th><th scope='col'>Cause</th></tr></thead><tbody>{rows}</tbody></table>{risk_disclosure_html}"
         f"<h2>Countermeasures</h2><ul>{cmrows}</ul>"
         f"{trees_section}"
         f"<h2>Plausibility check</h2>{warn}</main></body></html>")

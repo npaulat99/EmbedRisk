@@ -85,6 +85,28 @@ function testAssetWithoutThreatRequiresRationale() {
     assert.ok(!issueMessages(validate(project), 'warning').includes(expected));
 }
 
+function testThreatStructureNoticeIsAggregatedAndDismissible() {
+    const project = baseProject();
+    project.threats.threats = [
+        { id: 'T-STRUCT-1', title: 'No structure fields', stride: ['S'], components: ['C-1'], likelihood: 2, impact: 2 },
+        { id: 'T-STRUCT-2', title: 'Also incomplete', stride: ['T'], components: ['C-1'], likelihood: 2, impact: 2 },
+        { id: 'T-STRUCT-3', title: 'Cause only', stride: ['R'], components: ['C-1'], likelihood: 2, impact: 2, cause: 'Weak input validation.' },
+        { id: 'T-STRUCT-4', title: 'Objective only', stride: ['I'], components: ['C-1'], likelihood: 2, impact: 2, compromisedObjectives: ['confidentiality'] },
+    ];
+    const message = '2 threats do not state a cause or the compromised objectives (EN 40000-1-2, 6.4.3.3).';
+    const notice = validate(project).filter((issue) => issue.key === 'threat-structure-empty');
+    assert.deepEqual(notice, [{ severity: 'notice', message, key: 'threat-structure-empty' }]);
+
+    project.threats.threats[0].compromisedObjectives = ['integrity'];
+    assert.ok(validate(project).some((issue) => issue.key === 'threat-structure-empty'));
+    project.threats.threats[1].cause = 'Insufficient authorization checks.';
+    assert.ok(!validate(project).some((issue) => issue.key === 'threat-structure-empty'));
+    project.project.acceptedNotices = ['threat-structure-empty'];
+    project.threats.threats[0].compromisedObjectives = [];
+    project.threats.threats[1].cause = '';
+    assert.ok(!validate(project).some((issue) => issue.key === 'threat-structure-empty'));
+}
+
 function testClassificationNoticeAndTransferRequirementWarning() {
     const project = baseProject();
     project.threats.threats.push({
@@ -303,6 +325,7 @@ testActorScaleValidation();
 testAvoidedThreatRequiresRationaleAndChangedContextLink();
 testTransferredThreatRequiresTransferRationale();
 testAcceptanceAboveThresholdRequiresDeviationCircumstance();
+testThreatStructureNoticeIsAggregatedAndDismissible();
 testActorScaleValidation();
 testActorScaleValidation();
 testAssetWithoutThreatRequiresRationale();

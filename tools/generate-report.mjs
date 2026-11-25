@@ -221,7 +221,7 @@ const rows = threats.map((t) => {
   const acceptanceText = withinAcceptanceCriteria(t, risk)
     ? `<br><span>Within acceptance criteria (scheme ${esc(scheme.id)} v${esc(scheme.version)}, level ${esc(risk.residualBand.label || risk.residualBand.name)}, acceptable ${esc(acceptanceSetting)}).</span>`
     : '';
-  return `<tr id="threat-${esc(t.id)}"><td>${esc(t.id)}</td><td>${esc(t.title)}</td><td>${esc((t.stride || []).join(""))}</td><td>${refs || '—'}</td><td>${rationale || '—'}</td><td>${classification}</td><td>${initial}</td><td>${residualCell}</td><td>${esc(t.status || '')}${acceptanceText}</td></tr>`;
+  return `<tr id="threat-${esc(t.id)}"><td>${esc(t.id)}</td><td>${esc(t.title)}</td><td>${esc((t.stride || []).join(""))}</td><td>${refs || '—'}</td><td>${rationale || '—'}</td><td>${classification}</td><td>${initial}</td><td>${residualCell}</td><td>${esc(t.status || '')}${acceptanceText}</td><td>${esc((t.compromisedObjectives || []).join('; ')) || '—'}</td><td>${esc(t.cause || '') || '—'}</td></tr>`;
 }).join("");
 
 const ucRows = (useCases.diagrams || []).map((d) =>
@@ -269,7 +269,7 @@ const html = `<!doctype html><html lang="en"><head><meta charset=utf8><meta name
 ${assRows ? `<h2>Assumptions</h2>${assRows}` : ''}
 <h2>Assets</h2><ul>${sys.assets.map((a) => `<li>${esc(a.name)} (C${esc(a.objectives.confidentiality)}/I${esc(a.objectives.integrity)}/A${esc(a.objectives.availability)}/S${esc(a.objectives.safety)})</li>`).join("")}</ul>
 ${riskSchemeSection}
-<h2>Threats & risk</h2><table><caption>Threats and risk</caption><thead><tr><th scope="col">ID</th><th scope="col">Threat</th><th scope="col">STRIDE</th><th scope="col">Assumptions</th><th scope="col">Rationale</th><th scope="col">Classification</th><th scope="col">Initial</th><th scope="col">Residual</th><th scope="col">Status</th></tr></thead><tbody>${rows}</tbody></table>
+<h2>Threats & risk</h2><table><caption>Threats and risk</caption><thead><tr><th scope="col">ID</th><th scope="col">Threat</th><th scope="col">STRIDE</th><th scope="col">Assumptions</th><th scope="col">Rationale</th><th scope="col">Classification</th><th scope="col">Initial</th><th scope="col">Residual</th><th scope="col">Status</th><th scope="col">Compromised objectives</th><th scope="col">Cause</th></tr></thead><tbody>${rows}</tbody></table>
 ${riskDisclosureSection}
 ${project.reportOptions?.includeUseCases ? `<h2>Use-case diagrams</h2>${ucRows ? `<ul>${ucRows}</ul>` : '<p>No use-case diagrams defined.</p>'}` : ''}
 <h2>Plausibility check</h2>${issues.length ? `<ul class=warn>${issues.map((i) => `<li>${i}</li>`).join("")}</ul>` : "<p>No issues found.</p>"}</main></body></html>`;
