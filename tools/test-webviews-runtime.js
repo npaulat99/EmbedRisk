@@ -1286,6 +1286,8 @@ async function checkTreatmentRationalePersistence(h, mod) {
 async function checkProductContextPersistence(h, mod) {
   const projectPath = path.join(projectDir, "01-project-description/project.json");
   const project = JSON.parse(h.readText(projectPath));
+  delete project.productContext;
+  delete project.riskCriteria;
   const functionName = "Overfill protection";
   const functionDescription = "Stops filling when the high-level switch activates.";
   const usersDescription = "Plant operators and commissioning engineers.";

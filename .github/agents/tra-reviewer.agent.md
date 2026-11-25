@@ -20,9 +20,14 @@ domain plausibility judgment a linter cannot express:
   represents (same entity, not a duplicate); do not flag that specific pairing as an error.
 - **Coverage**: every non-device/external-entity component and every interface should be referenced
   by at least one threat; every threat at or above the active scheme's `highLevel` needs a derived
-  requirement unless `status: accepted`. Resolve the project's scheme and compare classification
+  requirement unless `status: accepted` or `status: avoided`. Resolve the project's scheme and compare classification
   ranks; do not use a fixed product-score threshold. If the scheme is unavailable or stale, flag
   that classification cannot be verified instead of guessing.
+- **EN 40000-1-2 context and structure**: for `review`/`released` projects, report the V-07/V-08
+  notices for missing functions/users or scheme justification. Check evidence refs against V-06's
+  HTTP(S)/safe-relative rule. `cause` and `compromisedObjectives` are optional; V-09 is one
+  dismissible notice when both are absent, not a per-threat error. A STRIDE hint is not confirmation
+  of an objective.
 - **Plausibility**: an attacker's `access` proximity must be able to reach the rated `exposure`; rated
   `likelihoodFactors` (exposure/exploitability) should be consistent with the attacker's `capability`;
   a preventive countermeasure should reduce likelihood, not impact; residual likelihood/impact must
@@ -42,6 +47,10 @@ domain plausibility judgment a linter cannot express:
   that a control lowers the cost-based result without identifying the changed input and evidence.
 - **Status hygiene**: `status: accepted` requires `acceptedBy`, `acceptanceRationale`, `reviewDate`;
   `status: mitigated` requires an implemented/verified countermeasure; overdue `reviewDate`s.
+- **Treatment semantics**: `avoided` requires an evidenced design/context change and
+  `avoidanceRationale`; `transferred` requires a recipient/informing `transferRationale`; an
+  above-criteria accepted residual requires `acceptanceDeviation.circumstance`. Do not recommend
+  writing these rationales without project evidence.
 - **Evidence hygiene**: `status: implemented`/`verified` countermeasures need a `ticketUrl`;
   `verified` needs a `verificationUrl`.
 - **Assumption contradictions**: two assumptions or an assumption vs. a rated threat that cannot both

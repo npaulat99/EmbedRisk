@@ -8,6 +8,8 @@ methodology step, with a **live, bidirectional link to the JSON files** on disk.
 > Edit in the UI and the JSON files update instantly. Edit a JSON file in your editor and the UI
 > updates instantly. The project folder remains the single source of truth.
 
+**Browser support:** The client uses Baseline Widely available web platform features only. Do not add fallbacks or polyfills for newer features; if a feature is newer, do not use it. Existing progressive enhancement stays unchanged.
+
 ## Why this design
 
 | Requirement (project.md)                     | How it is met                                                                 |
@@ -175,12 +177,13 @@ re-attach to the most specific visible component as you zoom in.
 One JSON file per step under `projects/<id>/`, matching the `tra/` methodology and schemas
 (`tra/.assets/schema/*`):
 
-- `01-project-description/project.json` — device, scope, modelling depth, SL-C.
+- `01-project-description/project.json` — device, scope, modelling depth, SL-C, optional product context, and risk-criteria justification.
 - `02-assumptions/assumptions.json` — device/system/environment/operational + **mandatory** attacker profiles.
 - `03-system-assets/system.json` — components, interfaces, trust boundaries, assets with C/I/A/Safety.
 - `04-dfd/dfd.json` — layered DeMarco nodes + flows; nodes additionally carry `x`/`y` for layout.
 - `06-threats/threats.json` — STRIDE, affected components, primary interface, Likelihood/Impact, plus
-  optional Bug Bar `impactDimensions`, `likelihoodFactors` and `cvss` from the guided calculator.
+  optional `cause`, `compromisedObjectives`, treatment rationales, Bug Bar `impactDimensions`,
+  `likelihoodFactors` and `cvss` from the guided calculator.
 - `07-attack-trees/attack-trees.json` — optional attack-defence trees (AND/OR/SAND gates, per-step
   access/skill/cost, defence + vulnerability nodes), each linked to a threat.
 - `08-countermeasures/countermeasures.json` — m:n `addresses` with residual L/I.

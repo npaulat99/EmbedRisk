@@ -136,6 +136,28 @@ countermeasure -> residual risk**:
 
 Attacker `capability`, threat `requiredSkill` and attack-tree node `skill` use the 4-level threat-actor scale (1-4); a persisted legacy 5 is read as 4. Do not write 5 into these fields.
 
+## Product context and risk criteria
+
+The optional `project.productContext` fields are:
+
+- `functions[]`: `name`, optional `description`.
+- `users`: optional `description` and `vulnerableGroups[]`.
+- `evidence[]`: `title`, `ref`, optional `clause`.
+
+The optional `project.riskCriteria` fields are `schemeJustification`, `schemeSource`, and `inputs` (`regulation`, `contracts`, `riskNature`, `users`, `productType`, `stateOfTheArt`). These fields justify the active scheme and acceptance criteria; they do not alter the scheme or its fingerprint. List items have no IDs and are keyed by position. Keep the UI/schema limits: 50 functions, evidence items, or vulnerable groups; 200 characters for short labels/inputs and 2,000 for descriptions/justifications/references.
+
+Evidence `ref` values may be HTTP(S) URLs or project-relative paths only. Never write credentials into a reference. Reject schemes other than HTTP(S), protocol-relative/absolute paths, backslashes, control characters, and any `..` path segment. Reports must pass refs through `safeHref`; an unsafe ref is rendered as escaped text, not a link.
+
+For a remote data processing solution (RDPS), use an existing `external-entity` component and record the known operator/responsibility in `description`, supplier/provenance where known, exchanged data in DFD flows and asset links, trust/authentication in interface protocol and system assumptions, and offline/degraded behavior in requirements. This is a convention, not a new schema. Leave unknown facts open and ask; do not infer an operator or trust relationship from the component name.
+
+## Threat structure and treatment
+
+`Threat.compromisedObjectives` is an optional array drawn from `confidentiality`, `integrity`, `availability`, and `safety`; `Threat.cause` is optional free text. STRIDE may suggest objectives for discussion, but never silently preselect or persist a suggestion as an assessed fact. Preserve the existing `STRIDE` and impact-rating meanings; these new fields do not change scoring.
+
+`status: avoided` is a closed treatment only when an evidenced design or context change removes the threat. Record that change in `avoidanceRationale`; do not use `avoided` to suppress a high rating. `acceptanceDeviation` records `circumstance` and optional `communicatedTo` only when an accepted residual is above the active acceptance criteria. The existing sign-off fields remain `acceptedBy`, `acceptanceRationale`, and `reviewDate`. `transferred` needs a `transferRationale` naming the recipient and how they are informed.
+
+V-09 is one dismissible notice when at least one threat has neither `cause` nor `compromisedObjectives`; it is not a requirement to fill either field or a license to invent rationale. For all new narrative values, use evidence from the project or label a proposed value as a recommendation and ask the owner before treating it as fact.
+
 ## Do not silently default
 
 Leave a field absent (or explicitly flag it as an open question) rather than filling it with a

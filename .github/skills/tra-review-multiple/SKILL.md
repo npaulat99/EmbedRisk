@@ -19,7 +19,8 @@ Then add a **cross-project consistency** section:
 - The same threat pattern (matching a `knowledge-base/ot-threats.json` `key`, or clearly the same
   scenario) mitigated with different countermeasure types or left unmitigated in one project but
   addressed in another.
-- Divergent use of status/acceptance fields (`acceptableRisk`, `status: accepted` without rationale)
+- Divergent use of treatment/acceptance fields (`acceptableRisk`, `status: accepted` without sign-off,
+  `status: avoided` without an evidenced context change, or `status: transferred` without rationale)
   across projects that should follow the same organizational risk appetite.
 
 Do not modify any file. End with a summary table: project, error count, warning count, notice count,

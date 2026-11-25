@@ -14,6 +14,8 @@ For the target project folder, read what exists among:
 `03-system-assets/system.json`, `04-dfd/dfd.json`, `04b-use-cases/use-cases.json`, and the project's
 `.tra-knowledge.json` sidecar if present. Do not read or infer anything from `06-threats` onward —
 that is out of scope for context extraction.
+From the project manifest, extract any `productContext` and `riskCriteria` values as recorded; do not
+fill missing values.
 
 ## What to extract
 
@@ -27,6 +29,13 @@ that is out of scope for context extraction.
 - **Communication paths**: DFD flows (`from`, `to`, `label`, `crossesBoundary`).
 - **Attacker assumptions** (`assumptions.attacker`): capability, access, motivation.
 - **Device/system/environment/operational assumptions**.
+- **Product context**: functions, user description/vulnerable groups, evidence references, and the
+   environment assumptions linked to operating conditions.
+- **RDPS dependencies**: external-entity components, related interfaces/flows, operator/provenance,
+   trust/authentication assumptions, and requirements for offline/degraded states; list missing facts
+   as questions rather than infer them.
+- **Risk criteria rationale**: recorded scheme justification/source and which input factors are
+   populated (`regulation`, `contracts`, `riskNature`, `users`, `productType`, `stateOfTheArt`).
 
 ## Output format
 

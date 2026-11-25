@@ -18,9 +18,10 @@ one-line explanation the first time it's used:
    with a one-line plain-language description and current `status`. If the project is cost-based,
    include the calculated cost likelihood/proposal and clearly identify any manual matrix override;
    do not silently rank by cost probability alone.
-3. **Treatment status** — how many threats are mitigated / accepted / open, and the residual risk
-   picture in one or two sentences (not a full table). For cost-based projects, mention material
-   gaps in cost evidence or residual-cost assessment.
+3. **Treatment status** — how many threats are mitigated / accepted / transferred / avoided / unfeasible / open,
+   and the residual-risk picture in one or two sentences (not a full table). Note accepted deviations
+   and any recorded avoidance or transfer rationale. For cost-based projects, mention material gaps
+   in cost evidence or residual-cost assessment.
 4. **Open decisions for management** — threats at or above `acceptableRisk` still `open`, or
    `accepted` without a `reviewDate`, framed as a decision the reader needs to make, not a technical
    defect list.

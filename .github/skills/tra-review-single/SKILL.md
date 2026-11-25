@@ -7,6 +7,12 @@ argument-hint: "Path to the TRA project folder (e.g. webapp/projects/test)"
 Review the TRA project at the path provided (ask for it if not given). Read all step files present
 (`01-project-description` through `09-defects`) and the project's `.tra-knowledge.json` if present.
 
+Include `project.productContext` and `project.riskCriteria` in the review. Check evidence refs against
+V-06, and report V-07/V-08 notices only for `review`/`released` projects. For threats, recognize
+optional `cause`/`compromisedObjectives` and the single dismissible V-09 notice; STRIDE suggestions
+do not count as user-confirmed objectives. Check `avoided`, `transferred`, and above-criteria
+`accepted` treatment fields against the project evidence without writing rationales for the owner.
+
 Produce the structured Errors / Warnings / Notices report described in your instructions. Do not
 propose or apply any file changes — this is a review-only task. If the project references the
 knowledge-base examples (`knowledge-base/*.json`), check whether reused entries were adapted to the

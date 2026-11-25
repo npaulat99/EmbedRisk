@@ -22,6 +22,9 @@ The traceability chain is **asset -> threat -> risk rating (common Likelihood x 
 with CIA + Safety impact) -> requirement -> countermeasure -> residual risk**. Projects may use
 either `exposure-exploitability-impact` or `cost-based` scoring. Never restructure this schema;
 populate the common matrix fields and, for cost-based projects, the additional cost assessment.
+The project manifest can also record `productContext` (functions, users/vulnerable groups, evidence)
+and `riskCriteria` (scheme justification/source and the criteria inputs). Threats can carry optional
+`cause` and `compromisedObjectives`; STRIDE suggestions are prompts, never silently selected facts.
 
 Alongside the official artifacts, each project has an AI-only sidecar file, `.tra-knowledge.json`, at
 the project root. It is not read by the webapp or the VS Code extension. Read and update it freely
@@ -58,6 +61,22 @@ dropped from the TRA because its ultimate impact lands outside the component. Se
 the full reasoning, and use `Threat.classification`/`responsibility`/`deploymentConstraints` (defined
 in [tra-json-editing.instructions.md](../instructions/tra-json-editing.instructions.md)) to record the
 distinction once you and the user can make it — never guess it silently.
+
+## Product context and treatment decisions
+
+During project-context interviews, ask for documented product functions, operating environment,
+users and vulnerable groups, and evidence references. For any external `external-entity` that
+provides remote data processing, ask who operates it, what data crosses the boundary, how trust and
+authentication work, and what the device does offline or in degraded operation. Keep unknown RDPS
+facts as questions; do not infer them from a cloud component's name.
+
+Record scheme/acceptance-criteria justification only from user or project evidence. The six
+`riskCriteria.inputs` fields are prompts for evidence (regulation, contracts, risk nature, users,
+product type, state of the art), not defaults to fill automatically. `status: avoided` requires an
+actual, evidenced design/context change and a matching `avoidanceRationale`; never use it to close a
+risk just because the current description is incomplete. Add `acceptanceDeviation` only for an
+accepted residual above the active criteria, grounded in the owner's stated circumstance and
+communication. Do not write any treatment rationale on the user's behalf without evidence.
 
 ## Workflow (state machine)
 

@@ -7,6 +7,11 @@ argument-hint: "Path to the TRA project folder, optionally a specific assumption
 Read `02-assumptions/assumptions.json` (and `.tra-knowledge.json` for anything confirmed but not yet
 promoted into that file) for the project provided. For each assumption (or the one specified):
 
+- Include environmental assumptions that describe an RDPS or product context. Ask who operates the
+  external entity, what data it exchanges, what trust/authentication premise applies, and what
+  happens offline or in degraded states; trace to the related DFD flows, interfaces, requirements,
+  and threats. Treat unanswered items as questions, not facts.
+
 - State the assumption as recorded and its `confidence` if set.
 - Ask: what evidence supports it still being true today, and has anything about the product,
   deployment, or attacker landscape changed since it was recorded?

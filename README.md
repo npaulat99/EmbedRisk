@@ -91,10 +91,13 @@ Read [docs/HOW-TO-TRA.md](docs/HOW-TO-TRA.md) for:
 For the risk-scheme format, local installation, and an AI-ready workflow for translating a scoring
 policy into a validated scheme, see [docs/RISK-SCHEMES.md](docs/RISK-SCHEMES.md).
 
+For the clause-by-clause support mapping, treatment conventions, and known limits for EN 40000-1-2,
+see [docs/EN-40000-1-2-MAPPING.md](docs/EN-40000-1-2-MAPPING.md).
+
 ## AI-assisted TRA workflow
 
-This repository also ships a GitHub Copilot agent/prompt framework (under `.github/agents/`,
-`.github/prompts/`, `.github/instructions/`) that can interview an engineer through a TRA, review a
+This repository also ships a GitHub Copilot agent/skill framework (under `.github/agents/`,
+`.github/skills/`, `.github/instructions/`) that can interview an engineer through a TRA, review a
 project for consistency, or spar on assumptions — see [.ai/README.md](.ai/README.md) for the full
 framework.
 
