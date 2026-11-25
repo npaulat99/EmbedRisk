@@ -276,9 +276,11 @@ export default function ThreatsPanel() {
                                                     const selected = new Set(t.compromisedObjectives || []);
                                                     if (event.target.checked) selected.add(value);
                                                     else selected.delete(value);
-                                                    upd({ compromisedObjectives: COMPROMISED_OBJECTIVE_OPTIONS
-                                                        .map(([objective]) => objective)
-                                                        .filter((objective) => selected.has(objective)) });
+                                                    upd({
+                                                        compromisedObjectives: COMPROMISED_OBJECTIVE_OPTIONS
+                                                            .map(([objective]) => objective)
+                                                            .filter((objective) => selected.has(objective))
+                                                    });
                                                 }}
                                             />
                                             {label}

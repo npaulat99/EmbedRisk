@@ -1626,11 +1626,13 @@ async function runValidationCoreTests() {
   }
   const overLimitProductContext = {
     ...structuredClone(clean),
-    project: { status: "draft", productContext: {
-      functions: Array.from({ length: 51 }, (_, index) => ({ name: `Function ${index + 1}` })),
-      evidence: Array.from({ length: 51 }, (_, index) => ({ title: `Evidence ${index + 1}`, ref: "docs/evidence.pdf" })),
-      users: { vulnerableGroups: Array.from({ length: 51 }, (_, index) => `Group ${index + 1}`) },
-    } },
+    project: {
+      status: "draft", productContext: {
+        functions: Array.from({ length: 51 }, (_, index) => ({ name: `Function ${index + 1}` })),
+        evidence: Array.from({ length: 51 }, (_, index) => ({ title: `Evidence ${index + 1}`, ref: "docs/evidence.pdf" })),
+        users: { vulnerableGroups: Array.from({ length: 51 }, (_, index) => `Group ${index + 1}`) },
+      }
+    },
   };
   const productLimitIssues = (validateFn) => validateFn(overLimitProductContext).filter((issue) => issue.key.startsWith("product-context-limit:"));
   const expectedProductLimits = [
