@@ -13,7 +13,40 @@ import { routeAround, roundedPath, labelPtOnPolyline, borderPoint } from '../../
 import { normalizeActorLevel, actorLevelLabel } from '../../shared/attackerScale.js';
 
 const esc = (s) =>
-    String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+    String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+const contrastTextColor = (background) => {
+    const match = /^#?([\da-f]{6})$/i.exec(String(background || ''));
+    if (!match) return '#1d2430';
+    const channels = [0, 2, 4].map((index) => Number.parseInt(match[1].slice(index, index + 2), 16) / 255);
+    const luminance = channels.map((channel) => channel <= 0.04045 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4)
+        .reduce((sum, channel, index) => sum + channel * [0.2126, 0.7152, 0.0722][index], 0);
+    const contrast = (value) => (Math.max(luminance, value) + 0.05) / (Math.min(luminance, value) + 0.05);
+    return contrast(1) >= contrast(0.018) ? '#fff' : '#1d2430';
+};
+const safeHref = (value) => {
+    const href = String(value ?? '').trim();
+    if (!href || href.startsWith('/') || href.includes('\\') || /[\u0000-\u0020\u007f]/.test(href)) return null;
+    let parsed;
+    try { parsed = new URL(href, 'https://embedrisk.invalid/'); } catch { return null; }
+    if (/^[A-Za-z][A-Za-z\d+.-]*:/.test(href)) return (parsed.protocol === 'http:' || parsed.protocol === 'https:') && /^https?:\/\//i.test(href) ? href : null;
+    if (parsed.origin !== 'https://embedrisk.invalid') return null;
+    const path = href.split(/[?#]/, 1)[0];
+    try {
+        const decodedPath = decodeURIComponent(path);
+        if (decodedPath.startsWith('/') || decodedPath.includes('\\') || decodedPath.split('/').some((part) => part === '..')) return null;
+    } catch { return null; }
+    return href;
+};
+const linkAttributes = (value) => {
+    const href = safeHref(value);
+    if (!href) return null;
+    const external = /^https?:\/\//i.test(href);
+    return `href='${esc(href)}'${external ? " target='_blank'" : ''} rel='noopener noreferrer'`;
+};
+const renderLink = (value, label, className = '') => {
+    const attrs = linkAttributes(value);
+    return attrs ? `<a ${attrs}${className ? ` class='${className}'` : ''}>${esc(label)}</a>` : esc(label);
+};
 const ID_PATTERN = /^[A-Za-z0-9 _\-:.]+$/;
 const assumptionAnchor = (id) => `assumption-${String(id ?? '').replace(/[^A-Za-z0-9_.:-]/g, '-')}`;
 
@@ -399,6 +432,11 @@ export function buildTraceability({ system, threats, requirements, countermeasur
                 residualLikelihood: rl,
                 residualImpact: ri,
             } : {}),
+            classification: t.classification || '',
+            responsibility: t.responsibility || '',
+            deploymentConstraints: t.deploymentConstraints || '',
+            compromisedObjectives: t.compromisedObjectives || [],
+            cause: t.cause || '',
         };
     });
 }
@@ -564,8 +602,8 @@ function strideBoundaryTablesHtml(system = {}, dfd = {}) {
                     )).join('');
                     return (
                         `<h4>${esc(pair.inside.label)} ⇄ ${esc(pair.outside.label)}</h4>` +
-                        `<table><tr><th rowspan='2'>STRIDE</th><th colspan='2'>${esc(aLabel)}</th><th colspan='2'>${esc(bLabel)}</th></tr>` +
-                        `<tr><th>Strengths</th><th>Weaknesses</th><th>Strengths</th><th>Weaknesses</th></tr>${rows}</table>`
+                        `<table><caption>STRIDE strengths and weaknesses for ${esc(b.name)}: ${esc(pair.inside.label)} and ${esc(pair.outside.label)}</caption><thead><tr><th scope='col' rowspan='2'>STRIDE</th><th scope='col' colspan='2'>${esc(aLabel)}</th><th scope='col' colspan='2'>${esc(bLabel)}</th></tr>` +
+                        `<tr><th scope='col'>Strengths</th><th scope='col'>Weaknesses</th><th scope='col'>Strengths</th><th scope='col'>Weaknesses</th></tr></thead><tbody>${rows}</tbody></table>`
                     );
                 });
             return tables.length ? `<h3>${esc(b.id)} · ${esc(b.name)}</h3>${tables.join('')}` : '';
@@ -574,9 +612,13 @@ function strideBoundaryTablesHtml(system = {}, dfd = {}) {
     return sections.length ? `<h2>STRIDE analysis per trust boundary</h2>${sections.join('')}` : '';
 }
 
-const csvCell = (s) => `"${String(s ?? '').replace(/"/g, '""')}"`;
+const csvCell = (s) => {
+    const value = String(s ?? '');
+    const neutralized = /^[=+\-@\t\r]/.test(value) ? `'${value}` : value;
+    return `"${neutralized.replace(/"/g, '""')}"`;
+};
 function traceabilityCsv(rows) {
-    const head = ['Asset', 'C/I/A/S', 'Threat', 'Title', 'STRIDE', 'Assumptions', 'Rationale', 'Initial', 'InitialBand', 'Requirement', 'Control', 'Residual', 'ResidualBand', 'Evidence', 'Status', 'RatedBy', 'SignOff'];
+    const head = ['Asset', 'C/I/A/S', 'Threat', 'Title', 'STRIDE', 'Assumptions', 'Rationale', 'Initial', 'InitialBand', 'Requirement', 'Control', 'Residual', 'ResidualBand', 'Evidence', 'Status', 'RatedBy', 'SignOff', 'Classification', 'Responsibility', 'DeploymentConstraints', 'CompromisedObjectives', 'Cause'];
     const body = rows.map((r) =>
         [
             r.asset,
@@ -596,6 +638,11 @@ function traceabilityCsv(rows) {
             r.status,
             r.ratedBy,
             r.signoff,
+            r.classification,
+            r.responsibility,
+            r.deploymentConstraints,
+            r.compromisedObjectives.join('; '),
+            r.cause,
         ]
             .map(csvCell)
             .join(','),
@@ -637,6 +684,40 @@ export async function buildReport(id) {
     const sbomMode = project.sbom?.mode || 'in-tool';
     const sbomFormat = project.sbom?.format || 'cyclonedx';
     const sbomFile = sbomMode !== 'in-tool' ? project.sbom?.url || '(external, no URL)' : sbomFormat === 'spdx' ? 'report/sbom.spdx.json' : 'report/sbom.cdx.json';
+    const riskCriteriaHtml = (criteria) => {
+        if (!criteria) return '';
+        const inputs = [
+            ['Regulation', criteria.inputs?.regulation], ['Contracts', criteria.inputs?.contracts],
+            ['Nature of risk', criteria.inputs?.riskNature], ['Users', criteria.inputs?.users],
+            ['Product type', criteria.inputs?.productType], ['State of the art', criteria.inputs?.stateOfTheArt],
+        ].filter(([, value]) => value);
+        if (!criteria.schemeJustification && !criteria.schemeSource && !inputs.length) return '';
+        return `<h3>Scheme selection and criteria</h3>${criteria.schemeJustification ? `<p><b>Justification:</b> ${esc(criteria.schemeJustification)}</p>` : ''}${criteria.schemeSource ? `<p><b>Source:</b> ${esc(criteria.schemeSource)}</p>` : ''}${inputs.length ? `<ul>${inputs.map(([label, value]) => `<li><b>${esc(label)}:</b> ${esc(value)}</li>`).join('')}</ul>` : ''}`;
+    };
+    const productContext = project.productContext || {};
+    const productFunctions = productContext.functions || [];
+    const productUsers = productContext.users || {};
+    const productEvidence = productContext.evidence || [];
+    const environmentAssumptions = assumptions.environment || [];
+    const hasProductContext = productFunctions.length || productUsers.description || productUsers.vulnerableGroups?.length || productEvidence.length || environmentAssumptions.length;
+    const productContextSection = hasProductContext ? (() => {
+        const functionsHtml = productFunctions.length
+            ? `<ul>${productFunctions.map((item) => `<li><b>${esc(item.name)}</b>${item.description ? ` — ${esc(item.description)}` : ''}</li>`).join('')}</ul>`
+            : '<p>—</p>';
+        const environmentHtml = environmentAssumptions.length
+            ? `<ul>${environmentAssumptions.map((item) => `<li>${renderLink(`#${assumptionAnchor(item.id)}`, item.id)} — ${esc(item.text || '')}</li>`).join('')}</ul>`
+            : '<p>—</p>';
+        const usersHtml = [productUsers.description ? `<p>${esc(productUsers.description)}</p>` : '', productUsers.vulnerableGroups?.length ? `<ul>${productUsers.vulnerableGroups.map((group) => `<li>${esc(group)}</li>`).join('')}</ul>` : ''].join('') || '<p>—</p>';
+        const evidenceHtml = productEvidence.length ? `<ul>${productEvidence.map((item) => {
+            const href = safeHref(item.ref);
+            const external = href && /^https?:\/\//i.test(href);
+            const reference = href
+                ? `<a href='${esc(href)}'${external ? " target='_blank'" : ''} rel='noopener noreferrer'>${esc(item.ref)}</a>`
+                : `${esc(item.ref)} <span>(not linked)</span>`;
+            return `<li><b>${esc(item.title)}</b>${item.clause ? ` · ${esc(item.clause)}` : ''}<br>${reference}</li>`;
+        }).join('')}</ul>` : '<p>—</p>';
+        return `<h2>Product context</h2><h3>Functions</h3>${functionsHtml}<h3>Operating environment</h3>${environmentHtml}<h3>Users</h3>${usersHtml}<h3>Evidence</h3>${evidenceHtml}`;
+    })() : '';
     const riskSchemeSection = reportRiskEngine
         ? (() => {
             const likelihoods = reportRiskEngine.likelihoodLevels();
@@ -646,7 +727,7 @@ export async function buildReport(id) {
                     const level = reportRiskEngine.classify(likelihood.value, impact.value);
                     const score = likelihood.value * impact.value;
                     const label = scheme.classification.kind === 'lookup' ? level.label : score;
-                    return `<td style='background:${esc(level.color)};color:#fff' title='${esc(likelihood.code)} × ${esc(impact.code)} · ${esc(level.label)}'>${esc(label)}</td>`;
+                    return `<td style='background:${esc(level.color)};color:${contrastTextColor(level.color)}' title='${esc(likelihood.code)} × ${esc(impact.code)} · ${esc(level.label)}'>${esc(label)}</td>`;
                 }).join('');
                 return `<tr><th>${esc(impact.code)} · ${esc(impact.label)}</th>${cells}</tr>`;
             }).join('');
@@ -654,12 +735,25 @@ export async function buildReport(id) {
                 `<span style='display:inline-flex;align-items:center;gap:4px;margin-right:10px'><i style='display:inline-block;width:10px;height:10px;background:${esc(level.color)}'></i>${esc(level.label)}</span>`
             ).join('');
             const headers = likelihoods.map((level) => `<th>${esc(level.code)}</th>`).join('');
-            return `<h2>Risk scheme</h2><p><b>${esc(scheme.title)}</b> · v${esc(scheme.version)} · fingerprint <code>${schemeResolution.fingerprint}</code></p><div>${legend}</div><table aria-label='Active risk matrix'><thead><tr><th>Impact / Likelihood</th>${headers}</tr></thead><tbody>${matrixRows}</tbody></table>`;
+            return `<h2>Risk scheme</h2><p><b>${esc(scheme.title)}</b> · v${esc(scheme.version)} · fingerprint <code>${schemeResolution.fingerprint}</code></p><div>${legend}</div><table><caption>Active risk matrix</caption><thead><tr><th scope='col'>Impact / Likelihood</th>${headers.replace(/<th>/g, "<th scope='col'>")}</tr></thead><tbody>${matrixRows}</tbody></table>${riskCriteriaHtml(project.riskCriteria)}`;
         })()
-        : '';
+        : project.riskCriteria ? `<h2>Risk scheme</h2><div class='warn'>Risk classification unavailable: ${esc(schemeResolution.warning || 'the active scheme could not be resolved.')}</div>${riskCriteriaHtml(project.riskCriteria)}` : '';
     const strideCov = buildStrideCoverage(system, threats);
     const strideTbSection = project.reportOptions?.includeStrideBoundaryAnalysis ? strideBoundaryTablesHtml(system, dfd) : '';
     const acceptedNotices = new Set(project.acceptedNotices || []);
+    const withinAcceptanceCriteria = (threat) => {
+        if (!reportRiskEngine) return false;
+        const [likelihood, impact] = residual(threat, cms);
+        const level = reportRiskEngine.classify(likelihood, impact);
+        if (level.id === 'none') return false;
+        if (level.treatment === 'auto-accept') return true;
+        const acceptableLevel = project.acceptableLevel || scheme.acceptance?.defaultLevel;
+        const acceptableRank = acceptableLevel ? scheme.classification.levels.find((item) => item.id === acceptableLevel)?.rank : null;
+        return Number.isInteger(acceptableRank)
+            ? level.rank <= acceptableRank
+            : level.score <= (Number.isFinite(project.acceptableRisk) ? project.acceptableRisk : 12);
+    };
+
     const openIssueList = issues.filter((i) => !(i.severity === 'notice' && acceptedNotices.has(i.key)));
     const acceptedIssueList = issues.filter((i) => i.severity === 'notice' && acceptedNotices.has(i.key));
     const kbv = await kbVersion().catch(() => null);
@@ -683,7 +777,7 @@ export async function buildReport(id) {
                     if (!ID_PATTERN.test(aid)) return `<span class='mono'>${esc(aid)}</span> (invalid ID)`;
                     const row = assumptionById.get(aid);
                     if (!row) return `<span class='mono'>${esc(aid)}</span> (missing)`;
-                    return `<a href='#${esc(assumptionAnchor(aid))}' class='mono'>${esc(aid)}</a> <span style='color:#4d5a6d'>(${esc(row.source)})</span>`;
+                    return `${renderLink(`#${assumptionAnchor(aid)}`, aid, 'mono')} <span style='color:#4d5a6d'>(${esc(row.source)})</span>`;
                 })
                 .join(', ');
             const rationale = [
@@ -698,11 +792,17 @@ export async function buildReport(id) {
             ]
                 .filter(Boolean)
                 .join('');
+            const threat = threats.find((item) => item.id === r.threat);
+            const acceptanceSetting = project.acceptableLevel || scheme?.acceptance?.defaultLevel || (Number.isFinite(project.acceptableRisk) ? project.acceptableRisk : 12);
+            const acceptanceStatement = threat && withinAcceptanceCriteria(threat)
+                ? `<br><span class='mono'>Within acceptance criteria (scheme ${esc(scheme.id)} v${esc(scheme.version)}, level ${esc(r.residualBand)}, acceptable ${esc(acceptanceSetting)}).</span>`
+                : '';
             return (
                 `<tr id='threat-${esc(r.threat)}'><td>${esc(r.asset)}</td><td>${esc(r.cias)}</td><td><b>${esc(r.threat)}</b> ${esc(r.title)} <span class=mono>${esc(r.stride)}</span></td>` +
                 `<td${r.initialColor ? ` style='color:${esc(r.initialColor)}'` : ''}>${r.initial === null ? `L${esc(r.likelihood ?? '—')} / I${esc(r.impact ?? '—')} (${esc(r.initialBand)})` : lookupScheme ? esc(r.initialBand) : `${r.initial} ${esc(r.initialBand)}`}</td><td>${esc(r.requirement) || '—'}</td>` +
-                `<td>${esc(r.control) || '—'}</td><td${r.residualColor ? ` style='color:${esc(r.residualColor)}'` : ''}>${r.residual === null ? `L${esc(r.residualLikelihood ?? '—')} / I${esc(r.residualImpact ?? '—')} (${esc(r.residualBand)})` : lookupScheme ? esc(r.residualBand) : `${r.residual} ${esc(r.residualBand)}`}</td>` +
-                `<td>${r.evidence ? r.evidence.split(' ').map((u) => `<a href='${esc(u)}'>link</a>`).join(' ') : '—'}${support}</td><td>${esc(r.status)}${r.signoff ? `<br><span class=mono style='font-size:11px'>${esc(r.signoff)}</span>` : ''}${r.ratedBy ? `<br><span class=mono style='font-size:11px'>rated: ${esc(r.ratedBy)}</span>` : ''}</td></tr>`
+                `<td>${esc(r.control) || '—'}</td><td${r.residualColor ? ` style='color:${esc(r.residualColor)}'` : ''}>${r.status === 'avoided' ? 'n/a (avoided)' : r.residual === null ? `L${esc(r.residualLikelihood ?? '—')} / I${esc(r.residualImpact ?? '—')} (${esc(r.residualBand)})` : lookupScheme ? esc(r.residualBand) : `${r.residual} ${esc(r.residualBand)}`}</td>` +
+                `<td>${r.evidence ? r.evidence.split(' ').map((u) => renderLink(u, 'link')).join(' ') : '—'}${support}</td><td>${esc(r.status)}${r.signoff ? `<br><span class=mono style='font-size:11px'>${esc(r.signoff)}</span>` : ''}${r.ratedBy ? `<br><span class=mono style='font-size:11px'>rated: ${esc(r.ratedBy)}</span>` : ''}${acceptanceStatement}</td>` +
+                `<td>${esc(r.classification) || '—'}</td><td>${esc(r.responsibility) || '—'}</td><td>${esc(r.deploymentConstraints) || '—'}</td><td>${esc(r.compromisedObjectives.join('; ')) || '—'}</td><td>${esc(r.cause) || '—'}</td></tr>`
             );
         })
         .join('');
@@ -713,7 +813,7 @@ export async function buildReport(id) {
             if (!items.length) return '';
             return `<h3>${k[0].toUpperCase() + k.slice(1)} assumptions</h3><ul>${items
                 .map((a) => {
-                    const cited = (assumptionCitedBy.get(a.id) || []).map((tid) => `<a href='#threat-${esc(tid)}' class='mono'>${esc(tid)}</a>`).join(', ');
+                    const cited = (assumptionCitedBy.get(a.id) || []).map((tid) => renderLink(`#threat-${tid}`, tid, 'mono')).join(', ');
                     return `<li id='${esc(assumptionAnchor(a.id))}'><span class='mono'><b>${esc(a.id)}</b></span> — ${esc(a.text || a)}${cited ? `<br><span style='font-size:11px;color:#4d5a6d'>cited by: ${cited}</span>` : ''}</li>`;
                 })
                 .join('')}</ul>`;
@@ -721,7 +821,7 @@ export async function buildReport(id) {
         .join('');
     const atk = (assumptions.attacker || [])
         .map((a) => {
-            const cited = (assumptionCitedBy.get(a.id) || []).map((tid) => `<a href='#threat-${esc(tid)}' class='mono'>${esc(tid)}</a>`).join(', ');
+            const cited = (assumptionCitedBy.get(a.id) || []).map((tid) => renderLink(`#threat-${tid}`, tid, 'mono')).join(', ');
             return `<li id='${esc(assumptionAnchor(a.id))}'><span class='mono'><b>${esc(a.id)}</b></span> · <b>${esc(a.name)}</b> (capability ${normalizeActorLevel(a.capability)} · ${esc(actorLevelLabel(a.capability))}, ${esc(a.access)}): ${esc(a.text || '')}${cited ? `<br><span style='font-size:11px;color:#4d5a6d'>cited by: ${cited}</span>` : ''}</li>`;
         })
         .join('');
@@ -749,7 +849,7 @@ export async function buildReport(id) {
         .filter((c) => c.selected !== false)
         .map(
             (c) =>
-                `<li><b>${esc(c.id)}</b> ${esc(c.title)} <i>(${esc(c.type || '')}, ${esc(c.status || '')})</i> &rarr; ${esc((c.addresses || []).map((a) => a.threat).join(', '))}${[...(c.ticketUrls || []), c.ticketUrl].filter(Boolean).map((u, i) => ` · <a href='${esc(u)}'>ticket ${i + 1}</a>`).join('')}${c.verificationUrl ? ` · <a href='${esc(c.verificationUrl)}'>verification</a>` : ''}${(c.negativeEffects || []).filter(Boolean).length ? `<br><span style='color:#8a6d3b;font-size:11px'>Trade-offs: ${esc((c.negativeEffects || []).filter(Boolean).join('; '))}</span>` : ''}</li>`,
+                `<li><b>${esc(c.id)}</b> ${esc(c.title)} <i>(${esc(c.type || '')}, ${esc(c.status || '')})</i> &rarr; ${esc((c.addresses || []).map((a) => a.threat).join(', '))}${[...(c.ticketUrls || []), c.ticketUrl].filter(Boolean).map((u, i) => ` · ${renderLink(u, `ticket ${i + 1}`)}`).join('')}${c.verificationUrl ? ` · ${renderLink(c.verificationUrl, 'verification')}` : ''}${(c.negativeEffects || []).filter(Boolean).length ? `<br><span style='color:#8a6d3b;font-size:11px'>Trade-offs: ${esc((c.negativeEffects || []).filter(Boolean).join('; '))}</span>` : ''}</li>`,
         )
         .join('');
     const sbomRows = sbom.components
@@ -768,7 +868,7 @@ export async function buildReport(id) {
         .map((e) => `<tr${e.gaps ? " style='background:#fff7f0'" : ''}><td>${esc(e.id)} ${esc(e.name)} <span class=mono>${esc(e.kind)}</span></td>${e.cells.map((c) => `<td style='text-align:center'>${c ? '✓' : '·'}</td>`).join('')}</tr>`)
         .join('');
     const strideSection = strideCov.length
-        ? `<h2>STRIDE-per-element coverage</h2><p>✓ = at least one threat of that category on the element; · = candidate gap.</p><table><tr><th>Element</th><th>S</th><th>T</th><th>R</th><th>I</th><th>D</th><th>E</th></tr>${strideRows}</table>`
+        ? `<h2>STRIDE-per-element coverage</h2><p>✓ = at least one threat of that category on the element; · = candidate gap.</p><table><caption>STRIDE-per-element coverage</caption><thead><tr><th scope='col'>Element</th><th scope='col'>S</th><th scope='col'>T</th><th scope='col'>R</th><th scope='col'>I</th><th scope='col'>D</th><th scope='col'>E</th></tr></thead><tbody>${strideRows}</tbody></table>`
         : '';
     const componentsById = new Map((system.components || []).map((component) => [component.id, component]));
     const componentsByTag = new Map((system.components || []).filter((component) => component.tag).map((component) => [component.tag, component]));
@@ -786,7 +886,7 @@ export async function buildReport(id) {
         })
         .join('');
     const tbSection = (system.trustBoundaries || []).length
-        ? `<h2>Trust boundaries</h2><table><tr><th>Boundary</th><th>Members</th><th>Crossing flows</th></tr>${tbRows}</table>`
+        ? `<h2>Trust boundaries</h2><table><caption>Trust boundaries</caption><thead><tr><th scope='col'>Boundary</th><th scope='col'>Members</th><th scope='col'>Crossing flows</th></tr></thead><tbody>${tbRows}</tbody></table>`
         : '';
     const warn = openIssueList.length
         ? `<ul class=warn>${openIssueList.map((i) => `<li>${i.severity === 'error' ? '⛔' : i.severity === 'notice' ? 'ℹ' : '⚠'} ${esc(i.message)}</li>`).join('')}</ul>`
@@ -797,23 +897,57 @@ export async function buildReport(id) {
     const sbomSection =
         sbomMode !== 'in-tool'
             ? project.sbom?.url
-                ? `<h2>Software bill of materials (SBOM)</h2><p>Provided externally: <a href='${esc(project.sbom.url)}'>${esc(project.sbom.url)}</a></p>`
+                ? `<h2>Software bill of materials (SBOM)</h2><p>Provided externally: ${renderLink(project.sbom.url, project.sbom.url)}</p>`
                 : `<h2>Software bill of materials (SBOM)</h2><p>Declared as externally provided; no URL was recorded.</p>`
             : sbomRows
-                ? `<h2>Software bill of materials (SBOM)</h2><p>${sbomFormat === 'spdx' ? 'SPDX 2.3' : 'CycloneDX'} — <code>${esc(sbomFile)}</code></p><table><tr><th>Component</th><th>Version</th><th>Supplier</th><th>License</th><th>CPE / purl</th><th>Provenance</th></tr>${sbomRows}</table>`
+                ? `<h2>Software bill of materials (SBOM)</h2><p>${sbomFormat === 'spdx' ? 'SPDX 2.3' : 'CycloneDX'} — <code>${esc(sbomFile)}</code></p><table><caption>Software bill of materials</caption><thead><tr><th scope='col'>Component</th><th scope='col'>Version</th><th scope='col'>Supplier</th><th scope='col'>License</th><th scope='col'>CPE / purl</th><th scope='col'>Provenance</th></tr></thead><tbody>${sbomRows}</tbody></table>`
                 : '';
 
+    const disclosureRequirements = (threatId) => {
+        const items = reqs.filter((requirement) => (requirement.derivedFromThreat || []).includes(threatId))
+            .map((requirement) => `<li><b>${esc(requirement.id)}</b>${requirement.text ? ` — ${esc(requirement.text)}` : ''}</li>`);
+        return items.length ? `<ul>${items.join('')}</ul>` : '—';
+    };
+    const disclosureStakeholderControls = (threatId) => {
+        const items = cms.filter((cm) => cm.selected !== false && ['deployment', 'shared'].includes(cm.responsibility) && (cm.addresses || []).some((address) => address.threat === threatId))
+            .map((cm) => `<li><b>${esc(cm.id)}</b> — ${esc(cm.title)}</li>`);
+        return items.length ? `<br><b>Expected from integrators and operators:</b><ul>${items.join('')}</ul>` : '';
+    };
+    const disclosureItem = (threat, extra = '') => {
+        return `<li><b>${esc(threat.id)}</b> ${esc(threat.title)}${threat.responsibility ? ` · ${esc(threat.responsibility)}` : ''}${extra}${threat.deploymentConstraints ? `<br><b>Deployment constraints:</b> ${esc(threat.deploymentConstraints)}` : ''}${disclosureStakeholderControls(threat.id)}<br><b>Requirements:</b> ${disclosureRequirements(threat.id)}</li>`;
+    };
+    const byResponsibility = threats.filter((threat) => {
+        if (threat.status === 'avoided') return false;
+        const risk = trace.find((row) => row.threat === threat.id);
+        const aboveAcceptable = risk?.residual > 0 && (reportRiskEngine
+            ? !reportRiskEngine.isAcceptable(threat, cms, project)
+            : risk.residual > (Number.isFinite(project.acceptableRisk) ? project.acceptableRisk : 12));
+        return (threat.classification && threat.classification !== 'product-vulnerability')
+            || ['accepted', 'transferred'].includes(threat.status)
+            || aboveAcceptable;
+    });
+    const avoidedThreats = threats.filter((threat) => threat.status === 'avoided');
+    const acceptedDeviations = threats.filter((threat) => threat.status === 'accepted' && threat.acceptanceDeviation);
+    const riskDisclosureSection = byResponsibility.length || avoidedThreats.length || acceptedDeviations.length
+        ? `<h2>Residual risks and expectations on users and integrators</h2>` +
+        (byResponsibility.length ? `<h3>By responsibility</h3><ul>${byResponsibility.map((threat) => disclosureItem(threat)).join('')}</ul>` : '') +
+        (avoidedThreats.length ? `<h3>Avoided</h3><ul>${avoidedThreats.map((threat) => disclosureItem(threat, `<br><b>Avoidance rationale:</b> ${esc(threat.avoidanceRationale || '—')}`)).join('')}</ul>` : '') +
+        (acceptedDeviations.length ? `<h3>Accepted deviations from the acceptance criteria</h3><ul>${acceptedDeviations.map((threat) => disclosureItem(threat, `<br><b>Circumstance:</b> ${esc(threat.acceptanceDeviation.circumstance || '—')}<br><b>Communicated to:</b> ${esc(threat.acceptanceDeviation.communicatedTo || '—')}`)).join('')}</ul>` : '')
+        : '';
+
     const html =
-        `<!doctype html><meta charset=utf8><title>TRA ${esc(project.title)}</title>` +
-        '<style>body{font:14px system-ui;margin:2rem auto;max-width:78rem;color:#1d2430;line-height:1.45}table{border-collapse:collapse;width:100%;margin:.75rem 0 1.25rem;background:#fff}td,th{border:1px solid #d9dee7;padding:8px 10px;text-align:left;vertical-align:top;font-size:12.5px}th{background:#f4f7fb}h1{font-size:1.65rem;margin-bottom:.35rem}h2{margin-top:1.8rem;border-bottom:2px solid #e7ebf2;padding-bottom:4px}.lead{color:#4d5a6d;max-width:68rem}.warn{color:#c62828}.mono{font-family:ui-monospace,monospace}.meta{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:.75rem;margin:1rem 0 1.5rem}.meta div{background:#f7f9fc;border:1px solid #e2e7ef;border-radius:10px;padding:.75rem .9rem}svg{max-width:100%;border:1px solid #e7ebf2;border-radius:10px;margin:.4rem 0;background:#fff}.trace-note{background:#f7f9fc;border:1px solid #e2e7ef;border-radius:10px;padding:.8rem 1rem;margin:.5rem 0 1rem}</style>' +
+        `<!doctype html><html lang='en'><head><meta charset=utf8><meta name='viewport' content='width=device-width, initial-scale=1'><meta http-equiv='Content-Security-Policy' content="default-src 'none'; img-src data:; style-src 'unsafe-inline'"><title>TRA ${esc(project.title)}</title>` +
+        '<style>body{font:14px system-ui;margin:2rem auto;max-width:78rem;color:#1d2430;line-height:1.45}table{border-collapse:collapse;width:100%;margin:.75rem 0 1.25rem;background:#fff}td,th{border:1px solid #d9dee7;padding:8px 10px;text-align:left;vertical-align:top;font-size:12.5px}th{background:#f4f7fb}h1{font-size:1.65rem;margin-bottom:.35rem}h2{margin-top:1.8rem;border-bottom:2px solid #e7ebf2;padding-bottom:4px}.lead{color:#4d5a6d;max-width:68rem}.warn{color:#c62828}.mono{font-family:ui-monospace,monospace}.meta{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:.75rem;margin:1rem 0 1.5rem}.meta div{background:#f7f9fc;border:1px solid #e2e7ef;border-radius:10px;padding:.75rem .9rem}svg{max-width:100%;border:1px solid #e7ebf2;border-radius:10px;margin:.4rem 0;background:#fff}.trace-note{background:#f7f9fc;border:1px solid #e2e7ef;border-radius:10px;padding:.8rem 1rem;margin:.5rem 0 1rem}@media print{body{margin:0;max-width:none}table{page-break-inside:auto}tr{break-inside:avoid;page-break-inside:avoid}}</style></head><body><main>' +
         `<h1>${esc(project.title)}</h1><p>Device: ${esc(project.device?.name)} | SL-C ${esc(project.slTarget)} | mode ${esc(project.scope?.mode)} | status ${esc(project.status)} | generated ${new Date().toISOString().slice(0, 16).replace('T', ' ')}${kbv ? ` | KB/repo ${esc(kbv)}` : ''}</p>` +
         `<div class='meta'><div><b>Device</b><br>${esc(project.device?.name || '—')}</div><div><b>Security target</b><br>${esc(project.slTarget || '—')}</div><div><b>Assessment mode</b><br>${esc(project.scope?.mode || '—')}</div><div><b>Status</b><br>${esc(project.status || 'draft')}</div></div>` +
         `<p><b>Scope:</b> ${esc(project.scope?.boundary || '')}</p>` +
         (project.intendedUse ? `<p><b>Intended purpose:</b> ${esc(project.intendedUse)}</p>` : '') +
         (project.foreseeableUse?.length ? `<p><b>Reasonably foreseeable use:</b></p><ul>${project.foreseeableUse.map((m) => `<li>${esc(m)}</li>`).join('')}</ul>` : '') +
+        productContextSection +
         (schemeResolution.warning ? `<div class='warn' role='alert'>${esc(schemeResolution.warning)} Risk-axis values are shown without classification.</div>` : '') +
         `<h2>Traceability matrix</h2><div class='trace-note'>This matrix shows the full chain from protected asset to assessed threat, required security response, implemented countermeasure, residual risk and linked evidence. Machine-readable exports are written alongside the report as <code>report/traceability.csv</code>, <code>report/traceability.json</code> and <code>${esc(sbomFile)}</code>.</div>` +
-        `<table><tr><th>Asset</th><th>C/I/A/S</th><th>Threat</th><th>Initial</th><th>Requirement</th><th>Control</th><th>Residual</th><th>Evidence</th><th>Status</th></tr>${traceRows}</table>` +
+        `<h2>Traceability matrix</h2><div class='trace-note'>This matrix shows the full chain from protected asset to assessed threat, required security response, implemented countermeasure, residual risk and linked evidence. Machine-readable exports are written alongside the report as <code>report/traceability.csv</code>, <code>report/traceability.json</code> and <code>${esc(sbomFile)}</code>.</div>` +
+        `<table><caption>Traceability matrix</caption><thead><tr><th scope='col'>Asset</th><th scope='col'>C/I/A/S</th><th scope='col'>Threat</th><th scope='col'>Initial</th><th scope='col'>Requirement</th><th scope='col'>Control</th><th scope='col'>Residual</th><th scope='col'>Evidence</th><th scope='col'>Status</th><th scope='col'>Classification</th><th scope='col'>Responsibility</th><th scope='col'>Deployment constraints</th><th scope='col'>Compromised objectives</th><th scope='col'>Cause</th></tr></thead><tbody>${traceRows}</tbody></table>` +
         `<h2>Data flow diagram (all layers)</h2>${dfdHtml}` +
         useCaseSection +
         tbSection +
@@ -823,12 +957,13 @@ export async function buildReport(id) {
         (assumptionSection ? `<h2>Assumptions</h2>${assumptionSection}` : '') +
         `<h2>Assets</h2><ul>${assets}</ul>` +
         riskSchemeSection +
+        riskDisclosureSection +
         (ifaceList ? `<h2>External interfaces</h2><ul>${ifaceList}</ul>` : '') +
-        (reqRows ? `<h2>Security requirements</h2><table><tr><th>ID</th><th>Requirement</th><th>Standard / SL·FR</th><th>From threats</th><th>Satisfied by</th></tr>${reqRows}</table>` : '') +
+        (reqRows ? `<h2>Security requirements</h2><table><caption>Security requirements</caption><thead><tr><th scope='col'>ID</th><th scope='col'>Requirement</th><th scope='col'>Standard / SL·FR</th><th scope='col'>From threats</th><th scope='col'>Satisfied by</th></tr></thead><tbody>${reqRows}</tbody></table>` : '') +
         `<h2>Countermeasures</h2><ul>${cmrows}</ul>` +
         sbomSection +
         (treeList ? `<h2>Attack trees</h2><ul>${treeList}</ul>` : '') +
-        `<h2>Plausibility check</h2>${warn}${acceptedNoticeSection}`;
+        `<h2>Plausibility check</h2>${warn}${acceptedNoticeSection}</main></body></html>`;
 
     return {
         html,

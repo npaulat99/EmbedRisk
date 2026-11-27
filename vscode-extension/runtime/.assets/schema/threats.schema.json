@@ -102,6 +102,42 @@
           "impactRationale": {
             "type": "string"
           },
+          "avoidanceRationale": {
+            "type": "string",
+            "maxLength": 2000
+          },
+          "transferRationale": {
+            "type": "string",
+            "maxLength": 2000
+          },
+          "acceptanceDeviation": {
+            "type": "object",
+            "properties": {
+              "circumstance": {
+                "type": "string",
+                "maxLength": 2000
+              },
+              "communicatedTo": {
+                "type": "string",
+                "maxLength": 200
+              }
+            }
+          },
+          "compromisedObjectives": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "confidentiality",
+                "integrity",
+                "availability",
+                "safety"
+              ]
+            }
+          },
+          "cause": {
+            "type": "string"
+          },
           "countermeasures": {
             "type": "array",
             "items": {
@@ -130,7 +166,8 @@
               "mitigated",
               "accepted",
               "transferred",
-              "unfeasible"
+              "unfeasible",
+              "avoided"
             ]
           }
         }

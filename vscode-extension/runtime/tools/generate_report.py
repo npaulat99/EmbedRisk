@@ -6,6 +6,7 @@ import html as html_lib
 import json, os, sys
 import textwrap
 from pathlib import Path
+from urllib.parse import unquote, urlsplit
 
 root = Path(__file__).resolve().parents[1]
 
@@ -127,6 +128,7 @@ _DEFAULT_STEPS = {
     "02-assumptions": "02-assumptions/assumptions.json",
     "03-system-assets": "03-system-assets/system.json",
     "04-dfd": "04-dfd/dfd.json",
+    "05-requirements": "05-requirements/requirements.json",
     "06-threats": "06-threats/threats.json",
     "08-countermeasures": "08-countermeasures/countermeasures.json",
 }
@@ -135,6 +137,10 @@ ass = read(project["steps"]["02-assumptions"])
 sys_def = read(project["steps"]["03-system-assets"])
 threats = read(project["steps"]["06-threats"])["threats"]
 cms = read(project["steps"]["08-countermeasures"])["countermeasures"]
+try:
+    reqs = read(project["steps"]["05-requirements"]).get("requirements", [])
+except Exception:
+    reqs = []
 try:
     dfd = read(project["steps"]["04-dfd"])
 except Exception:
@@ -165,7 +171,7 @@ def dfd_svg(dfd, layer=1):
     for f in dfd["flows"]:
         if f["from"] in pos and f["to"] in pos:
             x1, y1 = pos[f["from"]]; x2, y2 = pos[f["to"]]
-            out.append(f"<line x1='{x1+60}' y1='{y1+25}' x2='{x2+60}' y2='{y2+25}' stroke='#666' marker-end='url(#a)'/><text x='{(x1+x2)/2+60}' y='{(y1+y2)/2+20}' font-size='9' fill='#666'>{f.get('label','')}</text>")
+            out.append(f"<line x1='{x1+60}' y1='{y1+25}' x2='{x2+60}' y2='{y2+25}' stroke='#666' marker-end='url(#a)'/><text x='{(x1+x2)/2+60}' y='{(y1+y2)/2+20}' font-size='9' fill='#666'>{_esc(f.get('label',''))}</text>")
     return (f"<svg width='720' height='400' xmlns='http://www.w3.org/2000/svg'><defs><marker id='a' markerWidth='8' markerHeight='8' refX='7' refY='3' orient='auto'><path d='M0,0L7,3L0,6' fill='#666'/></marker></defs>{''.join(out)}</svg>")
 
 def classify(likelihood, impact):
@@ -181,8 +187,70 @@ def classify(likelihood, impact):
     level = next((item for item in classification["levels"] if item["id"] == level_id), None)
     return {**level, "score": score} if level else None
 
+def within_acceptance(threat, likelihood, impact):
+    level = classify(likelihood, impact)
+    if not level:
+        return False
+    if level.get("treatment") == "auto-accept":
+        return True
+    if level.get("acceptanceBy") == "management":
+        return threat.get("status") == "accepted" and bool(str(threat.get("acceptedBy") or "").strip())
+    acceptable_level = project.get("acceptableLevel") or (scheme or {}).get("acceptance", {}).get("defaultLevel")
+    if acceptable_level:
+        threshold = next((item for item in (scheme or {}).get("classification", {}).get("levels", []) if item["id"] == acceptable_level), None)
+        return threshold is not None and level["rank"] <= threshold["rank"]
+    acceptable_risk = project.get("acceptableRisk", 12)
+    if not isinstance(acceptable_risk, (int, float)) or isinstance(acceptable_risk, bool):
+        acceptable_risk = 12
+    return level["score"] <= acceptable_risk
+
 def _esc(value):
     return html_lib.escape(str(value), quote=True)
+
+def _safe_href(value):
+    ref = str(value or "").strip()
+    if not ref or ref.startswith("/") or "\\" in ref or any(ord(char) <= 32 or ord(char) == 127 for char in ref):
+        return None
+    try:
+        parsed = urlsplit(ref)
+    except ValueError:
+        return None
+    if parsed.scheme:
+        return ref if parsed.scheme.lower() in ("http", "https") and ref.lower().startswith(("http://", "https://")) else None
+    if parsed.netloc:
+        return None
+    path = unquote(parsed.path)
+    if path.startswith("/") or "\\" in path or ".." in path.split("/"):
+        return None
+    return ref
+
+def _risk_criteria_html(criteria):
+    if not criteria:
+        return ""
+    inputs = [(label, criteria.get("inputs", {}).get(key)) for key, label in (
+        ("regulation", "Regulation"), ("contracts", "Contracts"), ("riskNature", "Nature of risk"),
+        ("users", "Users"), ("productType", "Product type"), ("stateOfTheArt", "State of the art"),
+    ) if criteria.get("inputs", {}).get(key)]
+    if not criteria.get("schemeJustification") and not criteria.get("schemeSource") and not inputs:
+        return ""
+    items = "".join(f"<li><b>{_esc(label)}:</b> {_esc(value)}</li>" for label, value in inputs)
+    return ("<h3>Scheme selection and criteria</h3>"
+            + (f"<p><b>Justification:</b> {_esc(criteria['schemeJustification'])}</p>" if criteria.get("schemeJustification") else "")
+            + (f"<p><b>Source:</b> {_esc(criteria['schemeSource'])}</p>" if criteria.get("schemeSource") else "")
+            + (f"<ul>{items}</ul>" if items else ""))
+
+def _contrast_text_color(color):
+    value = str(color or "").removeprefix("#")
+    if len(value) != 6:
+        return "#1d2430"
+    try:
+        channels = [int(value[index:index + 2], 16) / 255 for index in (0, 2, 4)]
+    except ValueError:
+        return "#1d2430"
+    luminance = sum((channel / 12.92 if channel <= 0.04045 else ((channel + 0.055) / 1.055) ** 2.4) * weight
+                    for channel, weight in zip(channels, (0.2126, 0.7152, 0.0722)))
+    contrast = lambda value: (max(luminance, value) + 0.05) / (min(luminance, value) + 0.05)
+    return "#fff" if contrast(1) >= contrast(0.018) else "#1d2430"
 
 def risk_cell(likelihood, impact):
     if scheme is None:
@@ -196,7 +264,7 @@ def risk_cell(likelihood, impact):
 
 def risk_scheme_html():
     if scheme is None:
-        return f"<div class='warn'><b>Risk classification unavailable:</b> {_esc(scheme_warning)} Raw stored L/I values are shown.</div>"
+        return f"<h2>Risk scheme</h2><div class='warn'><b>Risk classification unavailable:</b> {_esc(scheme_warning)} Raw stored L/I values are shown.</div>{_risk_criteria_html(project.get('riskCriteria'))}"
     likelihoods = scheme["likelihood"]["levels"]
     impacts = list(reversed(scheme["impact"]["levels"]))
     matrix_rows = []
@@ -205,13 +273,51 @@ def risk_scheme_html():
         for likelihood_level in likelihoods:
             level = classify(likelihood_level["value"], impact_level["value"])
             label = level["label"] if scheme["classification"]["kind"] == "lookup" else level["score"]
-            cells.append(f"<td style='background:{_esc(level['color'])};color:#fff' title='{_esc(likelihood_level['code'])} x {_esc(impact_level['code'])} · {_esc(level['label'])}'>{_esc(label)}</td>")
-        matrix_rows.append(f"<tr><th>{_esc(impact_level['code'])} · {_esc(impact_level['label'])}</th>{''.join(cells)}</tr>")
+            cells.append(f"<td style='background:{_esc(level['color'])};color:{_contrast_text_color(level['color'])}' title='{_esc(likelihood_level['code'])} x {_esc(impact_level['code'])} · {_esc(level['label'])}'>{_esc(label)}</td>")
+        matrix_rows.append(f"<tr><th scope='row'>{_esc(impact_level['code'])} · {_esc(impact_level['label'])}</th>{''.join(cells)}</tr>")
     legend = "".join(f"<span style='display:inline-flex;align-items:center;gap:4px;margin-right:10px'><i style='display:inline-block;width:10px;height:10px;background:{_esc(level['color'])}'></i>{_esc(level['label'])}</span>" for level in scheme["classification"]["levels"])
-    headers = "".join(f"<th>{_esc(level['code'])}</th>" for level in likelihoods)
+    headers = "".join(f"<th scope='col'>{_esc(level['code'])}</th>" for level in likelihoods)
     return (f"<h2>Risk scheme</h2><p><b>{_esc(scheme['title'])}</b> · v{_esc(scheme['version'])} · fingerprint "
             f"<code>{scheme_fingerprints[scheme_id]}</code></p><div>{legend}</div>"
-            f"<table aria-label='Active risk matrix'><thead><tr><th>Impact / Likelihood</th>{headers}</tr></thead><tbody>{''.join(matrix_rows)}</tbody></table>")
+            f"<table><caption>Active risk matrix</caption><thead><tr><th scope='col'>Impact / Likelihood</th>{headers}</tr></thead><tbody>{''.join(matrix_rows)}</tbody></table>{_risk_criteria_html(project.get('riskCriteria'))}")
+
+def product_context_html():
+    context = project.get("productContext") or {}
+    functions = context.get("functions") or []
+    users = context.get("users") or {}
+    evidence = context.get("evidence") or []
+    environment = ass.get("environment") or []
+    if not functions and not users.get("description") and not users.get("vulnerableGroups") and not evidence and not environment:
+        return ""
+    function_items = []
+    for item in functions:
+        description = f" — {_esc(item['description'])}" if item.get("description") else ""
+        function_items.append(f"<li><b>{_esc(item.get('name', ''))}</b>{description}</li>")
+    function_rows = "<ul>" + "".join(function_items) + "</ul>" if function_items else "<p>—</p>"
+    environment_items = []
+    for item in environment:
+        anchor = "assumption-" + "".join(char if char.isalnum() or char in "_.:-" else "-" for char in str(item.get("id", "")))
+        environment_items.append(f"<li id='{_esc(anchor)}'><a href='#{_esc(anchor)}'>{_esc(item.get('id', ''))}</a> — {_esc(item.get('text', ''))}</li>")
+    environment_rows = "<ul>" + "".join(environment_items) + "</ul>" if environment_items else "<p>—</p>"
+    user_rows = f"<p>{_esc(users['description'])}</p>" if users.get("description") else ""
+    if users.get("vulnerableGroups"):
+        user_rows += "<ul>" + "".join(f"<li>{_esc(group)}</li>" for group in users["vulnerableGroups"]) + "</ul>"
+    evidence_items = []
+    for item in evidence:
+        ref = str(item.get("ref", ""))
+        href = _safe_href(ref)
+        if href:
+            external = href.lower().startswith(("http://", "https://"))
+            target = ' target="_blank"' if external else ""
+            reference = f'<a href="{_esc(href)}"{target} rel="noopener noreferrer">{_esc(ref)}</a>'
+        else:
+            reference = f"{_esc(ref)} <span>(not linked)</span>"
+        clause = f" · {_esc(item['clause'])}" if item.get("clause") else ""
+        evidence_items.append(f"<li><b>{_esc(item.get('title', ''))}</b>{clause}<br>{reference}</li>")
+    evidence_rows = "<ul>" + "".join(evidence_items) + "</ul>" if evidence_items else "<p>—</p>"
+    return (f"<h2>Product context</h2><h3>Functions</h3>{function_rows}"
+            f"<h3>Operating environment</h3>{environment_rows}<h3>Users</h3>{user_rows or '<p>—</p>'}"
+            f"<h3>Evidence</h3>{evidence_rows}")
 
 def residual(t):
     # Mirrors webapp/server/src/risk.js: unfeasible -> 0/0; only selected countermeasures count;
@@ -294,6 +400,24 @@ def cell(l, i, v):
     return f"{l}x{i}=<b style='color:{b['color']}'>{v} {b['name']}</b>"
 
 rows = ""
+def within_acceptance(threat, likelihood, impact):
+    if scheme is None:
+        return False
+    level = classify(likelihood, impact)
+    if not level or level.get("id") == "none":
+        return False
+    if level.get("treatment") == "auto-accept":
+        return True
+    acceptable_level = project.get("acceptableLevel") or scheme.get("acceptance", {}).get("defaultLevel")
+    if acceptable_level:
+        threshold = next((item for item in scheme["classification"]["levels"] if item["id"] == acceptable_level), None)
+        return threshold is not None and level["rank"] <= threshold["rank"]
+    threshold = project.get("acceptableRisk", 12)
+    if not isinstance(threshold, (int, float)) or isinstance(threshold, bool):
+        threshold = 12
+    return level["score"] <= threshold
+
+rows = ""
 for t in threats:
     unf = t.get("status") == "unfeasible"; na = "<b>n/a (unfeasible)</b>"
     rl, ri = residual(t)
@@ -304,17 +428,63 @@ for t in threats:
     if t.get("deploymentConstraints"):
         classification.append(f"<b>Deployment constraints:</b> {html_lib.escape(str(t['deploymentConstraints']), quote=True)}")
     initial = na if unf else risk_cell(t.get("likelihood"), t.get("impact"))
-    remaining = na if unf else risk_cell(rl, ri)
-    rows += f"<tr><td>{html_lib.escape(str(t['id']), quote=True)}</td><td>{html_lib.escape(str(t['title']), quote=True)}</td><td>{html_lib.escape(''.join(t['stride']), quote=True)}</td><td>{'<br>'.join(classification)}</td><td>{initial}</td><td>{remaining}</td><td>{html_lib.escape(str(t['status']), quote=True)}</td></tr>"
+    remaining = na if unf else ("<b>n/a (avoided)</b>" if t.get("status") == "avoided" else risk_cell(rl, ri))
+    level = classify(rl, ri)
+    acceptance_statement = ""
+    if scheme is not None and within_acceptance(t, rl, ri) and level:
+        acceptable = project.get("acceptableLevel") or scheme.get("acceptance", {}).get("defaultLevel") or project.get("acceptableRisk", 12)
+        acceptance_statement = f"<br><span>Within acceptance criteria (scheme {_esc(scheme['id'])} v{_esc(scheme['version'])}, level {_esc(level['label'])}, acceptable {_esc(acceptable)}).</span>"
+    compromised_objectives = "; ".join(t.get("compromisedObjectives") or [])
+    cause = t.get("cause") or "—"
+    rows += f"<tr><td>{html_lib.escape(str(t['id']), quote=True)}</td><td>{html_lib.escape(str(t['title']), quote=True)}</td><td>{html_lib.escape(''.join(t['stride']), quote=True)}</td><td>{'<br>'.join(classification)}</td><td>{initial}</td><td>{remaining}</td><td>{html_lib.escape(str(t['status']), quote=True)}{acceptance_statement}</td><td>{_esc(compromised_objectives or '—')}</td><td>{_esc(cause)}</td></tr>"
 
-assets = "".join(f"<li>{a['name']} (C{a['objectives']['confidentiality']}/I{a['objectives']['integrity']}/A{a['objectives']['availability']}/S{a['objectives']['safety']})</li>" for a in sys_def["assets"])
+assets = "".join(f"<li>{_esc(a['name'])} (C{_esc(a['objectives']['confidentiality'])}/I{_esc(a['objectives']['integrity'])}/A{_esc(a['objectives']['availability'])}/S{_esc(a['objectives']['safety'])})</li>" for a in sys_def["assets"])
 def cap_label(v):
     if isinstance(v, (int, float)) and not isinstance(v, bool) and v >= 1:
         return f"capability {min(4, v)} · Threat actor {min(4, v)}"
     return f"capability {v if v is not None else '—'}"
 
 atk = "".join(f"<li><b>{html_lib.escape(str(a.get('name','')), quote=True)}</b> {html_lib.escape(cap_label(a.get('capability')), quote=True)}, {html_lib.escape(str(a.get('access','—')), quote=True)}: {html_lib.escape(str(a.get('text','')), quote=True)}</li>" for a in ass["attacker"])
-cmrows = "".join(f"<li><b>{c['id']}</b> {c['title']} → {', '.join(a['threat'] for a in c['addresses'])} ({c.get('status','')})</li>" for c in cms)
+cmrows = "".join(f"<li><b>{_esc(c['id'])}</b> {_esc(c['title'])} → {_esc(', '.join(a['threat'] for a in c['addresses']))} ({_esc(c.get('status',''))})</li>" for c in cms)
+
+def disclosure_item(threat, extra=""):
+    requirement_items = [item for item in reqs if threat.get("id") in item.get("derivedFromThreat", [])]
+    requirements_html = "<ul>" + "".join(f"<li><b>{_esc(item.get('id'))}</b>{' — ' + _esc(item['text']) if item.get('text') else ''}</li>" for item in requirement_items) + "</ul>" if requirement_items else "—"
+    stakeholder_controls = [cm for cm in cms if cm.get("selected") is not False and cm.get("responsibility") in ("deployment", "shared") and any(a.get("threat") == threat.get("id") for a in cm.get("addresses", []))]
+    controls_html = "<br><b>Expected from integrators and operators:</b><ul>" + "".join(f"<li><b>{_esc(cm.get('id'))}</b> — {_esc(cm.get('title'))}</li>" for cm in stakeholder_controls) + "</ul>" if stakeholder_controls else ""
+    responsibility = f" · {_esc(threat.get('responsibility'))}" if threat.get("responsibility") else ""
+    constraints = f"<br><b>Deployment constraints:</b> {_esc(threat.get('deploymentConstraints'))}" if threat.get("deploymentConstraints") else ""
+    return (f"<li><b>{_esc(threat.get('id'))}</b> {_esc(threat.get('title'))}{responsibility}{extra}{constraints}{controls_html}"
+            f"<br><b>Requirements:</b> {requirements_html}</li>")
+
+acceptable_risk = project.get("acceptableRisk", 12)
+if not isinstance(acceptable_risk, (int, float)) or isinstance(acceptable_risk, bool):
+    acceptable_risk = 12
+by_responsibility = []
+for threat in threats:
+    if threat.get("status") == "avoided":
+        continue
+    residual_likelihood, residual_impact = residual(threat)
+    residual_score = residual_likelihood * residual_impact
+    level = classify(residual_likelihood, residual_impact)
+    above_acceptable = residual_score > 0 and not (level and level.get("treatment") == "auto-accept") and residual_score > acceptable_risk
+    if ((threat.get("classification") and threat.get("classification") != "product-vulnerability")
+            or threat.get("status") in ("accepted", "transferred") or above_acceptable):
+        by_responsibility.append(threat)
+avoided = [threat for threat in threats if threat.get("status") == "avoided"]
+accepted_deviations = [threat for threat in threats if threat.get("status") == "accepted" and threat.get("acceptanceDeviation")]
+risk_disclosure_html = ""
+if by_responsibility or avoided or accepted_deviations:
+    risk_disclosure_html = "<h2>Residual risks and expectations on users and integrators</h2>"
+    if by_responsibility:
+        risk_disclosure_html += "<h3>By responsibility</h3><ul>" + "".join(disclosure_item(threat) for threat in by_responsibility) + "</ul>"
+    if avoided:
+        risk_disclosure_html += "<h3>Avoided</h3><ul>" + "".join(disclosure_item(threat, f"<br><b>Avoidance rationale:</b> {_esc(threat.get('avoidanceRationale') or '—')}") for threat in avoided) + "</ul>"
+    if accepted_deviations:
+        risk_disclosure_html += "<h3>Accepted deviations from the acceptance criteria</h3><ul>" + "".join(
+            disclosure_item(threat, f"<br><b>Circumstance:</b> {_esc(threat['acceptanceDeviation'].get('circumstance') or '—')}<br><b>Communicated to:</b> {_esc(threat['acceptanceDeviation'].get('communicatedTo') or '—')}")
+            for threat in accepted_deviations
+        ) + "</ul>"
 
 def _tree_ul(node):
     kids = node.get("children") or []
@@ -351,18 +521,19 @@ for tr in trees:
     trees_html += f"<h3>{heading}</h3>{('<ul><li>' + _tree_ul(tr['root']) + '</li></ul>') if tr.get('root') else ''}"
 trees_section = f"<h2>Attack trees</h2>{trees_html}" if trees_html else ""
 
-warn = f"<ul class=warn>{''.join(f'<li>{i}</li>' for i in issues)}</ul>" if issues else "<p>No issues found.</p>"
-html = (f"<!doctype html><meta charset=utf8><title>TRA {project['title']}</title>"
-        "<style>body{font:14px system-ui;margin:2rem;max-width:60rem}table{border-collapse:collapse;width:100%}td,th{border:1px solid #ccc;padding:6px;text-align:left}h1{font-size:1.4rem}.warn{color:#c62828}</style>"
-        f"<h1>{project['title']}</h1><p>Device: {project['device']['name']} | SL-C {project['slTarget']} | mode {project['scope']['mode']} | status {project['status']}</p>"
-        f"<p><b>Scope:</b> {project['scope'].get('boundary','')}</p>"
+warn = f"<ul class=warn>{''.join(f'<li>{_esc(i)}</li>' for i in issues)}</ul>" if issues else "<p>No issues found.</p>"
+html = (f"<!doctype html><html lang=\"en\"><head><meta charset=utf8><meta name=\"viewport\" content=\"width=device-width, initial-scale=1\"><meta http-equiv=\"Content-Security-Policy\" content=\"default-src 'none'; img-src data:; style-src 'unsafe-inline'\"><title>TRA {_esc(project['title'])}</title>"
+    "<style>body{font:14px system-ui;margin:2rem;max-width:60rem}table{border-collapse:collapse;width:100%}td,th{border:1px solid #ccc;padding:6px;text-align:left}h1{font-size:1.4rem}.warn{color:#c62828}@media print{body{margin:0;max-width:none}table{page-break-inside:auto}tr{break-inside:avoid;page-break-inside:avoid}}</style></head><body><main>"
+        f"<h1>{_esc(project['title'])}</h1><p>Device: {_esc(project['device']['name'])} | SL-C {_esc(project['slTarget'])} | mode {_esc(project['scope']['mode'])} | status {_esc(project['status'])}</p>"
+        f"<p><b>Scope:</b> {_esc(project['scope'].get('boundary',''))}</p>"
+        f"{product_context_html()}"
         f"<h2>Data flow diagram (layer 1)</h2>{dfd_svg(dfd)}"
         f"<h2>Attacker profiles</h2><ul>{atk}</ul><h2>Assets</h2><ul>{assets}</ul>"
         f"{risk_scheme_html()}"
-        f"<h2>Threats &amp; risk</h2><table><tr><th>ID</th><th>Threat</th><th>STRIDE</th><th>Classification</th><th>Initial</th><th>Residual</th><th>Status</th></tr>{rows}</table>"
+        f"<h2>Threats &amp; risk</h2><table><caption>Threats and risk</caption><thead><tr><th scope='col'>ID</th><th scope='col'>Threat</th><th scope='col'>STRIDE</th><th scope='col'>Classification</th><th scope='col'>Initial</th><th scope='col'>Residual</th><th scope='col'>Status</th><th scope='col'>Compromised objectives</th><th scope='col'>Cause</th></tr></thead><tbody>{rows}</tbody></table>{risk_disclosure_html}"
         f"<h2>Countermeasures</h2><ul>{cmrows}</ul>"
         f"{trees_section}"
-        f"<h2>Plausibility check</h2>{warn}")
+        f"<h2>Plausibility check</h2>{warn}</main></body></html>")
 (base / "report").mkdir(exist_ok=True)
 (base / "report/index.html").write_text(html, encoding="utf8")
 print(f"Report written to {proj}/report/index.html; {len(issues)} plausibility issue(s).")

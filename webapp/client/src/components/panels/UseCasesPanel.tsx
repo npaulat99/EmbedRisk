@@ -177,6 +177,32 @@ export default function UseCasesPanel() {
         setUcDiagram(next[0]?.id || null);
     };
 
+    // Declared before the early return below so the hook order stays stable when the first diagram appears.
+    useEffect(() => {
+        if (!drag || !activeDiagram) return;
+        const diagramId = activeDiagram.id;
+        const diagramEntities = activeDiagram.entities || [];
+        const onMove = (e: MouseEvent) => {
+            const rect = svgRef.current!.getBoundingClientRect();
+            const x = Math.max(0, Math.round(e.clientX - rect.left - dragOffset.current.x));
+            const y = Math.max(0, Math.round(e.clientY - rect.top - dragOffset.current.y));
+            setDrag((d) => (d ? { ...d, x, y } : d));
+        };
+        const onUp = () =>
+            setDrag((d) => {
+                if (!d) return null;
+                updateDiagram(diagramId, { entities: diagramEntities.map((ent) => (ent.id === d.id ? { ...ent, x: d.x, y: d.y } : ent)) });
+                return null;
+            });
+        window.addEventListener('mousemove', onMove);
+        window.addEventListener('mouseup', onUp);
+        return () => {
+            window.removeEventListener('mousemove', onMove);
+            window.removeEventListener('mouseup', onUp);
+        };
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [drag?.id]);
+
     if (!activeDiagram) {
         return (
             <div className="panel" ref={panelRef}>
@@ -184,10 +210,6 @@ export default function UseCasesPanel() {
                     <h1>Scenarios & diagrams</h1>
                 </div>
                 <p className="lead">Model actors, actions and misuse-case variants for the device. Optional and excluded from the report by default.</p>
-                <div className="notice-box" style={{ maxWidth: 680 }}>
-                    Known issue: after pressing <b>+ New diagram</b> for the first time in a project, the editor may black out.
-                    If that happens, reload the page once and the use-case editor will work normally.
-                </div>
                 <div className="inline">
                     <button className="btn primary" onClick={() => addDiagram('use-case')}>
                         + New use case
@@ -266,24 +288,6 @@ export default function UseCasesPanel() {
         dragOffset.current = { x: e.clientX - rect.left - (ent.x || 0), y: e.clientY - rect.top - (ent.y || 0) };
         setDrag({ id: ent.id, x: ent.x || 0, y: ent.y || 0 });
     };
-
-    useEffect(() => {
-        if (!drag) return;
-        const onMove = (e: MouseEvent) => {
-            const rect = svgRef.current!.getBoundingClientRect();
-            const x = Math.max(0, Math.round(e.clientX - rect.left - dragOffset.current.x));
-            const y = Math.max(0, Math.round(e.clientY - rect.top - dragOffset.current.y));
-            setDrag((d) => (d ? { ...d, x, y } : d));
-        };
-        const onUp = () => setDrag((d) => (d ? (updateEntity(d.id, { x: d.x, y: d.y }), null) : null));
-        window.addEventListener('mousemove', onMove);
-        window.addEventListener('mouseup', onUp);
-        return () => {
-            window.removeEventListener('mousemove', onMove);
-            window.removeEventListener('mouseup', onUp);
-        };
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [drag?.id]);
 
     const posOf = (ent: UseCaseEntity) => (drag && drag.id === ent.id ? { x: drag.x, y: drag.y } : { x: ent.x || 0, y: ent.y || 0 });
 

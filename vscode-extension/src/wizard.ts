@@ -113,6 +113,8 @@ async function buildData(proj: vscode.Uri) {
       outOfScope: project.scope?.outOfScope || [],
       intendedUse: project.intendedUse || "",
       foreseeableUse: project.foreseeableUse || [],
+      productContext: project.productContext,
+      riskCriteria: project.riskCriteria,
       projectBranchUrl: project.repo?.projectBranchUrl || "",
       kbUrl: project.repo?.kbUrl || "",
       sbom: project.sbom || {},
@@ -502,7 +504,8 @@ export async function openWizard(ctx: vscode.ExtensionContext, focusThreatId?: s
           'impactDimensions', 'likelihoodFactors', 'cvss',
           'likelihoodRationale', 'impactRationale',
           'acceptedBy', 'acceptanceRationale', 'reviewDate',
-          'assumptionRefs'].forEach(pick);
+          'avoidanceRationale', 'transferRationale', 'acceptanceDeviation',
+          'compromisedObjectives', 'cause', 'assumptionRefs'].forEach(pick);
         return threatCostFields(out);
       });
       await write(f.proj, "06-threats/threats.json", { ...threatDoc, threats: norm });
@@ -709,6 +712,8 @@ export async function openWizard(ctx: vscode.ExtensionContext, focusThreatId?: s
             proj.acceptedNotices = proj.acceptedNotices.filter((k: string) => k !== "usecases-excluded");
           }
           if (d.project.sbom) proj.sbom = d.project.sbom;
+          if (d.project.productContext && typeof d.project.productContext === "object") proj.productContext = d.project.productContext;
+          if (d.project.riskCriteria && typeof d.project.riskCriteria === "object") proj.riskCriteria = d.project.riskCriteria;
           await write(f.proj, "01-project-description/project.json", proj);
           const attacker = managedSlcAttacker(proj.slTarget);
           const assumptions = await rdRaw(f.proj, "02-assumptions/assumptions.json", {});
@@ -802,6 +807,7 @@ function shell(cssUri: vscode.Uri, riskEngineUri: vscode.Uri, riskUri: vscode.Ur
             <select class="inp" id="p-status"><option>draft</option><option>in-progress</option><option>review</option><option>released</option></select></div>
         </div>
         <div class="field warnmark" id="p-risk-warning" role="alert" style="display:none"></div>
+        <details class="risk-criteria-group" style="margin:8px 0"><summary class="hint" style="cursor:pointer">Risk criteria justification</summary><div id="p-risk-criteria" style="margin-top:8px"></div></details>
         <div class="field"><label>Boundary</label><input class="inp" id="p-bnd"></div>
         <div class="grid2">
           <div class="field"><label>In scope</label><div id="p-inScope"></div></div>
@@ -810,6 +816,8 @@ function shell(cssUri: vscode.Uri, riskEngineUri: vscode.Uri, riskUri: vscode.Ur
         <h3>Intended purpose and reasonably foreseeable use (CRA)</h3>
         <div class="field"><label for="p-intendedUse">Intended purpose</label><textarea class="inp" id="p-intendedUse" rows="3" placeholder="The manufacturer's intended purpose and operating conditions."></textarea></div>
         <div class="field"><label>Reasonably foreseeable use</label><div id="p-foreseeableUse"></div></div>
+        <h3>Product context</h3>
+        <div id="p-product-context"></div>
         <h3>Repositories</h3>
         <div class="field"><label for="p-projectBranchUrl">Project branch / PR URL</label><input class="inp" id="p-projectBranchUrl" placeholder="https://github.com/owner/project/tree/branch"></div>
         <div class="field"><label for="p-kbUrl">Knowledge-base Git URL</label><input class="inp" id="p-kbUrl" placeholder="https://github.com/owner/knowledge-base.git"></div>
@@ -911,7 +919,9 @@ function shell(cssUri: vscode.Uri, riskEngineUri: vscode.Uri, riskUri: vscode.Ur
 const vs=acquireVsCodeApi(), AS=window.EmbedRiskAttackerScale, R=window.RiskModel;
 if(!R)throw new Error('EmbedRisk risk model failed to load.');
 const STRIDE=[['S','Spoofing'],['T','Tampering'],['R','Repudiation'],['I','Info disclosure'],['D','Denial of service'],['E','Elevation']];
-const T_STATUS=[['open','Open'],['mitigated','Mitigated'],['accepted','Accepted'],['transferred','Transferred'],['unfeasible','Unfeasible']];
+const T_STATUS=[['open','Open'],['mitigated','Mitigated'],['accepted','Accepted'],['transferred','Transferred'],['unfeasible','Unfeasible'],['avoided','Avoided']];
+var STRIDE_COMPROMISED_OBJECTIVES={S:['integrity','confidentiality'],T:['integrity'],R:['integrity'],I:['confidentiality'],D:['availability'],E:['confidentiality','integrity','availability','safety']};
+var COMPROMISED_OBJECTIVE_OPTIONS=[['confidentiality','Confidentiality'],['integrity','Integrity'],['availability','Availability'],['safety','Safety']];
 const SKILL_OPTS=AS.ACTOR_LEVELS.map(function(l){return [l.level,l.description];});
 const COST_ACCESS_OPTS=[[1,'Remote (unauth.)'],[2,'Remote (auth.)'],[3,'Adjacent / fieldbus'],[4,'Local (on site)'],[5,'Physical (open enclosure)']];
 const COST_FACTORS=[
@@ -944,6 +954,8 @@ let system={components:[],interfaces:[],trustBoundaries:[],assets:[]};
 let requirements=[];
 let project={title:'',status:'draft',name:'',type:'',version:'',modelReference:'',sl:'SL2',mode:'graybox',boundary:'',includeUseCases:false,useCaseNames:[],useCaseNoticePending:false};
 const PROJECT_LIST_LABELS={inScope:'In scope',outOfScope:'Out of scope',foreseeableUse:'Reasonably foreseeable use'};
+const MAX_PRODUCT_CONTEXT_ITEMS=50;
+const RISK_CRITERIA_INPUTS=[['regulation','Regulation'],['contracts','Contracts'],['riskNature','Nature of risk'],['users','Users'],['productType','Product type'],['stateOfTheArt','State of the art']];
 let undoStack=[], redoStack=[], histKey='', histTime=0;
 let asmTab='device', sysTab='components';
 const $=function(s){return document.querySelector(s);};
@@ -951,7 +963,17 @@ function esc(s){return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'
 function uid(prefix,ids){var used={};(ids||[]).forEach(function(id){if(typeof id!=='string'||id.indexOf(prefix)!==0)return;var rest=id.slice(prefix.length);if(/^[0-9]+$/.test(rest))used[Number(rest)]=true;});var n=1;while(used[n])n++;return prefix+n;}
 var ASM_PREFIX={device:'AD-',system:'SYSA-',environment:'AE-',operational:'AO-'};
 function optTags(list,val){return list.map(function(o){var v=o&&o.length&&typeof o!=='string'?o[0]:o;var l=o&&o.length&&typeof o!=='string'?o[1]:o;return '<option value="'+esc(v)+'"'+(String(val)===String(v)?' selected':'')+'>'+esc(l)+'</option>';}).join('');}
-function statusLabel(s){var m={open:'Open',mitigated:'Mitigated',accepted:'Accepted',transferred:'Transferred',unfeasible:'Unfeasible'};return m[s||'open']||'Open';}
+function statusLabel(s){var m={open:'Open',mitigated:'Mitigated',accepted:'Accepted',transferred:'Transferred',unfeasible:'Unfeasible',avoided:'Avoided'};return m[s||'open']||'Open';}
+function aboveAcceptable(t){
+  if(schemeWarning)return false;
+  var engine=window.RiskEngine.createRiskEngine(riskScheme,project),axes=engine.residual(t,cms);
+  var level=engine.classify(axes[0],axes[1]);
+  if(!level||level.id==='none'||level.treatment==='auto-accept')return false;
+  var acceptableLevel=project.acceptableLevel||(typeof project.acceptableRisk!=='number'&&engine.scheme.acceptance?engine.scheme.acceptance.defaultLevel:null);
+  var acceptableRank=acceptableLevel&&engine.scheme.classification.levels.find(function(item){return item.id===acceptableLevel;});
+  var threshold=typeof project.acceptableRisk==='number'?project.acceptableRisk:12;
+  return level.rank>(acceptableRank?acceptableRank.rank:0) && (acceptableRank||level.score>threshold);
+}
 // ---- undo / redo history: snapshots of the editable project state (toolbar buttons + Ctrl+Z / Ctrl+Y) ----
 function snapshot(){return JSON.stringify({project:project,threats:threats,cms:cms,defects:defects,assumptions:assumptions,system:system,requirements:requirements});}
 function updUndoBtns(){var u=$('#undoBtn'),r=$('#redoBtn');if(u)u.disabled=!undoStack.length;if(r)r.disabled=!redoStack.length;}
@@ -1059,9 +1081,31 @@ function renderProjectList(key){
       '<button class="btn sm danger" data-act="delProjectList" data-list="'+key+'" data-list-index="'+i+'" aria-label="Remove '+esc(PROJECT_LIST_LABELS[key])+' item '+(i+1)+'">Remove</button></div>';
   }).join('')+'<button class="btn sm" data-act="addProjectList" data-list="'+key+'">+ Add item</button>';
 }
+function renderProductContext(){
+  var context=project.productContext||{},functions=context.functions||[],evidence=context.evidence||[],users=context.users||{},groups=users.vulnerableGroups||[];
+  $('#p-product-context').innerHTML=functions.map(function(item,i){return '<fieldset class="product-context-item"><legend>Function '+(i+1)+'</legend><div class="grid2">'+
+    '<div class="field"><label for="pc-function-name-'+i+'">Name</label><input class="inp" id="pc-function-name-'+i+'" maxlength="200" data-product-function-index="'+i+'" data-product-function-field="name" value="'+esc(item.name||'')+'"></div>'+
+    '<div class="field"><label for="pc-function-description-'+i+'">Description</label><textarea class="inp" id="pc-function-description-'+i+'" rows="2" maxlength="2000" data-product-function-index="'+i+'" data-product-function-field="description">'+esc(item.description||'')+'</textarea></div></div>'+
+    '<button type="button" class="btn sm danger" data-act="removeProductFunction" data-index="'+i+'" aria-label="Remove product function '+(i+1)+'">Remove function</button></fieldset>';}).join('')+
+    '<button type="button" class="btn sm" data-act="addProductFunction" aria-label="Add product function '+(functions.length+1)+'"'+(functions.length>=MAX_PRODUCT_CONTEXT_ITEMS?' disabled':'')+'>Add function</button>'+
+    '<div class="field"><label for="pc-users-description">Users</label><textarea class="inp" id="pc-users-description" rows="3" maxlength="2000" data-product-users-description>'+esc(users.description||'')+'</textarea></div>'+
+    '<div class="field"><label>Vulnerable groups</label>'+groups.map(function(group,i){return '<div class="row product-context-row"><div class="field"><label for="pc-vulnerable-group-'+i+'">Group '+(i+1)+'</label><input class="inp" id="pc-vulnerable-group-'+i+'" maxlength="200" data-product-user-group-index="'+i+'" value="'+esc(group)+'"></div><button type="button" class="btn sm danger" data-act="removeVulnerableGroup" data-index="'+i+'" aria-label="Remove vulnerable group '+(i+1)+'">Remove</button></div>';}).join('')+
+    '<button type="button" class="btn sm" data-act="addVulnerableGroup" aria-label="Add vulnerable group '+(groups.length+1)+'"'+(groups.length>=MAX_PRODUCT_CONTEXT_ITEMS?' disabled':'')+'>Add vulnerable group</button></div>'+
+    evidence.map(function(item,i){return '<fieldset class="product-context-item"><legend>Evidence '+(i+1)+'</legend><div class="grid2">'+
+      '<div class="field"><label for="pc-evidence-title-'+i+'">Title</label><input class="inp" id="pc-evidence-title-'+i+'" maxlength="200" data-product-evidence-index="'+i+'" data-product-evidence-field="title" value="'+esc(item.title||'')+'"></div>'+
+      '<div class="field"><label for="pc-evidence-ref-'+i+'">Reference</label><input class="inp" id="pc-evidence-ref-'+i+'" maxlength="2000" data-product-evidence-index="'+i+'" data-product-evidence-field="ref" aria-describedby="pc-evidence-hint-'+i+'" value="'+esc(item.ref||'')+'"><span class="hint" id="pc-evidence-hint-'+i+'">HTTP(S) URL or project-relative path.</span></div></div>'+
+      '<div class="field"><label for="pc-evidence-clause-'+i+'">Clause</label><input class="inp" id="pc-evidence-clause-'+i+'" maxlength="200" data-product-evidence-index="'+i+'" data-product-evidence-field="clause" value="'+esc(item.clause||'')+'"></div>'+
+      '<button type="button" class="btn sm danger" data-act="removeProductEvidence" data-index="'+i+'" aria-label="Remove evidence '+(i+1)+'">Remove evidence</button></fieldset>';}).join('')+
+    '<button type="button" class="btn sm" data-act="addProductEvidence" aria-label="Add evidence '+(evidence.length+1)+'"'+(evidence.length>=MAX_PRODUCT_CONTEXT_ITEMS?' disabled':'')+'>Add evidence</button>';
+  var criteria=project.riskCriteria||{},inputs=criteria.inputs||{};
+  $('#p-risk-criteria').innerHTML='<div class="field"><label for="p-risk-scheme-justification">Why this scheme and acceptance criteria?</label><textarea class="inp" id="p-risk-scheme-justification" rows="3" maxlength="2000" data-risk-criteria="schemeJustification">'+esc(criteria.schemeJustification||'')+'</textarea></div>'+
+    '<div class="field"><label for="p-risk-scheme-source">Source or reference</label><input class="inp" id="p-risk-scheme-source" maxlength="200" data-risk-criteria="schemeSource" value="'+esc(criteria.schemeSource||'')+'"></div>'+
+    '<div class="grid3">'+RISK_CRITERIA_INPUTS.map(function(entry){return '<div class="field"><label for="p-risk-input-'+entry[0]+'">'+entry[1]+'</label><input class="inp" id="p-risk-input-'+entry[0]+'" maxlength="200" data-risk-criteria-input="'+entry[0]+'" value="'+esc(inputs[entry[0]]||'')+'"></div>';}).join('')+'</div>';
+}
 function renderProject(p){
   p=p||{};
   project={title:p.title||'',name:p.name||'',sl:p.sl||'SL2',riskScoringMethod:p.riskScoringMethod||'cost-based',riskSchemeId:p.riskSchemeId||((p.riskScoringMethod==='exposure-exploitability-impact')?'builtin:5x5-exposure':'builtin:5x5-cost'),riskSchemeFingerprint:p.riskSchemeFingerprint,acceptableLevel:p.acceptableLevel,mode:p.mode||'graybox',boundary:p.boundary||'',sbom:p.sbom||{},includeUseCases:!!p.includeUseCases,useCaseNames:p.useCaseNames||[],useCaseNoticePending:!!p.useCaseNoticePending};
+  project.productContext=p.productContext;project.riskCriteria=p.riskCriteria;
   if(riskScheme&&riskScheme.schemaVersion!==2)riskScheme=window.RiskEngine.createRiskEngine(riskScheme,project).scheme;
   ['acceptableRisk','costFactorWeights','accessProbabilities','likelihoodProbabilityThresholds'].forEach(function(key){project[key]=p[key];});
   project.status=p.status||'draft';$('#p-status').value=project.status;
@@ -1082,6 +1126,7 @@ function renderProject(p){
   var fmtSel=$('#p-sbom-format');if(fmtSel)fmtSel.value=sbom.format||'cyclonedx';
   showSbomFields(sbomMode);
   var urlInp=$('#p-sbom-url-inp');if(urlInp)urlInp.value=sbom.url||'';
+  renderProductContext();
   renderSlCard();
 }
 function switchRiskScheme(id){
@@ -1270,6 +1315,10 @@ function renderThreats(){
     );
     var asmById={}; asmOpts.forEach(function(a){asmById[a.id]=a;});
     var asms=asmOpts.length?asmOpts.map(function(a){return chip(a.id,(t.assumptionRefs||[]).indexOf(a.id)>=0,'data-i='+i+' data-role="asm" data-val="'+esc(a.id)+'"',a.src+(a.text?': '+a.text.slice(0,60):''));}).join(''):'<span class="hint">Define assumptions in step 02 first.</span>';
+    var suggestedObjectives=[];(t.stride||[]).forEach(function(category){(STRIDE_COMPROMISED_OBJECTIVES[category]||[]).forEach(function(objective){if(suggestedObjectives.indexOf(objective)<0)suggestedObjectives.push(objective);});});
+    var objectiveChecks=COMPROMISED_OBJECTIVE_OPTIONS.map(function(option){var id='threat-objective-'+i+'-'+option[0];return '<label class="objective-check" for="'+id+'"><input id="'+id+'" type="checkbox" data-i="'+i+'" data-k="compromisedObjectives" data-objective="'+option[0]+'"'+((t.compromisedObjectives||[]).indexOf(option[0])>=0?' checked':'')+'><span>'+option[1]+'</span></label>';}).join('');
+    var objectiveFields='<fieldset class="objective-group"><legend>Compromised objectives</legend><span class="chip static objective-hint">Suggested by STRIDE: '+(suggestedObjectives.length?suggestedObjectives.join(', '):'none')+'</span><div class="objective-options">'+objectiveChecks+'</div></fieldset>'+
+      '<div class="field"><label for="threat-cause-'+i+'">Cause</label><textarea class="inp" id="threat-cause-'+i+'" rows="2" data-i="'+i+'" data-k="cause">'+esc(t.cause||'')+'</textarea></div>';
     var asmNote=(t.assumptionRefs||[]).length?'<ul style="margin:6px 0 0 18px">'+(t.assumptionRefs||[]).map(function(aid){
       var valid=/^[A-Za-z0-9 _:.-]+$/.test(String(aid));
       if(!valid)return '<li><b>'+esc(aid)+'</b> · invalid ID format</li>';
@@ -1301,14 +1350,17 @@ function renderThreats(){
       '<div class="field"><label>Likelihood rationale</label><textarea class="inp" rows=2 data-i='+i+' data-k="likelihoodRationale">'+esc(t.likelihoodRationale||'')+'</textarea></div>'+
       '<div class="field"><label>Impact rationale</label><textarea class="inp" rows=2 data-i='+i+' data-k="impactRationale">'+esc(t.impactRationale||'')+'</textarea></div>'+
     '</div>'+
-    '<div class="field" style="margin-top:6px"><label>Supporting assumptions</label><div class="chips">'+asms+'</div>'+asmNote+'</div>';
-    var acceptedFields=t.status==='accepted'?
-      '<div class="grid3" style="margin-top:8px;padding-top:8px;border-top:1px solid var(--border)">'+
-        '<div class="field"><label>Accepted by</label><input class="inp" data-i='+i+' data-k="acceptedBy" value="'+esc(t.acceptedBy||'')+'" placeholder="name / role"></div>'+
-        '<div class="field"><label>Acceptance rationale</label><input class="inp" data-i='+i+' data-k="acceptanceRationale" value="'+esc(t.acceptanceRationale||'')+'" placeholder="compensating controls..."></div>'+
-        '<div class="field"><label>Next review date</label><input class="inp" type="date" data-i='+i+' data-k="reviewDate" value="'+esc(t.reviewDate||'')+'"></div>'+
-      '</div>':
-      '';
+    '<div class="field" style="margin-top:6px"><label>Supporting assumptions</label><div class="chips">'+asms+'</div>'+asmNote+'</div>'+objectiveFields;
+    var acceptedFields='';
+    if(t.status==='avoided')acceptedFields='<div class="field"><label for="avoidance-rationale-'+i+'">Avoidance rationale</label><textarea class="inp" id="avoidance-rationale-'+i+'" rows="2" maxlength="2000" data-i='+i+' data-k="avoidanceRationale" aria-describedby="avoidance-rationale-hint-'+i+'">'+esc(t.avoidanceRationale||'')+'</textarea><span class="hint" id="avoidance-rationale-hint-'+i+'">Describe the design or context change that removes this risk.</span></div>';
+    if(t.status==='transferred')acceptedFields='<div class="field"><label for="transfer-rationale-'+i+'">Transfer rationale</label><textarea class="inp" id="transfer-rationale-'+i+'" rows="2" maxlength="2000" data-i='+i+' data-k="transferRationale" aria-describedby="transfer-rationale-hint-'+i+'">'+esc(t.transferRationale||'')+'</textarea><span class="hint" id="transfer-rationale-hint-'+i+'">Who receives the risk, how they are informed, and why avoiding or reducing it was not chosen.</span></div>';
+    if(t.status==='accepted'){
+      acceptedFields='<div class="grid3" style="margin-top:8px;padding-top:8px;border-top:1px solid var(--border)">'+
+        '<div class="field"><label for="accepted-by-'+i+'">Accepted by</label><input class="inp" id="accepted-by-'+i+'" data-i='+i+' data-k="acceptedBy" value="'+esc(t.acceptedBy||'')+'" placeholder="name / role"></div>'+
+          '<div class="field"><label for="acceptance-rationale-'+i+'">Acceptance rationale</label><textarea class="inp" id="acceptance-rationale-'+i+'" rows="2" data-i='+i+' data-k="acceptanceRationale" aria-describedby="acceptance-rationale-hint-'+i+'">'+esc(t.acceptanceRationale||'')+'</textarea><span class="hint" id="acceptance-rationale-hint-'+i+'">Why the residual risk is acceptable. Explain why avoiding or reducing it was not chosen.</span></div>'+
+        '<div class="field"><label for="review-date-'+i+'">Next review date</label><input class="inp" id="review-date-'+i+'" type="date" data-i='+i+' data-k="reviewDate" value="'+esc(t.reviewDate||'')+'"></div></div>';
+      if(aboveAcceptable(t))acceptedFields+='<div class="grid2" style="margin-top:8px"><div class="field"><label for="acceptance-deviation-circumstance-'+i+'">Acceptance deviation circumstance</label><textarea class="inp" id="acceptance-deviation-circumstance-'+i+'" rows="2" maxlength="2000" data-i='+i+' data-deviation="circumstance" aria-describedby="acceptance-deviation-circumstance-hint-'+i+'">'+esc((t.acceptanceDeviation||{}).circumstance||'')+'</textarea><span class="hint" id="acceptance-deviation-circumstance-hint-'+i+'">Why the acceptance criteria are overridden.</span></div><div class="field"><label for="acceptance-deviation-communicated-'+i+'">Communicated to</label><input class="inp" id="acceptance-deviation-communicated-'+i+'" maxlength="200" data-i='+i+' data-deviation="communicatedTo" aria-describedby="acceptance-deviation-communicated-hint-'+i+'" value="'+esc((t.acceptanceDeviation||{}).communicatedTo||'')+'"><span class="hint" id="acceptance-deviation-communicated-hint-'+i+'">Who was told about the effect on residual risk.</span></div></div>';
+    }
     var mainRow='<tr id="threat-row-'+i+'" data-threat-row="'+esc(t.id)+'" tabindex="-1">'+
       '<td><input type="checkbox" data-export-kind="threat" data-export-id="'+esc(t.id)+'" checked aria-label="Export threat '+esc(t.id)+'"></td>'+
       '<td class="narrow"><input class="inp" data-i='+i+' data-k="id" value="'+esc(t.id)+'"></td>'+
@@ -1556,6 +1608,8 @@ function renderSystem(){
         '<div class="grid3"><div class="field"><label>Type</label><select class="inp" data-as='+i+' data-k="type">'+optTags(ASSET_TYPES,a.type||'function')+'</select></div>'+
           '<div class="field" style="grid-column:span 2"><label>Storage</label><input class="inp" data-as='+i+' data-k="storage" value="'+esc(a.storage||'')+'"></div></div>'+
         '<div class="hint" style="margin-top:6px">Components</div><div class="chips">'+comp+'</div>'+
+        '<div class="hint" style="margin-top:6px">Components</div><div class="chips">'+comp+'</div>'+
+        '<div class="field"><label for="asset-no-threat-'+i+'">No-threat rationale</label><textarea class="inp" id="asset-no-threat-'+i+'" rows="2" maxlength="2000" data-as='+i+' data-k="noThreatRationale" aria-describedby="asset-no-threat-hint-'+i+'">'+esc(a.noThreatRationale||'')+'</textarea><span class="hint" id="asset-no-threat-hint-'+i+'">Explain why no threat applies to this asset. Maximum 2000 characters.</span></div>'+
         '<div class="hint" style="margin-top:6px">Security objectives (0–5)</div><div class="objgrid">'+objs+'</div></div>';
     }).join(''):'<p class="hint">No assets yet.</p>';
     html+='<button class="btn sm" data-act="addAs">+ Asset</button>';
@@ -1630,6 +1684,12 @@ document.addEventListener('click',function(e){
   }
   else if(act==='addProjectList'){project[el.dataset.list].push('');renderProjectList(el.dataset.list);}
   else if(act==='delProjectList'){project[el.dataset.list].splice(+el.dataset.listIndex,1);renderProjectList(el.dataset.list);}
+  else if(act==='addProductFunction'){var pc=project.productContext||(project.productContext={});pc.functions=pc.functions||[];if(pc.functions.length<MAX_PRODUCT_CONTEXT_ITEMS)pc.functions.push({name:''});renderProductContext();}
+  else if(act==='removeProductFunction'){project.productContext.functions.splice(+el.dataset.index,1);renderProductContext();}
+  else if(act==='addProductEvidence'){var pc=project.productContext||(project.productContext={});pc.evidence=pc.evidence||[];if(pc.evidence.length<MAX_PRODUCT_CONTEXT_ITEMS)pc.evidence.push({title:'',ref:''});renderProductContext();}
+  else if(act==='removeProductEvidence'){project.productContext.evidence.splice(+el.dataset.index,1);renderProductContext();}
+  else if(act==='addVulnerableGroup'){var pc=project.productContext||(project.productContext={});pc.users=pc.users||{};pc.users.vulnerableGroups=pc.users.vulnerableGroups||[];if(pc.users.vulnerableGroups.length<MAX_PRODUCT_CONTEXT_ITEMS)pc.users.vulnerableGroups.push('');renderProductContext();}
+  else if(act==='removeVulnerableGroup'){project.productContext.users.vulnerableGroups.splice(+el.dataset.index,1);renderProductContext();}
   else if(act==='addT'){threats.push({id:uid('T',threats.map(function(x){return x.id;})),title:'New threat',stride:['T'],components:[],likelihood:3,impact:3,status:'open'});renderThreats();renderRail();}
   else if(act==='delT'){threats.splice(+el.dataset.i,1);renderThreats();renderRail();}
   else if(act==='addC'){cms.push({id:uid('CM',cms.map(function(x){return x.id;})),title:'New countermeasure',type:'preventive',status:'proposed',addresses:[]});renderCms();renderRail();}
@@ -1706,6 +1766,12 @@ document.addEventListener('input',function(e){
   scheduleAutoSave();
   recordBefore(keyOf(t));
   if(t.dataset.projectList){project[t.dataset.projectList][+t.dataset.listIndex]=t.value;return;}
+  if(t.dataset.productFunctionIndex!==undefined){var pc=project.productContext||(project.productContext={}),functionIndex=+t.dataset.productFunctionIndex,productFunction=pc.functions[functionIndex];if(productFunction)productFunction[t.dataset.productFunctionField]=t.value||undefined;return;}
+  if(t.dataset.productEvidenceIndex!==undefined){var pc=project.productContext||(project.productContext={}),evidenceIndex=+t.dataset.productEvidenceIndex,evidenceItem=pc.evidence[evidenceIndex];if(evidenceItem)evidenceItem[t.dataset.productEvidenceField]=t.value||undefined;return;}
+  if(t.dataset.productUsersDescription!==undefined){var pc=project.productContext||(project.productContext={});pc.users=pc.users||{};pc.users.description=t.value||undefined;return;}
+  if(t.dataset.productUserGroupIndex!==undefined){var pc=project.productContext||(project.productContext={});pc.users=pc.users||{};pc.users.vulnerableGroups=pc.users.vulnerableGroups||[];pc.users.vulnerableGroups[+t.dataset.productUserGroupIndex]=t.value;return;}
+  if(t.dataset.riskCriteria){project.riskCriteria=project.riskCriteria||{};project.riskCriteria[t.dataset.riskCriteria]=t.value||undefined;return;}
+  if(t.dataset.riskCriteriaInput){project.riskCriteria=project.riskCriteria||{};project.riskCriteria.inputs=project.riskCriteria.inputs||{};project.riskCriteria.inputs[t.dataset.riskCriteriaInput]=t.value||undefined;return;}
   if(t.id==='p-title'){project.title=t.value;return;}
   if(t.id==='p-intendedUse'){project.intendedUse=t.value;return;}
   if(t.id==='p-status'){project.status=t.value;return;}
@@ -1718,6 +1784,7 @@ document.addEventListener('input',function(e){
   if(t.id==='p-bnd'){project.boundary=t.value;return;}
   if(t.id==='p-uc-inc'){project.includeUseCases=!!t.checked;return;}
   if(t.id==='p-sbom-mode'||t.id==='p-sbom-format'||t.id==='p-sbom-url-inp'){project.sbom=readSbom();showSbomFields(project.sbom.mode);return;}
+  if(t.dataset.i!==undefined&&t.dataset.objective){var objectiveIndex=+t.dataset.i,objective=t.dataset.objective,selectedObjectives=(threats[objectiveIndex].compromisedObjectives||[]).slice(),objectivePosition=selectedObjectives.indexOf(objective);if(t.checked&&objectivePosition<0)selectedObjectives.push(objective);else if(!t.checked&&objectivePosition>=0)selectedObjectives.splice(objectivePosition,1);threats[objectiveIndex].compromisedObjectives=COMPROMISED_OBJECTIVE_OPTIONS.map(function(option){return option[0];}).filter(function(value){return selectedObjectives.indexOf(value)>=0;});if(!threats[objectiveIndex].compromisedObjectives.length)delete threats[objectiveIndex].compromisedObjectives;return;}
   if(t.dataset.i!==undefined&&t.dataset.criterionAxis&&t.dataset.criterionId){
     var ci=+t.dataset.i,axis=t.dataset.criterionAxis,id=t.dataset.criterionId,field=axis+'Criteria',values=Object.assign({},threats[ci][field]||(axis==='likelihood'?threats[ci].likelihoodFactors:threats[ci].impactDimensions)||{});
     values[id]=t.value===''?null:+t.value;threats[ci][field]=values;
@@ -1748,9 +1815,10 @@ document.addEventListener('input',function(e){
     status.value=threats[i].status||'open';badge.className='badge st-'+status.value;badge.textContent=statusLabel(status.value);
     updatePills();return;
   }
+  if(t.dataset.i!==undefined&&t.dataset.deviation){var deviationIndex=+t.dataset.i,deviationField=t.dataset.deviation,deviation=Object.assign({},threats[deviationIndex].acceptanceDeviation||{});deviation[deviationField]=t.value||undefined;threats[deviationIndex].acceptanceDeviation=deviation;return;}
   if(t.dataset.i!==undefined&&t.dataset.k){var i=+t.dataset.i,k=t.dataset.k;
     if(k==='likelihood'||k==='impact'){var axisDef=riskScheme&&riskScheme[k],min=k==='likelihood'?0:(axisDef?axisDef.levels[0].value:1),max=axisDef?axisDef.levels[axisDef.levels.length-1].value:5;threats[i][k]=Math.max(min,Math.min(max,+t.value||min));var el=document.getElementById('tp-'+i);if(el)el.innerHTML=riskCell(threats[i]);var warning=$('#cost-summary-'+i+' [data-cost-warning]');if(warning)warning.textContent=costWarning(threats[i],+warning.dataset.proposal);}
-    else if(k==='status'){threats[i].status=t.value;var cell=t.closest('td');var bd=cell&&cell.querySelector('.badge');if(bd){bd.className='badge st-'+t.value;bd.textContent=statusLabel(t.value);}}
+    else if(k==='status'){threats[i].status=t.value;var cell=t.closest('td');var bd=cell&&cell.querySelector('.badge');if(bd){bd.className='badge st-'+t.value;bd.textContent=statusLabel(t.value);}renderThreats();var statusControl=document.querySelector('[data-i="'+i+'"][data-k="status"]');if(statusControl)statusControl.focus();}
     else threats[i][k]=t.value;renderMatrices();return;}
   if(t.dataset.ci!==undefined&&t.dataset.k){
     if(t.dataset.k==='ticketUrls'&&t.dataset.ti!==undefined){

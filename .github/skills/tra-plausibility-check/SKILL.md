@@ -25,6 +25,15 @@ full schema/reference-integrity sweep (that's `tra-review-single`); focus only o
   differences between `costLikelihoodProposal` and the selected matrix likelihood. Also check that
   claimed countermeasure effects identify the changed cost input. Do not report the absence of
   cost-based fields for an exposure-exploitability-impact project.
+- Check that an `avoided` threat has evidence of a design/context change and a matching
+  `avoidanceRationale`; a missing requirement/assumption link is a dismissible re-assessment notice.
+  For above-criteria acceptance, check `acceptanceDeviation.circumstance`; for transfer, check that
+  the written rationale names the recipient and communication. Do not invent these rationales.
+- In review/released projects, include open product-context and risk-criteria notices. For evidence
+  references, flag V-06 unsafe schemes or paths (for example `javascript:`, `data:`, absolute paths,
+  backslashes, or `..` segments); safe HTTP(S) and project-relative paths are allowed.
+- `cause` and `compromisedObjectives` are optional; V-09 is one dismissible notice when both are
+  absent. STRIDE-derived objectives are suggestions only, not a basis for asserting an objective.
 
 Report only genuine implausibilities with a one-line rationale each — do not repeat things that are
 merely incomplete (missing fields) unless they make a rating impossible to sanity-check. This is a

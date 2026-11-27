@@ -24,6 +24,12 @@
         "abort": "Likelihood that the attempt fails before achieving its objective."
       },
       "description": "Cutting or shorting the loop wiring at an accessible junction disrupts the primary measurement output.",
+      "cause": "Physical access to an accessible junction permits the 4-20 mA loop wiring to be opened or shorted.",
+      "compromisedObjectives": [
+        "integrity",
+        "availability",
+        "safety"
+      ],
       "stride": [
         "T",
         "D"
@@ -55,6 +61,7 @@
       "classificationRationale": "The 4-20 mA loop wiring's physical accessibility depends entirely on plant cabling/conduit/cabinet practice, not on anything the RL-100 itself controls; the device's own contribution (a defined fail-safe fault current per AS-4/AS-5) already caps the safety impact. Consistent with the existing 'transferred' status.",
       "responsibility": "integrator-operator",
       "deploymentConstraints": "Requires the plant to physically protect the loop wiring (conduit, locked junction boxes/cabinets, tamper-evident routing) between the RL-100 and the control system.",
+      "transferRationale": "The plant owner receives this residual risk through REQC001's user-guide perimeter-protection requirement; the physical controls are listed in deploymentConstraints.",
       "likelihoodFactors": {
         "exposure": 3,
         "exploitability": 1
@@ -321,6 +328,7 @@
       "classificationRationale": "Modbus RTU provides no cryptographic source authentication or encryption at the protocol level; any device with physical access to the shared bus can passively read traffic regardless of how the RL-100 itself is implemented.",
       "responsibility": "integrator-operator",
       "deploymentConstraints": "Requires the plant to restrict which devices are physically wired onto the shared RS-485 segment (trusted-devices-only bus membership, physical access control to the wiring) since the RL-100 cannot enforce this over Modbus RTU itself.",
+      "transferRationale": "The plant owner receives this residual risk through REQC001's user-guide perimeter-protection requirement; the RS-485 bus controls are listed in deploymentConstraints.",
       "likelihoodFactors": {
         "exposure": 3,
         "exploitability": 5
@@ -384,6 +392,7 @@
       "classificationRationale": "Modbus RTU has no mechanism for a slave to prove its identity or for a master to detect a substituted/impersonating responder; this is a protocol-level gap, not an RL-100 implementation flaw.",
       "responsibility": "integrator-operator",
       "deploymentConstraints": "Requires the same bus-membership/physical-access restriction as T-7, plus any master-side response-plausibility checks (timing, sequence, redundant cross-checks) being the responsibility of the control system, not the RL-100.",
+      "transferRationale": "The plant owner receives this residual risk through REQC001's user-guide perimeter-protection requirement; bus membership and master-side checks are listed in deploymentConstraints.",
       "status": "transferred",
       "costLikelihood": 0.18000000000000002,
       "costRisk": 0.12000000000000002,
@@ -863,6 +872,7 @@
       "classificationRationale": "AS-11 confirms the radar front-end has no dedicated anti-spoofing capability (a product gap the manufacturer could improve), but the attack also requires sustained physical proximity to the tank/process, which is a plant access-control matter.",
       "responsibility": "integrator-operator",
       "deploymentConstraints": "Requires the plant to restrict physical access to the tank/process area near the radar sensing path.",
+      "transferRationale": "The plant owner receives this residual risk through REQC001's user-guide perimeter-protection requirement; process-area access controls are listed in deploymentConstraints.",
       "status": "transferred",
       "likelihoodFactors": {
         "exposure": 2,

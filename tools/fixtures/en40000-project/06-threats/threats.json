@@ -1,0 +1,91 @@
+{
+    "threats": [
+        {
+            "id": "T-1",
+            "title": "Threat marker '><img src=x onerror=alert(1)>",
+            "description": "Description marker",
+            "components": [
+                "C-1"
+            ],
+            "assets": [
+                "A-1"
+            ],
+            "stride": [
+                "S"
+            ],
+            "likelihood": 2,
+            "impact": 3,
+            "likelihoodRationale": "Rationale marker",
+            "impactRationale": "Impact marker",
+            "assumptionRefs": [
+                "AT-1"
+            ],
+            "classification": "shared-responsibility",
+            "responsibility": "integrator-operator",
+            "deploymentConstraints": "Deployment marker <img src=x onerror=alert(1)>",
+            "compromisedObjectives": [
+                "integrity",
+                "availability"
+            ],
+            "cause": "Cause marker <img src=x onerror=alert(1)>",
+            "status": "open",
+            "ratedBy": "=HYPERLINK(\"http://x\",\"y\")"
+        },
+        {
+            "id": "T-2",
+            "title": "@SUM(1)",
+            "components": [
+                "C-1"
+            ],
+            "assets": [
+                "A-1"
+            ],
+            "stride": [
+                "D"
+            ],
+            "likelihood": 1,
+            "impact": 1,
+            "status": "open"
+        },
+        {
+            "id": "T-3",
+            "title": "Avoided threat marker",
+            "components": [
+                "C-1"
+            ],
+            "assets": [
+                "A-1"
+            ],
+            "stride": [
+                "D"
+            ],
+            "likelihood": 5,
+            "impact": 5,
+            "status": "avoided",
+            "avoidanceRationale": "The remote interface was removed from the design."
+        },
+        {
+            "id": "T-4",
+            "title": "Accepted deviation marker",
+            "components": [
+                "C-1"
+            ],
+            "assets": [
+                "A-1"
+            ],
+            "stride": [
+                "D"
+            ],
+            "likelihood": 5,
+            "impact": 5,
+            "status": "accepted",
+            "acceptedBy": "Risk owner",
+            "acceptanceRationale": "Operational need",
+            "reviewDate": "2099-01-01",
+            "acceptanceDeviation": {
+                "circumstance": "Contract exception marker",
+                "communicatedTo": "Plant operator"
+            }
+        }
+    ]
+}

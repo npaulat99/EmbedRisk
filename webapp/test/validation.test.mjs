@@ -1,5 +1,7 @@
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { validate } from '../server/src/validate.js';
+import { builtinRiskSchemePaths } from '../server/src/paths.js';
 
 function baseProject() {
     return {
@@ -29,6 +31,161 @@ function baseProject() {
 
 function issueMessages(issues, severity) {
     return issues.filter((issue) => !severity || issue.severity === severity).map((issue) => issue.message);
+}
+
+function testAvoidedThreatRequiresRationaleAndChangedContextLink() {
+    const project = baseProject();
+    project.requirements.requirements = [];
+    project.threats.threats.push({ id: 'T-AVOID', title: 'Avoided', stride: ['D'], components: ['C-1'], assets: ['AS-1'], likelihood: 5, impact: 5, status: 'avoided' });
+    const issues = validate(project);
+    const rationaleWarning = 'T-AVOID: an avoided risk requires avoidanceRationale describing the design or context change.';
+    const contextNotice = 'T-AVOID: avoided risk is not linked to a requirement or assumption; the changed context should be re-assessed.';
+    assert.equal(issueMessages(issues, 'warning').filter((message) => message === rationaleWarning).length, 1);
+    assert.ok(issues.some((issue) => issue.severity === 'notice' && issue.key === 'avoided-link:T-AVOID' && issue.message === contextNotice));
+    assert.ok(!issueMessages(issues, 'warning').some((message) => message.includes('residual risk')));
+
+    project.threats.threats[0].avoidanceRationale = 'The interface was removed from the product.';
+    project.threats.threats[0].assumptionRefs = ['ATK-1'];
+    const resolved = validate(project);
+    assert.ok(!issueMessages(resolved, 'warning').includes(rationaleWarning));
+    assert.ok(!resolved.some((issue) => issue.key === 'avoided-link:T-AVOID'));
+}
+
+function testAvoidedThreatSkipsManagementAcceptance() {
+    const riskScheme = JSON.parse(readFileSync(builtinRiskSchemePaths['builtin:5x5-exposure'], 'utf8'));
+    riskScheme.classification.levels.find((level) => level.id === 'critical').acceptanceBy = 'management';
+    const project = baseProject();
+    project.riskScheme = riskScheme;
+    project.threats.threats.push({ id: 'T-AVOID', title: 'Avoided', stride: ['D'], components: ['C-1'], assets: ['AS-1'], likelihood: 5, impact: 5, status: 'avoided', avoidanceRationale: 'The interface was removed.' });
+    const warnings = issueMessages(validate(project), 'warning');
+    assert.ok(!warnings.some((message) => message.includes('requires acceptance by management')));
+    project.threats.threats[0].status = 'mitigated';
+    assert.ok(issueMessages(validate(project), 'warning').some((message) => message.includes('requires acceptance by management')));
+}
+
+function testTransferredThreatRequiresTransferRationale() {
+    const project = baseProject();
+    project.threats.threats.push({ id: 'T-TRANSFER', title: 'Transferred', stride: ['D'], components: ['C-1'], assets: ['AS-1'], likelihood: 2, impact: 2, status: 'transferred' });
+    project.requirements.requirements.push({ id: 'R-TRANSFER', derivedFromThreat: ['T-TRANSFER'] });
+    const expected = 'T-TRANSFER: a transferred risk requires transferRationale (who receives the risk and how they are informed).';
+    assert.equal(issueMessages(validate(project), 'warning').filter((message) => message === expected).length, 1);
+    project.threats.threats[0].transferRationale = 'The plant operator owns this risk and is notified in the deployment guide.';
+    assert.ok(!issueMessages(validate(project), 'warning').includes(expected));
+}
+
+function testAcceptanceAboveThresholdRequiresDeviationCircumstance() {
+    const project = baseProject();
+    project.threats.threats.push({
+        id: 'T-ACCEPT', title: 'Above threshold', stride: ['D'], components: ['C-1'], assets: ['AS-1'],
+        likelihood: 5, impact: 5, status: 'accepted', acceptedBy: 'Risk owner', acceptanceRationale: 'Operational need', reviewDate: '2099-01-01',
+    });
+    project.requirements.requirements.push({ id: 'R-ACCEPT', derivedFromThreat: ['T-ACCEPT'] });
+    const expected = 'T-ACCEPT: acceptance above the acceptable level requires acceptanceDeviation.circumstance.';
+    assert.equal(issueMessages(validate(project), 'warning').filter((message) => message === expected).length, 1);
+    project.threats.threats[0].acceptanceDeviation = { circumstance: 'Contractual requirement', communicatedTo: 'Plant operator' };
+    assert.ok(!issueMessages(validate(project), 'warning').includes(expected));
+}
+
+function testAssetWithoutThreatRequiresRationale() {
+    const project = baseProject();
+    const expected = 'AS-1: no threat is linked to this asset. Add a threat or state why none applies (noThreatRationale).';
+
+    assert.equal(issueMessages(validate(project), 'warning').filter((message) => message === expected).length, 1);
+    project.system.assets[0].noThreatRationale = 'This asset has no applicable threat.';
+    assert.ok(!issueMessages(validate(project), 'warning').includes(expected));
+
+    delete project.system.assets[0].noThreatRationale;
+    project.threats.threats.push({ id: 'T-ASSET', assets: ['AS-1'] });
+    assert.ok(!issueMessages(validate(project), 'warning').includes(expected));
+}
+
+function testThreatStructureNoticeIsAggregatedAndDismissible() {
+    const project = baseProject();
+    project.threats.threats = [
+        { id: 'T-STRUCT-1', title: 'No structure fields', stride: ['S'], components: ['C-1'], likelihood: 2, impact: 2 },
+        { id: 'T-STRUCT-2', title: 'Also incomplete', stride: ['T'], components: ['C-1'], likelihood: 2, impact: 2 },
+        { id: 'T-STRUCT-3', title: 'Cause only', stride: ['R'], components: ['C-1'], likelihood: 2, impact: 2, cause: 'Weak input validation.' },
+        { id: 'T-STRUCT-4', title: 'Objective only', stride: ['I'], components: ['C-1'], likelihood: 2, impact: 2, compromisedObjectives: ['confidentiality'] },
+    ];
+    const message = '2 threats do not state a cause or the compromised objectives (EN 40000-1-2, 6.4.3.3).';
+    const notice = validate(project).filter((issue) => issue.key === 'threat-structure-empty');
+    assert.deepEqual(notice, [{ severity: 'notice', message, key: 'threat-structure-empty' }]);
+
+    project.threats.threats[0].compromisedObjectives = ['integrity'];
+    assert.ok(validate(project).some((issue) => issue.key === 'threat-structure-empty'));
+    project.threats.threats[1].cause = 'Insufficient authorization checks.';
+    assert.ok(!validate(project).some((issue) => issue.key === 'threat-structure-empty'));
+    project.project.acceptedNotices = ['threat-structure-empty'];
+    project.threats.threats[0].compromisedObjectives = [];
+    project.threats.threats[1].cause = '';
+    assert.ok(!validate(project).some((issue) => issue.key === 'threat-structure-empty'));
+}
+
+function testEvidenceReferencesMustBeSafeUrlsOrProjectPaths() {
+    const project = baseProject();
+    const evidenceIssues = () => validate(project).filter((issue) => issue.message.startsWith('Evidence reference '));
+    project.project.productContext = {
+        evidence: [
+            { title: 'External evidence', ref: 'https://example.invalid/evidence' },
+            { title: 'Project evidence', ref: 'docs/evidence.pdf' },
+        ]
+    };
+    assert.deepEqual(evidenceIssues(), []);
+
+    for (const ref of [
+        'ftp://example.invalid/evidence',
+        'javascript:alert(1)',
+        'data:text/plain,unsafe',
+        '../outside.pdf',
+        '..\\outside.pdf',
+        'C:\\outside.pdf',
+        '//host/outside.pdf',
+        '/absolute.pdf',
+        '%2e%2e%2foutside.pdf',
+    ]) {
+        project.project.productContext.evidence = [{ title: 'Invalid evidence', ref }];
+        const message = "Evidence reference 1: only http(s) URLs and project-relative paths without '..' are allowed.";
+        assert.deepEqual(evidenceIssues(), [{ severity: 'error', message, key: message }], `expected V-06 for ${ref}`);
+    }
+}
+
+function testProductContextAndRiskCriteriaNotices() {
+    const project = baseProject();
+    const noticeKeys = () => validate(project).filter((issue) => ['product-context-empty', 'risk-criteria-empty'].includes(issue.key));
+    project.project.status = 'draft';
+    assert.deepEqual(noticeKeys(), []);
+
+    project.project.status = 'review';
+    assert.deepEqual(noticeKeys().map(({ key, message, severity }) => ({ severity, message, key })), [
+        { severity: 'notice', message: 'Product context is incomplete: functions and users are not described (EN 40000-1-2, 6.2).', key: 'product-context-empty' },
+        { severity: 'notice', message: 'The choice of the risk scheme and acceptance criteria is not justified (EN 40000-1-2, 6.3.3).', key: 'risk-criteria-empty' },
+    ]);
+    project.project.status = 'released';
+    assert.equal(noticeKeys().length, 2);
+
+    project.project.productContext = { functions: [{ name: 'Measure level' }], users: { description: 'Plant operators.' } };
+    project.project.riskCriteria = { schemeJustification: 'Chosen for process-safety consequences.' };
+    assert.deepEqual(noticeKeys(), []);
+
+    project.project.productContext = {};
+    project.project.riskCriteria = {};
+    project.project.acceptedNotices = ['product-context-empty', 'risk-criteria-empty'];
+    assert.deepEqual(noticeKeys(), []);
+}
+
+function testProductContextListsWarnAboveFiftyItems() {
+    const project = baseProject();
+    project.project.productContext = {
+        functions: Array.from({ length: 51 }, (_, index) => ({ name: `Function ${index + 1}` })),
+        evidence: Array.from({ length: 51 }, (_, index) => ({ title: `Evidence ${index + 1}`, ref: 'docs/evidence.pdf' })),
+        users: { vulnerableGroups: Array.from({ length: 51 }, (_, index) => `Group ${index + 1}`) },
+    };
+    const limits = validate(project).filter((issue) => issue.key.startsWith('product-context-limit:'));
+    assert.deepEqual(limits.map(({ severity, key, message }) => ({ severity, message, key })), [
+        { severity: 'warning', message: 'Product context functions has 51 entries; the limit is 50.', key: 'product-context-limit:functions' },
+        { severity: 'warning', message: 'Product context evidence has 51 entries; the limit is 50.', key: 'product-context-limit:evidence' },
+        { severity: 'warning', message: 'Product context vulnerable groups has 51 entries; the limit is 50.', key: 'product-context-limit:vulnerable groups' },
+    ]);
 }
 
 function testClassificationNoticeAndTransferRequirementWarning() {
@@ -246,6 +403,17 @@ function testActorScaleValidation() {
 }
 
 testActorScaleValidation();
+testAvoidedThreatRequiresRationaleAndChangedContextLink();
+testAvoidedThreatSkipsManagementAcceptance();
+testTransferredThreatRequiresTransferRationale();
+testAcceptanceAboveThresholdRequiresDeviationCircumstance();
+testThreatStructureNoticeIsAggregatedAndDismissible();
+testEvidenceReferencesMustBeSafeUrlsOrProjectPaths();
+testProductContextAndRiskCriteriaNotices();
+testProductContextListsWarnAboveFiftyItems();
+testActorScaleValidation();
+testActorScaleValidation();
+testAssetWithoutThreatRequiresRationale();
 testClassificationNoticeAndTransferRequirementWarning();
 testDeploymentConstraintsRuleSkipsAcceptedOrTransferredAndFlagsOpen();
 testContradictoryProductVulnerabilityClassification();

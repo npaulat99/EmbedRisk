@@ -8,6 +8,21 @@ import RiskCalculator from './RiskCalculator';
 import ThreatCmImportExport from '../ThreatCmImportExport';
 import type { Threat } from '../../types';
 
+const STRIDE_COMPROMISED_OBJECTIVES: Record<Threat['stride'][number], NonNullable<Threat['compromisedObjectives']>> = {
+    S: ['integrity', 'confidentiality'],
+    T: ['integrity'],
+    R: ['integrity'],
+    I: ['confidentiality'],
+    D: ['availability'],
+    E: ['confidentiality', 'integrity', 'availability', 'safety'],
+};
+const COMPROMISED_OBJECTIVE_OPTIONS = [
+    ['confidentiality', 'Confidentiality'],
+    ['integrity', 'Integrity'],
+    ['availability', 'Availability'],
+    ['safety', 'Safety'],
+] as const;
+
 export default function ThreatsPanel() {
     const data = useStore((s) => s.data)!;
     const scheme = useStore((s) => s.scheme);
@@ -100,6 +115,21 @@ export default function ThreatsPanel() {
     const renderEditor = (t: Threat) => {
         const upd = (patch: any) => setThreats(threats.map((x) => (x.id === t.id ? { ...x, ...patch } : x)));
         const orphan = !(t.components || []).length;
+        const residualRisk = riskOf(t, cms, scheme);
+        const residualLevel = engine.classify(residualRisk.residualLikelihood, residualRisk.residualImpact);
+        const acceptableLevel = data.project.acceptableLevel
+            || (typeof data.project.acceptableRisk !== 'number' ? engine.scheme.acceptance?.defaultLevel : null);
+        const acceptableRank = acceptableLevel
+            ? engine.scheme.classification.levels.find((level: any) => level.id === acceptableLevel)?.rank
+            : null;
+        const acceptableRisk = typeof data.project.acceptableRisk === 'number' ? data.project.acceptableRisk : 12;
+        const aboveAcceptable = !schemeWarning && residualRisk.residual > 0 && residualLevel.treatment !== 'auto-accept'
+            && (Number.isInteger(acceptableRank)
+                ? residualLevel.rank > acceptableRank
+                : (residualLevel.score ?? residualRisk.residual) > acceptableRisk);
+        const updateAcceptanceDeviation = (field: 'circumstance' | 'communicatedTo', value: string) =>
+            upd({ acceptanceDeviation: { ...(t.acceptanceDeviation || {}), [field]: value || undefined } });
+        const suggestedObjectives = [...new Set((t.stride || []).flatMap((category) => STRIDE_COMPROMISED_OBJECTIVES[category]))];
         const ifaceOpts = (data.system.interfaces || []).map((itf) => ({ value: itf.id, label: `${itf.name}${itf.protocol ? ` (${itf.protocol})` : ''}` }));
         const linkedRequirementIds = requirements.filter((r) => (r.derivedFromThreat || []).includes(t.id)).map((r) => r.id);
         const interfaceRefs = t.interfaceRefs?.length ? t.interfaceRefs : t.interfaceRef && t.interfaceRef !== 'custom' ? [t.interfaceRef] : [];
@@ -152,7 +182,7 @@ export default function ThreatsPanel() {
                         </Field>
                         <Field label="Status">
                             <select value={t.status || 'open'} onChange={(e) => upd({ status: e.target.value })}>
-                                {['open', 'mitigated', 'accepted', 'transferred', 'unfeasible'].map((o) => (
+                                {['open', 'mitigated', 'accepted', 'transferred', 'unfeasible', 'avoided'].map((o) => (
                                     <option key={o} disabled={o === 'unfeasible'}>{o}</option>
                                 ))}
                             </select>
@@ -231,6 +261,36 @@ export default function ThreatsPanel() {
                                     )}
                                 </Field>
                             </div>
+                            <fieldset className="objective-group">
+                                <legend>Compromised objectives</legend>
+                                <span className="chip static objective-hint">
+                                    Suggested by STRIDE: {suggestedObjectives.length ? suggestedObjectives.join(', ') : 'none'}
+                                </span>
+                                <div className="objective-options">
+                                    {COMPROMISED_OBJECTIVE_OPTIONS.map(([value, label]) => (
+                                        <label className="objective-check" key={value}>
+                                            <input
+                                                type="checkbox"
+                                                checked={(t.compromisedObjectives || []).includes(value)}
+                                                onChange={(event) => {
+                                                    const selected = new Set(t.compromisedObjectives || []);
+                                                    if (event.target.checked) selected.add(value);
+                                                    else selected.delete(value);
+                                                    upd({
+                                                        compromisedObjectives: COMPROMISED_OBJECTIVE_OPTIONS
+                                                            .map(([objective]) => objective)
+                                                            .filter((objective) => selected.has(objective))
+                                                    });
+                                                }}
+                                            />
+                                            {label}
+                                        </label>
+                                    ))}
+                                </div>
+                            </fieldset>
+                            <Field label="Cause">
+                                <textarea rows={2} value={t.cause || ''} onChange={(e) => upd({ cause: e.target.value || undefined })} />
+                            </Field>
                             <div className="grid2">
                                 <Field label="Likelihood rationale">
                                     <textarea value={t.likelihoodRationale || ''} onChange={(e) => upd({ likelihoodRationale: e.target.value })} />
@@ -252,16 +312,36 @@ export default function ThreatsPanel() {
                 >
                     <TagSelect options={requirementOpts} value={linkedRequirementIds} onChange={(v) => setThreatRequirements(t.id, v)} empty="Define requirements in step 05 first." />
                 </Field>
+                {t.status === 'avoided' && (
+                    <Field label="Avoidance rationale" hint="Describe the design or context change that removes this risk.">
+                        <textarea rows={2} maxLength={2000} value={t.avoidanceRationale || ''} onChange={(e) => upd({ avoidanceRationale: e.target.value || undefined })} />
+                    </Field>
+                )}
+                {t.status === 'transferred' && (
+                    <Field label="Transfer rationale" hint="Who receives the risk, how they are informed, and why avoiding or reducing it was not chosen.">
+                        <textarea rows={2} maxLength={2000} value={t.transferRationale || ''} onChange={(e) => upd({ transferRationale: e.target.value || undefined })} />
+                    </Field>
+                )}
                 {t.status === 'accepted' && (
                     <div className="grid3" style={{ marginTop: 8 }}>
                         <Field label="Accepted by" hint="Residual-risk sign-off owner.">
                             <input value={t.acceptedBy || ''} onChange={(e) => upd({ acceptedBy: e.target.value })} placeholder="name / role" />
                         </Field>
-                        <Field label="Acceptance rationale" hint="Why the residual risk is acceptable.">
-                            <input value={t.acceptanceRationale || ''} onChange={(e) => upd({ acceptanceRationale: e.target.value })} placeholder="e.g. compensating controls in the plant" />
+                        <Field label="Acceptance rationale" hint="Why the residual risk is acceptable. Explain why avoiding or reducing the risk was not chosen.">
+                            <textarea rows={2} value={t.acceptanceRationale || ''} onChange={(e) => upd({ acceptanceRationale: e.target.value })} />
                         </Field>
                         <Field label="Next review date" hint="Next reassessment date.">
                             <input type="date" value={t.reviewDate || ''} onChange={(e) => upd({ reviewDate: e.target.value })} />
+                        </Field>
+                    </div>
+                )}
+                {t.status === 'accepted' && aboveAcceptable && (
+                    <div className="grid2" style={{ marginTop: 8 }}>
+                        <Field label="Acceptance deviation circumstance" hint="Why the acceptance criteria are overridden.">
+                            <textarea rows={2} maxLength={2000} value={t.acceptanceDeviation?.circumstance || ''} onChange={(e) => updateAcceptanceDeviation('circumstance', e.target.value)} />
+                        </Field>
+                        <Field label="Communicated to" hint="Who was told about the effect on residual risk.">
+                            <input maxLength={200} value={t.acceptanceDeviation?.communicatedTo || ''} onChange={(e) => updateAcceptanceDeviation('communicatedTo', e.target.value)} />
                         </Field>
                     </div>
                 )}

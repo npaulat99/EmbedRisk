@@ -1,0 +1,20 @@
+{
+    "device": [],
+    "system": [],
+    "environment": [
+        {
+            "id": "AE-1",
+            "text": "Environment marker <img src=x onerror=alert(1)>"
+        }
+    ],
+    "operational": [],
+    "attacker": [
+        {
+            "id": "AT-1",
+            "name": "Attacker marker",
+            "capability": 2,
+            "access": "remote",
+            "text": "Assumption marker"
+        }
+    ]
+}

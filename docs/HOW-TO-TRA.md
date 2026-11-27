@@ -47,10 +47,13 @@ Do this preparation first. It will make the actual modeling much faster and more
 - Define the product boundary (what is in scope and what is not).
 - Decide the lifecycle phase (concept, design, update, maintenance).
 - Clarify intended use and reasonably foreseeable use.
+- Record product functions, operating context, user description, vulnerable groups, and evidence in `productContext` when known.
+- Record why the active risk scheme and acceptance criteria fit the product in `riskCriteria`; do not invent missing regulatory, contract, user, or state-of-the-art inputs.
 
 ### System input data
 
 - Architecture inputs: block diagram, interfaces, trust zones, external dependencies.
+- For a remote data processing solution (RDPS), identify its operator, data exchanged, trust/authentication relationship, and restricted states (see the convention below).
 - Asset inventory: safety-critical functions, sensitive data, critical services.
 - Third-party elements: libraries, firmware dependencies, external modules.
 
@@ -78,13 +81,13 @@ Use the same step order for every project to keep assessments comparable.
 
 ### Step 01: Project description
 
-Capture product identity, scope, assumptions about operating context, and target security level.
+Capture product identity, scope, intended and foreseeable use, product context, and target security level. Product context can include repeatable functions, users and vulnerable groups, evidence references, and the operating-environment assumptions linked from the report. Use `riskCriteria` for the justification and source of the active risk scheme and acceptance criteria.
 
 Output: clear model boundary and assessment goal.
 
 ### Step 02: Assumptions
 
-Document attacker profiles and environmental assumptions. Avoid generic attackers only; describe realistic access and capability.
+Document attacker profiles and device, system, environment, and operational assumptions. Avoid generic attackers only; describe realistic access and capability. For lifecycle review, record the organization's justified reassessment frequency as an operational assumption; EmbedRisk has no dedicated frequency field.
 
 The target SL-C selects the managed attacker profile; see [Target SL-C and the modelled attacker](../README.md#target-sl-c-and-the-modelled-attacker).
 
@@ -116,6 +119,8 @@ Use the scheme selected for the project: it defines valid likelihood and impact 
 criteria, and how each pair is classified. Do not assume every project uses a 1-5 scale or a fixed
 numeric high-risk threshold. To add a local scheme, follow the [risk-scheme guide](RISK-SCHEMES.md).
 
+Where evidence supports them, record a threat's `cause` and `compromisedObjectives` (`confidentiality`, `integrity`, `availability`, `safety`). STRIDE-based suggestions are prompts for the assessor, not silently selected values. These fields are optional for older projects; a single dismissible notice flags threats with neither field.
+
 Output: prioritized threat list with rationale.
 
 ### Step 07: Attack trees (optional but recommended for critical threats)
@@ -128,6 +133,8 @@ Output: deeper attacker-path analysis and stronger mitigation reasoning.
 
 Assign controls to threats, define implementation status, and estimate residual risk.
 
+Use the threat status to record the treatment decision: `mitigated`, `accepted`, `transferred`, `avoided`, or feasibility-derived `unfeasible`. Avoidance requires `avoidanceRationale` that identifies the design/context change; transfer requires `transferRationale` and a requirement documenting user communication; acceptance requires an owner, rationale, and review date. If an accepted residual exceeds the active criteria, record the deviation circumstance and who was informed. The tool does not enforce the standard's treatment priority order.
+
 Output: actionable mitigation plan with residual-risk visibility.
 
 ### Step 09: Defects and vulnerabilities
@@ -138,9 +145,36 @@ Output: operationally usable backlog and evidence for reassessment.
 
 ### Step 10: Reporting and review
 
-Generate the report, review unresolved high risks, and document acceptance decisions with owner and rationale.
+Generate the report, review unresolved high risks, and document acceptance decisions with owner and rationale. The report includes product context, scheme justification, residual-risk disclosures, avoided risks, and accepted deviations when present.
 
 Output: auditable TRA baseline for release or milestone decisions.
+
+### EN 40000-1-2 and EN IEC 62443-4-1:2018/prAA:2026 clause map
+
+| EmbedRisk step or view | EN 40000-1-2 clause | EN IEC 62443-4-1:2018/prAA:2026 |
+|---|---|---|
+| Project description and product context | 6.2 | SRM-2, SRM-3 (6.3, 6.4) |
+| Risk scheme, acceptance level, and `riskCriteria` | 6.3 | SRM-1 (6.2) |
+| System/assets and DFD | 6.2, 6.4.2 | SRM-3, SRM-4 (6.4, 6.5) |
+| Threats, `cause`, `compromisedObjectives`, and attack trees | 6.4.3 | SRM-4 (6.5) |
+| Risk rating and residual evaluation | 6.4.4, 6.4.5 | SRM-5 (6.6) |
+| Requirements and countermeasures, including treatment status | 6.5 | SRM-6 (6.7) |
+| Report and traceability exports | 6.6 | Purpose f) in 6.1 |
+| Version history, defects, review dates, and reassessment reason | 6.7 (supporting evidence; organization sets review frequency) | Purpose g) and yearly review in 6.1 (supporting evidence) |
+
+### RDPS convention
+
+Model a remote data processing solution as a component with `kind: "external-entity"`, outside the device trust boundary. Use existing project fields and linked artifacts:
+
+| Fact to capture | Where to record it |
+|---|---|
+| Operator and responsibility | First sentence of component `description`; `supplier` and `provenance` where known |
+| Data exchanged | Step 04 flows and assets whose `components` include the RDPS |
+| Trust and authentication | Interface `protocol` plus a `system` assumption for each trust/authentication premise |
+| Offline/degraded behavior | A requirement per restricted state, linked to the availability threat |
+| Trust boundary | Keep the external entity outside the device boundary |
+
+If the operator or a security relationship is unknown, record the gap as a question rather than filling it with a guess. This is a modeling convention, not a separately validated RDPS schema.
 
 ## 4. Practical quality checks
 
@@ -171,6 +205,7 @@ Start with these, then go deeper only as needed:
 - Adam Shostack (resources and articles): https://shostack.org/resources/
 - IEC 62443 overview (ISA): https://www.isa.org/standards-and-publications/isa-standards/isa-iec-62443-series-of-standards
 - Attacker scale used by EmbedRisk: [Target SL-C and the modelled attacker](../README.md#target-sl-c-and-the-modelled-attacker)
+- EN 40000-1-2 clause mapping and known tool limits: [EN 40000-1-2 Mapping](EN-40000-1-2-MAPPING.md)
 
 ## 7. Suggested operating rhythm
 

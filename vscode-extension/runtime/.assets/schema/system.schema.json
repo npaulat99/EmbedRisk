@@ -4,21 +4,57 @@
   "title": "System Definition, Components and Assets",
   "description": "Recursive component hierarchy (DFD layers), interfaces, trust boundaries, and protected assets.",
   "type": "object",
-  "required": ["components", "assets"],
+  "required": [
+    "components",
+    "assets"
+  ],
   "properties": {
     "components": {
       "type": "array",
       "items": {
         "type": "object",
-        "required": ["id", "name", "kind", "layer"],
+        "required": [
+          "id",
+          "name",
+          "kind",
+          "layer"
+        ],
         "properties": {
-          "id": { "type": "string" },
-          "name": { "type": "string" },
-          "kind": { "type": "string", "enum": ["device", "hardware", "software", "interface", "external-entity", "store"] },
-          "layer": { "type": "integer", "minimum": 1, "description": "DFD abstraction layer; 1 = device/context." },
-          "parent": { "type": ["string", "null"], "description": "Parent component id (recursive layering)." },
-          "trustZone": { "type": "string" },
-          "description": { "type": "string" }
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "device",
+              "hardware",
+              "software",
+              "interface",
+              "external-entity",
+              "store"
+            ]
+          },
+          "layer": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "DFD abstraction layer; 1 = device/context."
+          },
+          "parent": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Parent component id (recursive layering)."
+          },
+          "trustZone": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          }
         }
       }
     },
@@ -26,13 +62,33 @@
       "type": "array",
       "items": {
         "type": "object",
-        "required": ["id", "name", "exposure"],
+        "required": [
+          "id",
+          "name",
+          "exposure"
+        ],
         "properties": {
-          "id": { "type": "string" },
-          "name": { "type": "string" },
-          "component": { "type": "string" },
-          "exposure": { "type": "string", "enum": ["physical", "local", "adjacent", "remote"] },
-          "protocol": { "type": "string" }
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "component": {
+            "type": "string"
+          },
+          "exposure": {
+            "type": "string",
+            "enum": [
+              "physical",
+              "local",
+              "adjacent",
+              "remote"
+            ]
+          },
+          "protocol": {
+            "type": "string"
+          }
         }
       }
     },
@@ -40,27 +96,87 @@
       "type": "array",
       "items": {
         "type": "object",
-        "required": ["id", "name"],
-        "properties": { "id": { "type": "string" }, "name": { "type": "string" }, "members": { "type": "array", "items": { "type": "string" } } }
+        "required": [
+          "id",
+          "name"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "members": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
       }
     },
     "assets": {
       "type": "array",
       "items": {
         "type": "object",
-        "required": ["id", "name", "objectives"],
+        "required": [
+          "id",
+          "name",
+          "objectives"
+        ],
         "properties": {
-          "id": { "type": "string" },
-          "name": { "type": "string" },
-          "type": { "type": "string", "enum": ["data", "function", "credential", "firmware", "config", "physical-process"] },
-          "components": { "type": "array", "items": { "type": "string" }, "description": "Components holding this asset." },
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "noThreatRationale": {
+            "type": "string",
+            "maxLength": 2000
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "data",
+              "function",
+              "credential",
+              "firmware",
+              "config",
+              "physical-process"
+            ]
+          },
+          "components": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Components holding this asset."
+          },
           "objectives": {
             "type": "object",
             "properties": {
-              "confidentiality": { "type": "integer", "minimum": 0, "maximum": 5 },
-              "integrity": { "type": "integer", "minimum": 0, "maximum": 5 },
-              "availability": { "type": "integer", "minimum": 0, "maximum": 5 },
-              "safety": { "type": "integer", "minimum": 0, "maximum": 5 }
+              "confidentiality": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 5
+              },
+              "integrity": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 5
+              },
+              "availability": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 5
+              },
+              "safety": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 5
+              }
             }
           }
         }

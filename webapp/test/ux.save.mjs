@@ -116,7 +116,7 @@ try {
     await discardDialog.waitFor();
     await discardDialog.getByRole('button', { name: 'Discard unsynced changes and switch' }).click();
     await localPage.waitForFunction(() => document.querySelector('header select.project-select')?.value === 'RL-200');
-    assert.equal(await localPage.getByRole('textbox', { name: 'Project title' }).inputValue(), 'RL-100');
+    assert.equal(await localPage.getByRole('textbox', { name: 'Project title' }).inputValue(), 'RL-100 Radar Level Sensor');
     persisted = await (await fetch(`${harness.baseUrl}/api/projects/RL-100`)).json();
     assert.equal(persisted.project.title, 'Remote winner', 'Explicit discard must not write the pending version to disk.');
 

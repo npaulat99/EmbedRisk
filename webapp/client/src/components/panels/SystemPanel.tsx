@@ -365,6 +365,9 @@ export default function SystemPanel() {
                                                 <TagSelect options={compOpts} value={c.components || []} onChange={(v) => upd({ components: v })} />
                                             </Field>
                                         </div>
+                                        <Field label="No-threat rationale" hint="Explain why no threat applies to this asset. Maximum 2000 characters.">
+                                            <textarea rows={2} maxLength={2000} value={c.noThreatRationale || ''} onChange={(e) => upd({ noThreatRationale: e.target.value })} />
+                                        </Field>
                                         {threatsForAsset(c.id).length > 0 && (
                                             <div className="inline" style={{ flexWrap: 'wrap', gap: 6 }}>
                                                 <span className="hint">Threats:</span>

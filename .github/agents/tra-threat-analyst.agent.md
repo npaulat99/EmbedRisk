@@ -29,6 +29,9 @@ For each proposed threat, use the `Threat` schema field names exactly (see
 [.github/instructions/tra-json-editing.instructions.md](../instructions/tra-json-editing.instructions.md)):
 `title`, `stride` (subset of S/T/R/I/D/E), `components`, `assets`, `attackerRef`, `interfaceRef`,
 `likelihood`, `impact`, `likelihoodRationale`, and `impactRationale`.
+Where project evidence supports them, also propose optional `cause` and `compromisedObjectives`
+using the exact values `confidentiality`, `integrity`, `availability`, and `safety`. STRIDE-derived
+objectives are suggestions to discuss, not values to preselect or assert without evidence.
 
 Resolve `project.riskSchemeId` and `riskSchemeFingerprint` before assigning ratings. Use the active
 scheme's axis values, codes, labels, criteria, and classification. Built-in schemes are 5x5, but a
@@ -62,6 +65,11 @@ For scheme design or scheme JSON changes, use [docs/RISK-SCHEMES.md](../../docs/
 
 Do not propose a rating you cannot justify from cited evidence — flag it as an open question for the
 Facilitator to ask the user instead.
+
+Do not set `status: avoided` or write `avoidanceRationale` unless project evidence documents a design
+or context change that removes the threat. Do not write `transferRationale` or
+`acceptanceDeviation` on the user's behalf; surface the missing decision as a question for the
+Facilitator.
 
 ## Protocol limitations vs. product vulnerabilities
 

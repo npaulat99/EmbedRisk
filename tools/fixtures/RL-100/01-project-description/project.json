@@ -31,6 +31,17 @@
     "The Ethernet or USB-C service interface being left connected for extended periods beyond a single maintenance session, rather than only during active commissioning/service.",
     "Brief operation outside the specified environmental limits (e.g. beyond -40 degC to +80 degC, or splashing/immersion beyond IP67) during transport, storage, or installation."
   ],
+  "productContext": {
+    "functions": [
+      {
+        "name": "Continuous level measurement",
+        "description": "The intended use describes continuous radar level measurement of liquids and bulk solids for process automation."
+      }
+    ],
+    "users": {
+      "description": "The project targets process automation; user roles and vulnerable groups are not characterized in this fixture."
+    }
+  },
   "status": "draft",
   "traVersion": "v1.0",
   "repo": {

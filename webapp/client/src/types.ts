@@ -66,6 +66,23 @@ export interface SbomConfig {
     format?: 'cyclonedx' | 'spdx'; // only when mode = in-tool
     url?: string; // only when mode = external: link to the SBOM in the external tool
 }
+export interface ProductContext {
+    functions?: { name: string; description?: string }[];
+    users?: { description?: string; vulnerableGroups?: string[] };
+    evidence?: { title: string; ref: string; clause?: string }[];
+}
+export interface RiskCriteria {
+    schemeJustification?: string;
+    schemeSource?: string;
+    inputs?: {
+        regulation?: string;
+        contracts?: string;
+        riskNature?: string;
+        users?: string;
+        productType?: string;
+        stateOfTheArt?: string;
+    };
+}
 export interface Project {
     traVersion?: string;
     projectId?: string;
@@ -81,6 +98,8 @@ export interface Project {
     likelihoodProbabilityThresholds?: Partial<Record<2 | 3 | 4 | 5, number>>; // lower probability bounds for L2-L5; L1 covers remaining positive values
     intendedUse?: string; // CRA: the manufacturer's intended purpose of the product
     foreseeableUse?: string[]; // CRA: reasonably foreseeable use scenarios
+    productContext?: ProductContext;
+    riskCriteria?: RiskCriteria;
     repo?: RepoLinks;
     sbom?: SbomConfig;
     rigorousMode?: boolean; // when on, the structured Bug Bar + factor rubric is mandatory per threat
@@ -234,6 +253,7 @@ export interface Asset {
     type?: string; // suggested: data | function | credential | firmware | config | physical-process
     components?: string[];
     storage?: string; // where the data/asset is stored (e.g. internal flash, secure element)
+    noThreatRationale?: string;
     objectives: Objectives;
 }
 export interface SystemDef {
@@ -318,12 +338,17 @@ export interface Threat {
     countermeasures?: string[];
     residualLikelihood?: number | null;
     residualImpact?: number | null;
-    status?: 'open' | 'mitigated' | 'accepted' | 'transferred' | 'unfeasible';
+    status?: 'open' | 'mitigated' | 'accepted' | 'transferred' | 'unfeasible' | 'avoided';
+    avoidanceRationale?: string;
+    transferRationale?: string;
+    acceptanceDeviation?: { circumstance: string; communicatedTo?: string };
     ratedBy?: string; // inter-rater provenance: who rated this threat
     ratedAt?: string; // ISO timestamp of the last rating
     acceptedBy?: string; // residual-risk sign-off owner (required when status = accepted)
     acceptanceRationale?: string; // justification for accepting the residual risk
     reviewDate?: string; // next lifecycle re-assessment date (YYYY-MM-DD)
+    compromisedObjectives?: ('confidentiality' | 'integrity' | 'availability' | 'safety')[];
+    cause?: string;
     // Root-cause boundary (optional; unset = not yet classified, treat as an open question, not
     // as an implicit 'product-vulnerability'). See .ai/README.md for the full reasoning and the
     // "an inherent protocol limitation is not automatically a product vulnerability" principle.

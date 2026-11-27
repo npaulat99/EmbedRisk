@@ -1,0 +1,33 @@
+{
+    "countermeasures": [
+        {
+            "id": "CM-1",
+            "title": "Countermeasure marker",
+            "type": "technical",
+            "responsibility": "deployment",
+            "status": "implemented",
+            "addresses": [
+                {
+                    "threat": "T-1",
+                    "residualLikelihood": 1,
+                    "residualImpact": 2
+                }
+            ],
+            "ticketUrls": [
+                "https://example.invalid/ticket",
+                "https://example.invalid/path'quoted",
+                "docs/evidence.pdf",
+                "javascript:alert(1)",
+                "data:text/html,x",
+                "../outside.pdf",
+                "..\\outside.pdf",
+                "%2e%2e%2foutside.pdf",
+                "/absolute.pdf",
+                "//host/outside.pdf",
+                "C:\\outside.pdf",
+                "https://example.invalid/'onmouseover=\"alert(1)"
+            ],
+            "verificationUrl": "https://example.invalid/verification"
+        }
+    ]
+}

@@ -112,7 +112,7 @@ export default function ReviewPanel() {
                         <div className="inline" style={{ justifyContent: 'flex-end', marginBottom: 8 }}>
                             <button className="btn sm" onClick={download}>↓ Download HTML</button>
                         </div>
-                        <iframe title="TRA report" srcDoc={html} style={{ width: '100%', height: '70vh', border: '1px solid var(--border)', borderRadius: 8, background: '#fff' }} />
+                        <iframe title="TRA report" srcDoc={html} sandbox="allow-popups allow-popups-to-escape-sandbox" style={{ width: '100%', height: '70vh', border: '1px solid var(--border)', borderRadius: 8, background: '#fff' }} />
                     </>
                 )}
             </AppDialog>

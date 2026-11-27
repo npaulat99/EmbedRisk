@@ -16,6 +16,11 @@ Prepare (do not start) a TRA interview for the project provided:
    cost weights or thresholds, cost factors, and factor rationales; for
    `exposure-exploitability-impact`, add questions for missing exposure/exploitability or Bug Bar
    impact evidence when rigorous mode is enabled.
+   Include questions for undocumented `productContext` functions, users, vulnerable groups, and
+   technical-documentation evidence; ask for `riskCriteria` justification and sources when missing.
+   For an external-entity remote data processing solution (RDPS), ask who operates it, what data is
+   exchanged, how trust/authentication work, and what happens offline or in degraded states. Keep
+   each unknown as a question; never fill a rationale or user fact from a STRIDE suggestion.
 4. Write the queue into `.tra-knowledge.json` under `interview.openQuestions` (creating the file if
    needed — no approval required, it's the AI sidecar file, not a TRA artifact).
 

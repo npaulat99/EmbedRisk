@@ -1,0 +1,15 @@
+{
+    "requirements": [
+        {
+            "id": "R-1",
+            "text": "Requirement marker",
+            "standardRef": "IEC 62443",
+            "derivedFromThreat": [
+                "T-1"
+            ],
+            "satisfiedByCM": [
+                "CM-1"
+            ]
+        }
+    ]
+}

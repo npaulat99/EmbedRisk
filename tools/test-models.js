@@ -195,8 +195,9 @@ async function runImportedKbTests() {
     const reportDir = path.join(projectDir, "report");
     const trace = JSON.parse(fs.readFileSync(path.join(reportDir, "traceability.json"), "utf8"));
     ok("traceability JSON matches webapp field order and derived values",
-      Object.keys(trace[0]).join(",") === "asset,cias,threat,title,stride,assumptionRefs,likelihoodRationale,impactRationale,initial,initialBand,requirement,control,residual,residualBand,evidence,status,ratedBy,signoff"
+      Object.keys(trace[0]).join(",") === "asset,cias,threat,title,stride,assumptionRefs,likelihoodRationale,impactRationale,initial,initialBand,requirement,control,residual,residualBand,evidence,status,ratedBy,signoff,classification,responsibility,deploymentConstraints,compromisedObjectives,cause"
       && trace[0].stride === "SE" && trace[0].initial === 6 && trace[0].residual === 2
+      && Array.isArray(trace[0].compromisedObjectives) && trace[0].compromisedObjectives.length === 0 && trace[0].cause === ""
       && trace[0].requirement === "R-1 [IEC 1] → CM-1" && trace[0].signoff === "by Approver · accepted");
     const csv = fs.readFileSync(path.join(reportDir, "traceability.csv"), "utf8");
     ok("traceability CSV preserves schema and quotes embedded quotes/newlines",
@@ -1082,7 +1083,7 @@ async function runRiskSchemeTests() {
     for (const [command, script] of generators) {
       execFileSync(command, [script, projectCopy], { cwd: root, env: environment, stdio: "pipe" });
       const html = fs.readFileSync(path.join(projectCopy, "report/index.html"), "utf8");
-      const matrixHtml = html.match(/<table aria-label=["']Active risk matrix["']>([\s\S]*?)<\/table>/);
+      const matrixHtml = html.match(/<table\b[^>]*><caption>Active risk matrix<\/caption>([\s\S]*?)<\/table>/);
       assert.ok(matrixHtml, `${script} omitted the active risk matrix`);
       assert.strictEqual((matrixHtml[1].match(/<td style=/g) || []).length, 16, `${script} did not render a 4x4 matrix`);
       assert.ok(html.includes(`<code>${reportFingerprint}</code>`), `${script} omitted the normalized scheme fingerprint`);
@@ -1101,7 +1102,7 @@ async function runRiskSchemeTests() {
       env: { ...process.env, TRA_PROJECTS_DIR: reportTemp },
       stdio: "pipe",
     }).toString();
-    const serverMatrix = serverHtml.match(/<table aria-label=['"]Active risk matrix['"]>([\s\S]*?)<\/table>/);
+    const serverMatrix = serverHtml.match(/<table\b[^>]*><caption>Active risk matrix<\/caption>([\s\S]*?)<\/table>/);
     assert.ok(serverMatrix, "webapp server report omitted the active risk matrix");
     assert.strictEqual((serverMatrix[1].match(/<td style=/g) || []).length, 25);
     assert.ok(serverHtml.includes(`<code>${fingerprint(cost)}</code>`), "webapp server report omitted the scheme fingerprint");
@@ -1465,6 +1466,21 @@ function runStrideTests() {
 async function runValidationCoreTests() {
   const { validateCore, validate: validateExtension } = require(path.join(root, "vscode-extension/media/validation-model.js"));
   const { validate } = await import("../webapp/server/src/validate.js");
+  const { pathToFileURL } = require("node:url");
+  const vitePath = require.resolve("vite", { paths: [path.join(root, "webapp")] });
+  const { createServer } = await import(pathToFileURL(vitePath).href);
+  const vite = await createServer({
+    configFile: path.join(root, "webapp/client/vite.config.ts"),
+    root: path.join(root, "webapp/client"),
+    server: { middlewareMode: true },
+    appType: "custom",
+  });
+  let validateClient, openClientIssues;
+  try {
+    ({ validate: validateClient, openIssues: openClientIssues } = await vite.ssrLoadModule("/src/lib/validate.ts"));
+  } finally {
+    await vite.close();
+  }
   const norm = (issues) => issues.map((i) => JSON.stringify([i.severity, i.key, i.message])).sort();
   const webErrors = (input) => validate(input).filter((i) => i.severity === "error");
   const clean = {
@@ -1485,6 +1501,160 @@ async function runValidationCoreTests() {
   };
   ok("validation core: clean project has no extension issues", validateCore(clean).length === 0);
   ok("validation core: clean project has no webapp errors", webErrors(clean).length === 0);
+  const assetWithoutThreat = structuredClone(clean);
+  assetWithoutThreat.system.assets.push({ id: "AS2" });
+  const assetWarning = "AS2: no threat is linked to this asset. Add a threat or state why none applies (noThreatRationale).";
+  const matchingAssetWarnings = (issues) => issues.filter((issue) => issue.message === assetWarning);
+  assert.deepStrictEqual(matchingAssetWarnings(validateExtension(assetWithoutThreat)), matchingAssetWarnings(validate(assetWithoutThreat)));
+  assert.deepStrictEqual(matchingAssetWarnings(validateClient(assetWithoutThreat)), matchingAssetWarnings(validate(assetWithoutThreat)));
+  assert.equal(matchingAssetWarnings(validateExtension(assetWithoutThreat)).length, 1);
+  assetWithoutThreat.system.assets[1].noThreatRationale = "No applicable threat identified.";
+  assert.equal(matchingAssetWarnings(validateExtension(assetWithoutThreat)).length, 0);
+  assert.equal(matchingAssetWarnings(validateClient(assetWithoutThreat)).length, 0);
+  assetWithoutThreat.system.assets[1].noThreatRationale = "  ";
+  assetWithoutThreat.threats.threats[0].assets = ["AS1", "AS2"];
+  assert.equal(matchingAssetWarnings(validateExtension(assetWithoutThreat)).length, 0);
+  assert.equal(matchingAssetWarnings(validateClient(assetWithoutThreat)).length, 0);
+  passed++;
+
+  const treatmentMessages = [
+    "T-TREAT: an avoided risk requires avoidanceRationale describing the design or context change.",
+    "T-TREAT: avoided risk is not linked to a requirement or assumption; the changed context should be re-assessed.",
+    "T-TREAT: a transferred risk requires transferRationale (who receives the risk and how they are informed).",
+    "T-TREAT: acceptance above the acceptable level requires acceptanceDeviation.circumstance.",
+  ];
+  const treatmentIssues = (validateFn, input) => validateFn(input)
+    .filter((issue) => treatmentMessages.includes(issue.message))
+    .map(({ severity, key, message }) => [severity, key, message])
+    .sort((left, right) => left[1].localeCompare(right[1]));
+  const treatmentBase = (threat) => ({
+    ...structuredClone(clean),
+    project: { acceptableRisk: 12 },
+    requirements: { requirements: [] },
+    threats: { threats: [{ id: "T-TREAT", title: "Treatment scenario", stride: ["D"], components: ["C1"], assets: ["AS1"], likelihood: 5, impact: 5, ...threat }] },
+  });
+  const treatmentCases = [
+    { status: "avoided" },
+    { status: "avoided", avoidanceRationale: "The attack surface was removed.", assumptionRefs: ["A-DEV-1"] },
+    { status: "transferred", transferRationale: undefined },
+    { status: "transferred", transferRationale: "The operator is notified." },
+    { status: "accepted", acceptedBy: "Owner", acceptanceRationale: "Business need", reviewDate: "2099-01-01" },
+    { status: "accepted", acceptedBy: "Owner", acceptanceRationale: "Business need", reviewDate: "2099-01-01", acceptanceDeviation: { circumstance: "Contract obligation" } },
+  ];
+  for (const threat of treatmentCases) {
+    const input = treatmentBase(threat);
+    const serverIssues = treatmentIssues(validate, input);
+    assert.deepStrictEqual(treatmentIssues(validateClient, input), serverIssues, "client treatment checks match the server");
+    assert.deepStrictEqual(treatmentIssues(validateExtension, input), serverIssues, "extension treatment checks match the server");
+  }
+  const avoidedWithoutLinks = treatmentBase({ status: "avoided" });
+  const avoidedIssues = treatmentIssues(validate, avoidedWithoutLinks);
+  assert.equal(avoidedIssues.filter(([, , message]) => message === treatmentMessages[0]).length, 1);
+  assert.equal(avoidedIssues.filter(([, key]) => key === "avoided-link:T-TREAT").length, 1);
+  const dismissedAvoidance = treatmentBase({ status: "avoided" });
+  dismissedAvoidance.project.acceptedNotices = ["avoided-link:T-TREAT"];
+  assert.ok(!validate(dismissedAvoidance).some((issue) => issue.key === "avoided-link:T-TREAT"));
+  assert.ok(!openClientIssues(validateClient(dismissedAvoidance), dismissedAvoidance.project.acceptedNotices).some((issue) => issue.key === "avoided-link:T-TREAT"));
+  assert.ok(!validateExtension(dismissedAvoidance).some((issue) => issue.key === "avoided-link:T-TREAT"));
+  assert.ok(!validate(avoidedWithoutLinks).some((issue) => issue.message.includes("residual risk 25 exceeds")));
+  const transferredWithoutReason = treatmentIssues(validate, treatmentBase({ status: "transferred" }));
+  assert.equal(transferredWithoutReason.filter(([, , message]) => message === treatmentMessages[2]).length, 1);
+  const acceptedWithoutDeviation = treatmentIssues(validate, treatmentBase({ status: "accepted", acceptedBy: "Owner", acceptanceRationale: "Business need", reviewDate: "2099-01-01" }));
+  assert.equal(acceptedWithoutDeviation.filter(([, , message]) => message === treatmentMessages[3]).length, 1);
+  passed++;
+
+  const threatStructureInput = {
+    ...structuredClone(clean),
+    threats: {
+      threats: [
+        { id: "T-STRUCT-1", title: "Missing structure", stride: ["S"], components: ["C1"], likelihood: 2, impact: 2 },
+        { id: "T-STRUCT-2", title: "Also incomplete", stride: ["T"], components: ["C1"], likelihood: 2, impact: 2 },
+        { id: "T-STRUCT-3", title: "Cause present", stride: ["R"], components: ["C1"], likelihood: 2, impact: 2, cause: "Weak input validation." },
+        { id: "T-STRUCT-4", title: "Objectives present", stride: ["I"], components: ["C1"], likelihood: 2, impact: 2, compromisedObjectives: ["confidentiality"] },
+      ]
+    },
+  };
+  const structureNotice = (validateFn, input) => validateFn(input).filter((issue) => issue.key === "threat-structure-empty");
+  const expectedStructureNotice = [{
+    severity: "notice",
+    message: "2 threats do not state a cause or the compromised objectives (EN 40000-1-2, 6.4.3.3).",
+    key: "threat-structure-empty",
+  }];
+  assert.deepStrictEqual(structureNotice(validate, threatStructureInput), expectedStructureNotice);
+  assert.deepStrictEqual(structureNotice(validateClient, threatStructureInput), expectedStructureNotice);
+  assert.deepStrictEqual(structureNotice(validateExtension, threatStructureInput), expectedStructureNotice);
+  const dismissedStructureNotice = structuredClone(threatStructureInput);
+  dismissedStructureNotice.project.acceptedNotices = ["threat-structure-empty"];
+  assert.ok(!validate(dismissedStructureNotice).some((issue) => issue.key === "threat-structure-empty"));
+  assert.ok(!openClientIssues(validateClient(dismissedStructureNotice), dismissedStructureNotice.project.acceptedNotices).some((issue) => issue.key === "threat-structure-empty"));
+  assert.ok(!validateExtension(dismissedStructureNotice).some((issue) => issue.key === "threat-structure-empty"));
+  const resolvedStructure = structuredClone(threatStructureInput);
+  resolvedStructure.threats.threats[0].cause = "Insufficient authorization checks.";
+  resolvedStructure.threats.threats[1].compromisedObjectives = ["integrity"];
+  assert.ok(!structureNotice(validate, resolvedStructure).length);
+  assert.ok(!structureNotice(validateClient, resolvedStructure).length);
+  assert.ok(!structureNotice(validateExtension, resolvedStructure).length);
+  passed++;
+
+  const productContextInput = {
+    ...structuredClone(clean),
+    project: { status: "review", acceptableRisk: 12, productContext: { evidence: [{ title: "Unsafe ref", ref: "javascript:alert(1)" }] } },
+  };
+  const productValidationIssues = (validateFn, input) => validateFn(input).filter((issue) =>
+    ["product-context-empty", "risk-criteria-empty"].includes(issue.key) || issue.message.startsWith("Evidence reference "));
+  const expectedProductIssues = [
+    { severity: "error", message: "Evidence reference 1: only http(s) URLs and project-relative paths without '..' are allowed.", key: "Evidence reference 1: only http(s) URLs and project-relative paths without '..' are allowed." },
+    { severity: "notice", message: "Product context is incomplete: functions and users are not described (EN 40000-1-2, 6.2).", key: "product-context-empty" },
+    { severity: "notice", message: "The choice of the risk scheme and acceptance criteria is not justified (EN 40000-1-2, 6.3.3).", key: "risk-criteria-empty" },
+  ];
+  assert.deepStrictEqual(productValidationIssues(validate, productContextInput), expectedProductIssues);
+  assert.deepStrictEqual(productValidationIssues(validateClient, productContextInput), expectedProductIssues);
+  assert.deepStrictEqual(productValidationIssues(validateExtension, productContextInput), expectedProductIssues);
+  const invalidEvidenceRefs = ["ftp://example.invalid/evidence", "javascript:alert(1)", "data:text/plain,unsafe", "../outside.pdf", "..\\outside.pdf", "C:\\outside.pdf", "//host/outside.pdf", "/absolute.pdf", "%2e%2e%2foutside.pdf"];
+  for (const ref of invalidEvidenceRefs) {
+    const input = { ...structuredClone(clean), project: { status: "draft", productContext: { evidence: [{ title: "Invalid", ref }] } } };
+    const expected = [{ severity: "error", message: "Evidence reference 1: only http(s) URLs and project-relative paths without '..' are allowed.", key: "Evidence reference 1: only http(s) URLs and project-relative paths without '..' are allowed." }];
+    assert.deepStrictEqual(productValidationIssues(validate, input), expected, `server validator must reject ${ref}`);
+    assert.deepStrictEqual(productValidationIssues(validateClient, input), expected, `client validator must reject ${ref}`);
+    assert.deepStrictEqual(productValidationIssues(validateExtension, input), expected, `extension validator must reject ${ref}`);
+  }
+  for (const ref of ["https://example.invalid/evidence", "http://example.invalid/evidence", "docs/evidence.pdf"]) {
+    const input = { ...structuredClone(clean), project: { status: "draft", productContext: { evidence: [{ title: "Valid", ref }] } } };
+    assert.deepStrictEqual(productValidationIssues(validate, input), []);
+    assert.deepStrictEqual(productValidationIssues(validateClient, input), []);
+    assert.deepStrictEqual(productValidationIssues(validateExtension, input), []);
+  }
+  const overLimitProductContext = {
+    ...structuredClone(clean),
+    project: {
+      status: "draft", productContext: {
+        functions: Array.from({ length: 51 }, (_, index) => ({ name: `Function ${index + 1}` })),
+        evidence: Array.from({ length: 51 }, (_, index) => ({ title: `Evidence ${index + 1}`, ref: "docs/evidence.pdf" })),
+        users: { vulnerableGroups: Array.from({ length: 51 }, (_, index) => `Group ${index + 1}`) },
+      }
+    },
+  };
+  const productLimitIssues = (validateFn) => validateFn(overLimitProductContext).filter((issue) => issue.key.startsWith("product-context-limit:"));
+  const expectedProductLimits = [
+    { severity: "warning", message: "Product context functions has 51 entries; the limit is 50.", key: "product-context-limit:functions" },
+    { severity: "warning", message: "Product context evidence has 51 entries; the limit is 50.", key: "product-context-limit:evidence" },
+    { severity: "warning", message: "Product context vulnerable groups has 51 entries; the limit is 50.", key: "product-context-limit:vulnerable groups" },
+  ];
+  assert.deepStrictEqual(productLimitIssues(validate), expectedProductLimits);
+  assert.deepStrictEqual(productLimitIssues(validateClient), expectedProductLimits);
+  assert.deepStrictEqual(productLimitIssues(validateExtension), expectedProductLimits);
+  const dismissedProductIssues = structuredClone(productContextInput);
+  dismissedProductIssues.project.acceptedNotices = ["product-context-empty", "risk-criteria-empty"];
+  assert.deepStrictEqual(productValidationIssues(validate, dismissedProductIssues), expectedProductIssues.slice(0, 1));
+  assert.deepStrictEqual(productValidationIssues(validateClient, dismissedProductIssues).filter((issue) => issue.severity !== "notice" || !dismissedProductIssues.project.acceptedNotices.includes(issue.key)), expectedProductIssues.slice(0, 1));
+  assert.deepStrictEqual(productValidationIssues(validateExtension, dismissedProductIssues), expectedProductIssues.slice(0, 1));
+  const completeProductContext = structuredClone(dismissedProductIssues);
+  completeProductContext.project.status = "draft";
+  completeProductContext.project.productContext.evidence[0].ref = "docs/evidence.pdf";
+  assert.deepStrictEqual(productValidationIssues(validate, completeProductContext), []);
+  assert.deepStrictEqual(productValidationIssues(validateClient, completeProductContext), []);
+  assert.deepStrictEqual(productValidationIssues(validateExtension, completeProductContext), []);
+  passed++;
 
   const bad = {
     assumptions: { system: [{ id: "A-SYS-1" }], attacker: [{ id: "ATK-1" }] },

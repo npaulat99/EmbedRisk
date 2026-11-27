@@ -21,6 +21,18 @@ export interface Issue {
 
 const PROX: Record<string, number> = { remote: 1, adjacent: 2, local: 3, physical: 4 };
 const reqProx = (exposure: number) => (exposure >= 4 ? 1 : exposure === 3 ? 2 : exposure === 2 ? 3 : 4);
+const safeEvidenceRef = (value: unknown) => {
+    const ref = String(value ?? '').trim();
+    if (!ref || ref.startsWith('/') || ref.includes('\\') || /[\u0000-\u0020\u007f]/.test(ref)) return false;
+    let parsed: URL;
+    try { parsed = new URL(ref, 'https://embedrisk.invalid/'); } catch { return false; }
+    if (/^[A-Za-z][A-Za-z\d+.-]*:/.test(ref)) return (parsed.protocol === 'http:' || parsed.protocol === 'https:') && /^https?:\/\//i.test(ref);
+    if (parsed.origin !== 'https://embedrisk.invalid') return false;
+    try {
+        const path = decodeURIComponent(ref.split(/[?#]/, 1)[0]);
+        return !path.startsWith('/') && !path.includes('\\') && !path.split('/').some((part) => part === '..');
+    } catch { return false; }
+};
 
 /** True when an issue is a notice the user has accepted (so it is no longer an open point). */
 export function isAccepted(issue: Issue, accepted?: string[]): boolean {
@@ -63,6 +75,24 @@ export function validate(data: ProjectData, scheme: RiskScheme | null = null, sc
         ratings?.[criterion.id] != null && !riskEngine!.inRange(axis, ratings[criterion.id]));
     const riskValueInRange = (axis: 'likelihood' | 'impact', value: number) => value === 0 || riskEngine!.inRange(axis, value);
     const costBased = riskEngine ? riskEngine.scheme.likelihood.derivation.kind === 'cost-based' : project.riskScoringMethod === 'cost-based';
+
+    const productContext = project.productContext || {};
+    const productFunctions = productContext.functions || [];
+    const productEvidence = productContext.evidence || [];
+    const vulnerableGroups = productContext.users?.vulnerableGroups || [];
+    productEvidence.forEach((evidence, index) => {
+        if (!safeEvidenceRef(evidence?.ref))
+            add('error', `Evidence reference ${index + 1}: only http(s) URLs and project-relative paths without '..' are allowed.`);
+    });
+    const productLists = [['functions', productFunctions], ['evidence', productEvidence], ['vulnerable groups', vulnerableGroups]] as const;
+    for (const [label, items] of productLists)
+        if (items.length > 50) add('warning', `Product context ${label} has ${items.length} entries; the limit is 50.`, `product-context-limit:${label}`);
+    if (project.status === 'review' || project.status === 'released') {
+        if (!productFunctions.length || !hasText(productContext.users?.description))
+            add('notice', 'Product context is incomplete: functions and users are not described (EN 40000-1-2, 6.2).', 'product-context-empty');
+        if (!hasText(project.riskCriteria?.schemeJustification))
+            add('notice', 'The choice of the risk scheme and acceptance criteria is not justified (EN 40000-1-2, 6.3.3).', 'risk-criteria-empty');
+    }
 
     if (schemeWarning) add('warning', schemeWarning, 'risk-scheme-unavailable');
 
@@ -115,6 +145,12 @@ export function validate(data: ProjectData, scheme: RiskScheme | null = null, sc
         }
         if (t.status === 'accepted' && (!t.acceptedBy || !t.acceptanceRationale || !t.reviewDate))
             add('warning', `${t.id}: accepted residual risk requires a sign-off owner (acceptedBy), a rationale (acceptanceRationale) and a next-review date (reviewDate).`);
+        if (t.status === 'avoided' && !hasText(t.avoidanceRationale))
+            add('warning', `${t.id}: an avoided risk requires avoidanceRationale describing the design or context change.`);
+        if (t.status === 'avoided' && !reqs.some((requirement) => (requirement.derivedFromThreat || []).includes(t.id)) && !(t.assumptionRefs || []).length)
+            add('notice', `${t.id}: avoided risk is not linked to a requirement or assumption; the changed context should be re-assessed.`, `avoided-link:${t.id}`);
+        if (t.status === 'transferred' && !hasText(t.transferRationale))
+            add('warning', `${t.id}: a transferred risk requires transferRationale (who receives the risk and how they are informed).`);
         if ((t.stride || []).some((s) => s === 'S' || s === 'T' || s === 'I') && !t.classification)
             add('notice', `${t.id}: classification is unset for a spoofing/tampering/information-disclosure threat; classify whether this is a product vulnerability, protocol limitation, deployment risk, or shared responsibility.`, `threat-classification:${t.id}`);
         if ((t.classification === 'protocol-limitation' || t.classification === 'deployment-risk' || t.classification === 'shared-responsibility') && !hasText(t.deploymentConstraints) && t.status !== 'accepted' && t.status !== 'transferred')
@@ -158,14 +194,18 @@ export function validate(data: ProjectData, scheme: RiskScheme | null = null, sc
                     const withinThreshold = Number.isInteger(acceptableRank)
                         ? level.rank <= acceptableRank
                         : level.score <= acceptableRisk;
-                    if (level.acceptanceBy === 'management' && !acceptedWithOwner) {
+                    if (t.status === 'accepted' && !withinThreshold && !hasText(t.acceptanceDeviation?.circumstance))
+                        add('warning', `${t.id}: acceptance above the acceptable level requires acceptanceDeviation.circumstance.`);
+                    if (level.acceptanceBy === 'management' && t.status !== 'avoided' && !acceptedWithOwner) {
                         add('warning', `${t.id}: residual risk level '${level.label}' requires acceptance by management (status 'accepted' and acceptedBy).`, `risk-acceptance:${t.id}`);
-                    } else if (level.acceptanceBy !== 'management' && !withinThreshold && t.status !== 'accepted') {
+                    } else if (level.acceptanceBy !== 'management' && !withinThreshold && t.status !== 'accepted' && t.status !== 'avoided') {
                         add('warning', `${t.id}: residual risk level '${level.label}' exceeds the acceptable level — reduce it or accept the residual.`, `risk-over-acceptable:${t.id}`);
                     }
                 }
             }
-        } else if (!schemeWarning && res > acceptableRisk && t.status !== 'accepted' && t.status !== 'unfeasible') {
+        } else if (!schemeWarning && res > acceptableRisk && t.status === 'accepted' && !hasText(t.acceptanceDeviation?.circumstance)) {
+            add('warning', `${t.id}: acceptance above the acceptable level requires acceptanceDeviation.circumstance.`);
+        } else if (!schemeWarning && res > acceptableRisk && t.status !== 'accepted' && t.status !== 'unfeasible' && t.status !== 'avoided') {
             const threatLabel = t.id || 'threat';
             add('warning', `${threatLabel}: residual risk ${res} exceeds the acceptable risk (${acceptableRisk}) — reduce it or accept the residual.`, t.id ? `risk-over-acceptable:${t.id}` : undefined);
         }
@@ -220,13 +260,20 @@ export function validate(data: ProjectData, scheme: RiskScheme | null = null, sc
         const highOrAbove = riskEngine
             ? riskEngine.inRange('likelihood', t.likelihood) && riskEngine.inRange('impact', t.impact) && riskEngine.isHighOrAbove(riskEngine.classify(t.likelihood, t.impact))
             : !schemeWarning && (t.likelihood || 0) * (t.impact || 0) >= 12;
-        if (highOrAbove && !reqThreats.has(t.id) && t.status !== 'accepted')
+        if (highOrAbove && !reqThreats.has(t.id) && t.status !== 'accepted' && t.status !== 'avoided')
             add('warning', `${t.id}: high/critical threat has no security requirement derived from it.`);
         if (t.status === 'transferred' && !reqThreats.has(t.id))
             add('warning', `${t.id}: transferred risk requires a linked requirement documenting the risk transfer in the user guide.`);
     }
+    const incompleteThreatCount = threats.filter((threat) => !hasText(threat.cause) && !(threat.compromisedObjectives || []).length).length;
+    if (incompleteThreatCount)
+        add('notice', `${incompleteThreatCount} threats do not state a cause or the compromised objectives (EN 40000-1-2, 6.4.3.3).`, 'threat-structure-empty');
 
     const parents = new Set(components.map((c) => c.parent).filter(Boolean) as string[]);
+    const threatAssets = new Set(threats.flatMap((t) => t.assets || []));
+    for (const asset of data.system?.assets || [])
+        if (!threatAssets.has(asset.id) && !hasText(asset.noThreatRationale))
+            add('warning', `${asset.id}: no threat is linked to this asset. Add a threat or state why none applies (noThreatRationale).`);
     const threatComps = new Set(threats.flatMap((t) => t.components || []));
     for (const c of components)
         if (c.kind !== 'external-entity' && c.kind !== 'device' && !parents.has(c.id) && !threatComps.has(c.id))

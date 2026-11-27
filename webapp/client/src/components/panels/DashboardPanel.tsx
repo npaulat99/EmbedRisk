@@ -38,7 +38,7 @@ export default function DashboardPanel() {
     const defects = data.defects?.defects || [];
     const openDefects = defects.filter((d) => d.status !== 'fixed' && d.status !== 'wont-fix');
     const highNoReq = threats.filter((t) => riskEngine && riskEngine.inRange('likelihood', t.likelihood) && riskEngine.inRange('impact', t.impact)
-        && riskEngine.isHighOrAbove(riskEngine.classify(t.likelihood, t.impact)) && t.status !== 'accepted'
+        && riskEngine.isHighOrAbove(riskEngine.classify(t.likelihood, t.impact)) && t.status !== 'accepted' && t.status !== 'avoided'
         && !reqs.some((r) => (r.derivedFromThreat || []).includes(t.id)));
     const protocolLimitations = threats.filter((t) => t.classification === 'protocol-limitation').length;
     const deploymentRisks = threats.filter((t) => t.classification === 'deployment-risk').length;

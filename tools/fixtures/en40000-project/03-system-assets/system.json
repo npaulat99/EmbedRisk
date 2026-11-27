@@ -1,0 +1,23 @@
+{
+    "components": [
+        {
+            "id": "C-1",
+            "kind": "process",
+            "name": "Component marker"
+        }
+    ],
+    "interfaces": [],
+    "trustBoundaries": [],
+    "assets": [
+        {
+            "id": "A-1",
+            "name": "Asset marker '><img src=x onerror=alert(1)>",
+            "objectives": {
+                "confidentiality": 2,
+                "integrity": 3,
+                "availability": 4,
+                "safety": 1
+            }
+        }
+    ]
+}

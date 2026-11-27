@@ -493,6 +493,68 @@ textarea {
     cursor: pointer;
 }
 
+.product-context-item,
+.risk-criteria-group {
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    padding: 10px 12px;
+    margin: 8px 0;
+    min-width: 0;
+}
+
+.product-context-item legend,
+.risk-criteria-group legend {
+    padding: 0 6px;
+    color: var(--text-dim);
+    font-weight: 600;
+}
+
+.product-context-list {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.objective-group {
+    border: 0;
+    padding: 0;
+    margin: 0 0 12px;
+    min-width: 0;
+}
+
+.objective-group legend {
+    padding: 0;
+    margin-bottom: 4px;
+    color: var(--text-dim);
+    font-size: 0.75rem;
+    font-weight: 600;
+}
+
+.objective-hint {
+    margin-bottom: 4px;
+}
+
+.objective-options {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 2px 12px;
+}
+
+.objective-check {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-block-size: 44px;
+    color: var(--text);
+    font-size: 0.8125rem;
+    cursor: pointer;
+}
+
+.objective-check input {
+    flex: none;
+    margin: 0;
+}
+
 .field input:focus,
 .field select:focus,
 .field textarea:focus,
