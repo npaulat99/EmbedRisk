@@ -30,7 +30,7 @@ try {
         const source = page.getByRole('combobox', { name: 'Flow source' });
         const target = page.getByRole('combobox', { name: 'Flow target' });
         await source.selectOption('N-DEV');
-        await target.selectOption('N-EXT-CTRL');
+        await target.selectOption('X-PLC');
         const flowLabel = page.getByRole('textbox', { name: 'Flow label' });
         await flowLabel.fill(`UX flow ${width}`);
         const rowCount = await page.locator('.dfd-elements tbody tr').count();

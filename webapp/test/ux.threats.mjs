@@ -25,7 +25,7 @@ try {
         await sort.selectOption('name');
         const allKnowledge = await knowledgeCount.innerText();
         const allRecords = await recordCount.innerText();
-        assert.match(allRecords, /^20 of 20$/);
+        assert.match(allRecords, /^33 of 33$/);
 
         await knowledgeSearch.fill('HART');
         const filteredKnowledge = await knowledgeCount.innerText();
@@ -57,7 +57,7 @@ try {
         assert.match(await noMatch.innerText(), /zz-no-match/);
         await page.getByRole('button', { name: 'Clear search' }).click();
         assert.equal(await recordCount.innerText(), allRecords);
-        assert.equal(await page.locator('.itemcard.collapsed').count(), 20);
+        assert.equal(await page.locator('.itemcard.collapsed').count(), 33);
 
         const dimensions = await page.evaluate(() => ({ innerWidth, scrollWidth: document.documentElement.scrollWidth }));
         assert.ok(dimensions.scrollWidth <= dimensions.innerWidth, `Threat workflow overflows at ${width}px: ${JSON.stringify(dimensions)}`);

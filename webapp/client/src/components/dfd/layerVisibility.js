@@ -76,8 +76,23 @@ export function deriveVisibleInterfaceIds({ currentParent, interfaces, flows, no
     return ids;
 }
 
+// A node nested inside a node that is visible on this layer is part of that node's inner layer.
+// Flows touching it are drawn when drilling in, not as extra port chips on the outer layer.
+function isNestedInVisibleNode(nodeId, visibleRealNodeIds, nodes) {
+    const byId = new Map((nodes || []).map((node) => [node.id, node]));
+    let current = byId.get(nodeId)?.parent ?? null;
+    const seen = new Set();
+    while (current != null && !seen.has(current)) {
+        if (visibleRealNodeIds.has(current)) return true;
+        seen.add(current);
+        current = byId.get(current)?.parent ?? null;
+    }
+    return false;
+}
+
 export function flowBelongsToLayerContext({ flow, currentParent, visibleRealNodeIds, visibleIfaceIds, nodes, compById, interfaces }) {
     if (isParentChildNodeFlow(flow, nodes)) return false;
+    if (isNestedInVisibleNode(flow.from, visibleRealNodeIds, nodes) || isNestedInVisibleNode(flow.to, visibleRealNodeIds, nodes)) return false;
     const flowFromDeviceBoundary = isDeviceBoundaryInterfaceFlow({
         currentParent,
         nodes,

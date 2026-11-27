@@ -575,7 +575,7 @@ export default function ProjectPanel() {
             <div className="card">
                 <h3>Project repository</h3>
                 <Field label="DevOps branch / PR link">
-                    <input value={p.repo?.projectBranchUrl || ''} onChange={(e) => setRepo({ projectBranchUrl: e.target.value })} placeholder="https://devops.vega.com/tfs/VEGA/Entwicklung/_git/EmbedRisk-TestProject?path=%2F&version=GBdocs%2Ftest-infrastructure&_a=contents" />
+                    <input value={p.repo?.projectBranchUrl || ''} onChange={(e) => setRepo({ projectBranchUrl: e.target.value })} placeholder="https://git.example.com/org/project/tree/branch" />
                 </Field>
                 <div className="inline">
                     <button className="btn sm" onClick={commit} disabled={!activeId || !effectiveRepoUrl || !effectiveWorkBranch}>
